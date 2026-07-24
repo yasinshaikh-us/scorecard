@@ -58,10 +58,19 @@ chrome.
 
 ## Updating your transaction data
 
-Right now, updating data means editing `RAW_DATA` in `src/App.jsx` directly
-and redeploying (`git push`). There's no in-app upload yet — that's a
-natural next step if you want to refresh data without touching code each
-time.
+Data lives in **`public/data.csv`**, completely separate from the app code
+(`src/App.jsx`). Columns: `Date,Payee,Category,Amount` — `Date` as
+`YYYY-MM-DD`, `Category` as `Top:Sub` (e.g. `Home:Rent`), `Amount` negative
+for expenses / positive for income.
+
+To update:
+
+1. Replace `public/data.csv` with your new export (same 4-column format).
+2. `git add public/data.csv && git commit -m "Update transaction data" && git push`
+3. Vercel auto-redeploys — no code changes, no touching `App.jsx`.
+
+The app fetches and parses `data.csv` client-side on load (via PapaParse),
+so swapping the file is the entire update process.
 
 ## Project structure
 
@@ -69,9 +78,10 @@ time.
 ├── api/
 │   └── query.js        # serverless proxy — holds the API key server-side
 ├── src/
-│   ├── App.jsx          # the dashboard (data + logic, ~580KB w/ embedded data)
+│   ├── App.jsx          # the dashboard (logic only, no embedded data)
 │   └── main.jsx          # React entry point
 ├── public/
+│   ├── data.csv          # your transaction data — this is what you update
 │   ├── manifest.json     # PWA config
 │   └── icon-*.png        # app icons
 ├── index.html
