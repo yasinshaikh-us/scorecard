@@ -72,6 +72,26 @@ To update:
 The app fetches and parses `data.csv` client-side on load (via PapaParse),
 so swapping the file is the entire update process.
 
+## PIN-locking the app
+
+By default the app is public to anyone with the URL. To require a PIN:
+
+1. In Vercel: **Project Settings → Environment Variables**
+2. Add `SITE_PIN` = a 4-8 digit number of your choice (e.g. `4821`), for all three environments (Production, Preview, Development)
+3. Push/redeploy
+
+Visiting the app now shows a PIN entry screen first. Enter it once and it's
+remembered on that browser/device for 30 days via a cookie — no need to
+re-enter it every time you open the PWA.
+
+To remove the lock entirely, delete the `SITE_PIN` environment variable and
+redeploy (the middleware auto-disables itself if `SITE_PIN` isn't set, so
+you're never at risk of being locked out by a misconfiguration).
+
+This is implemented via `middleware.js` at the project root — a
+framework-agnostic Vercel feature (works on the free Hobby plan, unlike
+Vercel's built-in Password Protection which requires a paid add-on).
+
 ## Project structure
 
 ```
@@ -84,6 +104,7 @@ so swapping the file is the entire update process.
 │   ├── data.csv          # your transaction data — this is what you update
 │   ├── manifest.json     # PWA config
 │   └── icon-*.png        # app icons
+├── middleware.js          # optional PIN gate (see above)
 ├── index.html
 ├── package.json
 ├── vite.config.js
