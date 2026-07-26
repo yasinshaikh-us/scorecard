@@ -58,10 +58,39 @@ chrome.
 
 ## Updating your transaction data
 
-Right now, updating data means editing `RAW_DATA` in `src/App.jsx` directly
-and redeploying (`git push`). There's no in-app upload yet — that's a
-natural next step if you want to refresh data without touching code each
-time.
+Data lives in **`public/data.csv`**, completely separate from the app code
+(`src/App.jsx`). Columns: `Date,Payee,Category,Amount` — `Date` as
+`YYYY-MM-DD`, `Category` as `Top:Sub` (e.g. `Home:Rent`), `Amount` negative
+for expenses / positive for income.
+
+To update:
+
+1. Replace `public/data.csv` with your new export (same 4-column format).
+2. `git add public/data.csv && git commit -m "Update transaction data" && git push`
+3. Vercel auto-redeploys — no code changes, no touching `App.jsx`.
+
+The app fetches and parses `data.csv` client-side on load (via PapaParse),
+so swapping the file is the entire update process.
+
+## PIN-locking the app
+
+By default the app is public to anyone with the URL. To require a PIN:
+
+1. In Vercel: **Project Settings → Environment Variables**
+2. Add `SITE_PIN` = a 4-8 digit number of your choice (e.g. `4821`), for all three environments (Production, Preview, Development)
+3. Push/redeploy
+
+Visiting the app now shows a PIN entry screen first. Enter it once and it's
+remembered on that browser/device for 30 days via a cookie — no need to
+re-enter it every time you open the PWA.
+
+To remove the lock entirely, delete the `SITE_PIN` environment variable and
+redeploy (the middleware auto-disables itself if `SITE_PIN` isn't set, so
+you're never at risk of being locked out by a misconfiguration).
+
+This is implemented via `middleware.js` at the project root — a
+framework-agnostic Vercel feature (works on the free Hobby plan, unlike
+Vercel's built-in Password Protection which requires a paid add-on).
 
 ## Project structure
 
@@ -69,11 +98,13 @@ time.
 ├── api/
 │   └── query.js        # serverless proxy — holds the API key server-side
 ├── src/
-│   ├── App.jsx          # the dashboard (data + logic, ~580KB w/ embedded data)
+│   ├── App.jsx          # the dashboard (logic only, no embedded data)
 │   └── main.jsx          # React entry point
 ├── public/
+│   ├── data.csv          # your transaction data — this is what you update
 │   ├── manifest.json     # PWA config
 │   └── icon-*.png        # app icons
+├── middleware.js          # optional PIN gate (see above)
 ├── index.html
 ├── package.json
 ├── vite.config.js
