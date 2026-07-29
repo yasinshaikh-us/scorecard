@@ -5,9 +5,11 @@ plain English; a serverless function forwards the question (never your
 transaction data) to Claude, which returns a small JSON filter/chart spec;
 the app applies that spec locally and renders the chart + table.
 
-Your transaction data lives in `public/data.csv`, fetched and parsed
-client-side on load — it never leaves the browser except as aggregate
-results you choose to look at.
+Your transaction data lives in a Supabase Postgres table, read on load
+through a serverless proxy (`/api/transactions`) using a service-role key
+that never reaches the browser. Row Level Security is enabled on the table
+with no policies, so the anon/publishable key — the one that would ever be
+exposed to a client — has zero access to it.
 
 ## 1. Install
 
@@ -15,25 +17,32 @@ results you choose to look at.
 npm install
 ```
 
-## 2. Get an API key
+## 2. Get your keys
 
-This needs an **Anthropic API key**, separate from any claude.ai
-subscription (Pro/Max don't include API access). Sign up at
-[console.anthropic.com](https://console.anthropic.com), add billing, and
-create a key.
+This needs:
+
+- An **Anthropic API key**, separate from any claude.ai subscription
+  (Pro/Max don't include API access). Sign up at
+  [console.anthropic.com](https://console.anthropic.com), add billing, and
+  create a key.
+- A **Supabase project** with a `transactions` table (`date`, `payee`,
+  `category`, `amount`) — see "Updating your transaction data" below. From
+  **Project Settings → API**, grab the **Project URL** and the
+  **`service_role` secret key** (not the anon/publishable key — the service
+  role key is required because RLS on the table has no policies).
 
 ## 3. Local development
 
 ```bash
 cp .env.example .env.local
-# edit .env.local and paste your real key
+# edit .env.local and paste your real keys
 npm install -g vercel   # if you don't have it already
 vercel dev
 ```
 
-`vercel dev` runs both the Vite frontend and the `/api/query` serverless
-function together, using `.env.local` for the key. (Plain `npm run dev`
-only runs the frontend — the API route won't work without `vercel dev` or
+`vercel dev` runs both the Vite frontend and the `/api` serverless
+functions together, using `.env.local` for the keys. (Plain `npm run dev`
+only runs the frontend — the API routes won't work without `vercel dev` or
 a deployed environment.)
 
 ## 4. Deploy to Vercel
@@ -42,8 +51,10 @@ a deployed environment.)
 2. In Vercel: **New Project → Import** your repo.
 3. In **Project Settings → Environment Variables**, add:
    - `ANTHROPIC_API_KEY` = your key from console.anthropic.com
-4. Deploy. Vercel auto-detects the Vite build and the `/api` folder as a
-   serverless function.
+   - `SUPABASE_URL` = your Supabase project URL
+   - `SUPABASE_SERVICE_ROLE_KEY` = your Supabase `service_role` secret key
+4. Deploy. Vercel auto-detects the Vite build and the `/api` folder as
+   serverless functions.
 
 Every future update = `git push` — Vercel redeploys automatically.
 
@@ -59,19 +70,25 @@ chrome.
 
 ## Updating your transaction data
 
-Data lives in **`public/data.csv`**, completely separate from the app code
-(`src/App.jsx`). Columns: `Date,Payee,Category,Amount` — `Date` as
-`YYYY-MM-DD`, `Category` as `Top:Sub` (e.g. `Home:Rent`), `Amount` negative
-for expenses / positive for income.
+Data lives in a Supabase Postgres table, `public.transactions`:
 
-To update:
+| column   | type          | notes                                  |
+|----------|---------------|-----------------------------------------|
+| date     | date          | `YYYY-MM-DD`                            |
+| payee    | text          |                                          |
+| category | text          | `Top:Sub` format (e.g. `Home:Rent`)     |
+| amount   | numeric(12,2) | negative for expenses, positive for income |
 
-1. Replace `public/data.csv` with your new export (same 4-column format).
-2. `git add public/data.csv && git commit -m "Update transaction data" && git push`
-3. Vercel auto-redeploys — no code changes, no touching `App.jsx`.
+To add or update rows, run SQL against the table directly (Supabase SQL
+editor, `psql`, or the Supabase MCP tools) — e.g.:
 
-The app fetches and parses `data.csv` client-side on load (via PapaParse),
-so swapping the file is the entire update process.
+```sql
+insert into transactions (date, payee, category, amount)
+values ('2026-01-15', 'Some Payee', 'Groceries', -42.50);
+```
+
+No code changes or redeploys needed — `/api/transactions` reads the table
+live on every page load.
 
 ## PIN-locking the app
 
@@ -97,16 +114,16 @@ Vercel's built-in Password Protection which requires a paid add-on).
 
 ```
 ├── api/
-│   └── query.js        # serverless proxy — holds the API key server-side
+│   ├── query.js         # serverless proxy — holds the Anthropic key server-side
+│   └── transactions.js  # serverless proxy — reads Supabase with the service-role key
 ├── src/
 │   ├── App.jsx          # the dashboard (logic only, no embedded data)
-│   ├── styles.js         # shared inline-style objects for App.jsx
-│   └── main.jsx          # React entry point
+│   ├── styles.js        # shared inline-style objects for App.jsx
+│   └── main.jsx         # React entry point
 ├── public/
-│   ├── data.csv          # your transaction data — this is what you update
-│   ├── manifest.json     # PWA config
-│   └── icon-*.png        # app icons
-├── middleware.js          # optional PIN gate (see above)
+│   ├── manifest.json    # PWA config
+│   └── icon-*.png       # app icons
+├── middleware.js         # optional PIN gate (see above)
 ├── index.html
 ├── package.json
 ├── vite.config.js

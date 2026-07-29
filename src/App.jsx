@@ -3,7 +3,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
-import Papa from "papaparse";
 import { styles, tooltipStyle } from "./styles.js";
 
 let RAW_DATA = [];
@@ -302,31 +301,22 @@ export default function LedgerDashboard() {
   const [dataStatus, setDataStatus] = useState("loading"); // "loading" | "ready" | "error"
 
   useEffect(() => {
-    fetch("/data.csv")
+    fetch("/api/transactions")
       .then(res => {
-        if (!res.ok) throw new Error(`Failed to fetch data.csv (${res.status})`);
-        return res.text();
+        if (!res.ok) throw new Error(`Failed to fetch transactions (${res.status})`);
+        return res.json();
       })
-      .then(csvText => {
-        Papa.parse(csvText, {
-          header: true,
-          skipEmptyLines: true,
-          dynamicTyping: false,
-          complete: (results) => {
-            const rows = results.data
-              .filter(r => r.Date && r.Payee && r.Category && r.Amount !== undefined && r.Amount !== "")
-              .map(r => ({
-                Date: String(r.Date).trim(),
-                Payee: String(r.Payee).trim(),
-                Category: String(r.Category).trim(),
-                Amount: parseFloat(r.Amount),
-              }))
-              .filter(r => !isNaN(r.Amount));
-            loadData(rows);
-            setDataStatus("ready");
-          },
-          error: () => setDataStatus("error"),
-        });
+      .then(rows => {
+        const cleaned = rows
+          .filter(r => r.Date && r.Payee && r.Category && r.Amount !== undefined && r.Amount !== null && !isNaN(r.Amount))
+          .map(r => ({
+            Date: String(r.Date).trim(),
+            Payee: String(r.Payee).trim(),
+            Category: String(r.Category).trim(),
+            Amount: Number(r.Amount),
+          }));
+        loadData(cleaned);
+        setDataStatus("ready");
       })
       .catch(() => setDataStatus("error"));
   }, []);
@@ -379,7 +369,7 @@ export default function LedgerDashboard() {
       )}
       {dataStatus === "error" && (
         <div style={{ textAlign: "center", color: "#C1666B", fontSize: 13, fontFamily: "'Inter', sans-serif" }}>
-          Couldn't load data.csv — make sure it's in the public/ folder.
+          Couldn't load transaction data — check the Supabase connection.
         </div>
       )}
 
