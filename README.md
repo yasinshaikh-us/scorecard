@@ -27,9 +27,11 @@ This needs:
   create a key.
 - A **Supabase project** with a `transactions` table (`date`, `payee`,
   `category`, `amount`) — see "Updating your transaction data" below. From
-  **Project Settings → API**, grab the **Project URL** and the
-  **`service_role` secret key** (not the anon/publishable key — the service
-  role key is required because RLS on the table has no policies).
+  **Project Settings → API Keys**, grab the **Project URL** and an elevated
+  key — either the legacy `service_role` JWT (Legacy keys tab) or the newer
+  `sb_secret_...` key (Publishable and secret API keys tab). Not the
+  anon/publishable key — RLS on the table has no policies, so only an
+  elevated key can read it.
 
 ## 3. Local development
 
@@ -52,7 +54,7 @@ a deployed environment.)
 3. In **Project Settings → Environment Variables**, add:
    - `ANTHROPIC_API_KEY` = your key from console.anthropic.com
    - `SUPABASE_URL` = your Supabase project URL
-   - `SUPABASE_SERVICE_ROLE_KEY` = your Supabase `service_role` secret key
+   - `SUPABASE_SERVICE_ROLE_KEY` = your Supabase `service_role` JWT or `sb_secret_...` key
 4. Deploy. Vercel auto-detects the Vite build and the `/api` folder as
    serverless functions.
 

@@ -4,6 +4,11 @@
 // SUPABASE_SERVICE_ROLE_KEY in your Vercel project's Environment Variables
 // (Project Settings -> Environment Variables), not here.
 //
+// SUPABASE_SERVICE_ROLE_KEY accepts either Supabase key format: the legacy
+// service_role JWT, or the newer sb_secret_... key. Only send it on the
+// apikey header — the newer format isn't a JWT and gets rejected if also
+// sent as an Authorization: Bearer token.
+//
 // Row Level Security is enabled on the `transactions` table with no
 // policies, so the anon/publishable key has zero access — only the
 // service-role key (used here, server-side only) can read it.
@@ -27,7 +32,6 @@ export default async function handler(req, res) {
       {
         headers: {
           apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
         },
       }
     );
