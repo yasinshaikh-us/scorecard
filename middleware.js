@@ -56,7 +56,12 @@ async function sha256Hex(text) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function pinPage(showError) {
+function pinPage(showError, pinLength) {
+  const len = pinLength >= 4 && pinLength <= 8 ? pinLength : 6;
+  const boxes = Array.from({ length: len })
+    .map((_, i) => `<input class="pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" data-idx="${i}" />`)
+    .join("\n        ");
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -67,41 +72,86 @@ function pinPage(showError) {
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #14181D; font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: #10141B; font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
-  form {
-    background: #1E242C; border: 1px solid #2A313B; border-radius: 14px;
-    padding: 36px 28px; width: 280px; text-align: center;
+  .wrap { width: 320px; padding: 24px; text-align: center; }
+  .icon-badge {
+    width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 20px;
+    background: linear-gradient(135deg, #3FA796, #2C8577);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 24px rgba(63, 167, 150, 0.28);
   }
-  h1 { color: #EDE8DE; font-size: 19px; font-weight: 600; margin: 0 0 22px; }
-  input {
-    width: 100%; font-size: 24px; letter-spacing: 10px; text-align: center;
-    padding: 14px 10px; border-radius: 8px; border: 1px solid #2A313B;
-    background: #171B21; color: #EDE8DE; margin-bottom: 16px; outline: none;
+  h1 { color: #EDE8DE; font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+  .sub { color: #8B93A0; font-size: 13px; margin: 0 0 26px; }
+  .err { color: #C1666B; font-size: 13px; margin: -14px 0 18px; }
+  form { margin: 0; }
+  .pin-row { display: flex; gap: 10px; justify-content: center; margin-bottom: 26px; }
+  .pin-box {
+    width: 42px; height: 52px; text-align: center; font-size: 22px; font-weight: 600;
+    border-radius: 10px; border: 1px solid #2A313B; background: #171B21; color: #EDE8DE;
+    outline: none; -webkit-text-security: disc;
   }
-  input:focus { border-color: #3FA796; }
-  button {
-    width: 100%; padding: 13px; border-radius: 8px; border: none;
-    background: #3FA796; color: #14181D; font-weight: 600; font-size: 15px; cursor: pointer;
-  }
-  .err { color: #C1666B; font-size: 13px; margin-bottom: 12px; font-family: 'Inter', sans-serif; }
+  .pin-box:focus { border-color: #3FA796; box-shadow: 0 0 0 3px rgba(63, 167, 150, 0.18); }
+  .help { color: #5A6270; font-size: 12px; line-height: 1.6; max-width: 280px; margin: 0 auto; }
 </style>
 </head>
 <body>
-  <form method="POST">
-    <h1>Enter PIN</h1>
+  <div class="wrap">
+    <div class="icon-badge">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="11" width="14" height="9" rx="2.5" stroke="#0E1218" stroke-width="1.8"/>
+        <path d="M8 11V7.6a4 4 0 0 1 8 0V11" stroke="#0E1218" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="12" cy="15.3" r="1.3" fill="#0E1218"/>
+      </svg>
+    </div>
+    <h1>Analysis</h1>
+    <div class="sub">Enter your PIN to continue</div>
     ${showError ? '<div class="err">Incorrect PIN — try again</div>' : ""}
-    <input
-      name="pin"
-      type="password"
-      inputmode="numeric"
-      pattern="[0-9]*"
-      maxlength="8"
-      autofocus
-      autocomplete="off"
-    />
-    <button type="submit">Unlock</button>
-  </form>
+    <form method="POST" id="pin-form">
+      <div class="pin-row">
+        ${boxes}
+      </div>
+      <input type="hidden" name="pin" id="pin-hidden" />
+    </form>
+    <div class="help">This gates access to your personal transaction data. Enter the PIN set for this app.</div>
+  </div>
+  <script>
+    (function () {
+      var boxesEls = Array.prototype.slice.call(document.querySelectorAll(".pin-box"));
+      var hidden = document.getElementById("pin-hidden");
+      var form = document.getElementById("pin-form");
+
+      function sync() {
+        hidden.value = boxesEls.map(function (b) { return b.value; }).join("");
+        if (hidden.value.length === boxesEls.length) form.submit();
+      }
+
+      boxesEls.forEach(function (box, i) {
+        box.addEventListener("input", function () {
+          box.value = box.value.replace(/[^0-9]/g, "").slice(-1);
+          if (box.value && i < boxesEls.length - 1) boxesEls[i + 1].focus();
+          sync();
+        });
+        box.addEventListener("keydown", function (e) {
+          if (e.key === "Backspace" && !box.value && i > 0) {
+            boxesEls[i - 1].focus();
+          }
+        });
+        box.addEventListener("paste", function (e) {
+          e.preventDefault();
+          var text = (e.clipboardData || window.clipboardData).getData("text").replace(/[^0-9]/g, "");
+          text.split("").forEach(function (ch, idx) {
+            if (boxesEls[idx]) boxesEls[idx].value = ch;
+          });
+          var next = boxesEls[Math.min(text.length, boxesEls.length - 1)];
+          if (next) next.focus();
+          sync();
+        });
+      });
+
+      if (boxesEls[0]) boxesEls[0].focus();
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -140,13 +190,13 @@ export default async function middleware(request) {
     }
 
     recordFailedAttempt(ip);
-    return new Response(pinPage(true), {
+    return new Response(pinPage(true, PIN.length), {
       status: 401,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
 
-  return new Response(pinPage(false), {
+  return new Response(pinPage(false, PIN.length), {
     status: 401,
     headers: { "content-type": "text/html; charset=utf-8" },
   });
