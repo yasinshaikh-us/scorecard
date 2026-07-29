@@ -5,8 +5,9 @@ plain English; a serverless function forwards the question (never your
 transaction data) to Claude, which returns a small JSON filter/chart spec;
 the app applies that spec locally and renders the chart + table.
 
-Your transaction data lives in `src/App.jsx` as the `RAW_DATA` array — it
-never leaves the browser except as aggregate results you choose to look at.
+Your transaction data lives in `public/data.csv`, fetched and parsed
+client-side on load — it never leaves the browser except as aggregate
+results you choose to look at.
 
 ## 1. Install
 
@@ -99,6 +100,7 @@ Vercel's built-in Password Protection which requires a paid add-on).
 │   └── query.js        # serverless proxy — holds the API key server-side
 ├── src/
 │   ├── App.jsx          # the dashboard (logic only, no embedded data)
+│   ├── styles.js         # shared inline-style objects for App.jsx
 │   └── main.jsx          # React entry point
 ├── public/
 │   ├── data.csv          # your transaction data — this is what you update

@@ -10,6 +10,33 @@
 const COOKIE_NAME = "analysis_auth";
 const COOKIE_MAX_AGE_DAYS = 30;
 
+// Best-effort in-memory brute-force guard. State is per-isolate (resets on
+// cold start / redeploy, and isn't shared across edge regions), but it's
+// enough to stop a naive script from hammering a 4-8 digit PIN.
+const MAX_ATTEMPTS = 8;
+const WINDOW_MS = 5 * 60 * 1000;
+const attemptsByIp = new Map();
+
+function tooManyAttempts(ip) {
+  const now = Date.now();
+  const entry = attemptsByIp.get(ip);
+  if (!entry || now - entry.windowStart > WINDOW_MS) {
+    attemptsByIp.set(ip, { windowStart: now, count: 0 });
+    return false;
+  }
+  return entry.count >= MAX_ATTEMPTS;
+}
+
+function recordFailedAttempt(ip) {
+  const now = Date.now();
+  const entry = attemptsByIp.get(ip);
+  if (!entry || now - entry.windowStart > WINDOW_MS) {
+    attemptsByIp.set(ip, { windowStart: now, count: 1 });
+  } else {
+    entry.count += 1;
+  }
+}
+
 function parseCookies(header) {
   const cookies = {};
   if (!header) return cookies;
@@ -90,7 +117,16 @@ export default async function middleware(request) {
     return; // already authenticated, let the request through
   }
 
+  const ip = (request.headers.get("x-forwarded-for") || "unknown").split(",")[0].trim();
+
   if (request.method === "POST") {
+    if (tooManyAttempts(ip)) {
+      return new Response("Too many attempts — try again in a few minutes.", {
+        status: 429,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+
     const form = await request.formData();
     const submitted = (form.get("pin") || "").toString().trim();
 
@@ -103,6 +139,7 @@ export default async function middleware(request) {
       return new Response(null, { status: 302, headers });
     }
 
+    recordFailedAttempt(ip);
     return new Response(pinPage(true), {
       status: 401,
       headers: { "content-type": "text/html; charset=utf-8" },
