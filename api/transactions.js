@@ -21,7 +21,7 @@
 
 const PAGE_SIZE = 1000;
 
-async function fetchAllRows(url, serviceKey) {
+export async function fetchAllRows(url, serviceKey) {
   const rows = [];
   let from = 0;
 

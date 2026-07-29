@@ -112,22 +112,48 @@ This is implemented via `middleware.js` at the project root — a
 framework-agnostic Vercel feature (works on the free Hobby plan, unlike
 Vercel's built-in Password Protection which requires a paid add-on).
 
+## Running tests
+
+```bash
+npm test          # unit tests (Vitest) — pure logic + serverless functions + middleware
+npm run test:e2e   # one end-to-end smoke test (Playwright), mocked APIs, no real credentials needed
+```
+
+`npm test` is fast (no browser) and covers `src/logic.js` (filtering/grouping/date
+math), `api/transactions.js`, `api/query.js`, and `middleware.js`. `npm run
+test:e2e` builds the app, serves it locally, and drives it in a real browser
+with `/api/transactions` and `/api/query` mocked at the network layer.
+
+Both run in CI (`.github/workflows/ci.yml`) on every push/PR, gated in order:
+build → unit tests → smoke test, so a broken build or a fast unit-test
+failure surfaces before the slower browser test ever runs.
+
 ## Project structure
 
 ```
+├── .github/workflows/
+│   └── ci.yml           # build -> unit tests -> smoke test, on every push/PR
 ├── api/
 │   ├── query.js         # serverless proxy — holds the Anthropic key server-side
-│   └── transactions.js  # serverless proxy — reads Supabase with the service-role key
+│   ├── query.test.js
+│   ├── transactions.js  # serverless proxy — reads Supabase with the service-role key
+│   └── transactions.test.js
 ├── src/
 │   ├── App.jsx          # the dashboard (logic only, no embedded data)
+│   ├── logic.js         # pure filtering/grouping/date-math logic, unit tested
+│   ├── logic.test.js
 │   ├── styles.js        # shared inline-style objects for App.jsx
 │   └── main.jsx         # React entry point
+├── tests/e2e/
+│   └── dashboard.spec.js  # Playwright smoke test
 ├── public/
 │   ├── manifest.json    # PWA config
 │   └── icon-*.png       # app icons
 ├── middleware.js         # optional PIN gate (see above)
+├── middleware.test.js
+├── playwright.config.js
 ├── index.html
 ├── package.json
-├── vite.config.js
+├── vite.config.js       # includes Vitest's `test` config block
 └── vercel.json
 ```

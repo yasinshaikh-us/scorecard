@@ -13,11 +13,11 @@ const COOKIE_MAX_AGE_DAYS = 30;
 // Best-effort in-memory brute-force guard. State is per-isolate (resets on
 // cold start / redeploy, and isn't shared across edge regions), but it's
 // enough to stop a naive script from hammering a 4-8 digit PIN.
-const MAX_ATTEMPTS = 8;
+export const MAX_ATTEMPTS = 8;
 const WINDOW_MS = 5 * 60 * 1000;
 const attemptsByIp = new Map();
 
-function tooManyAttempts(ip) {
+export function tooManyAttempts(ip) {
   const now = Date.now();
   const entry = attemptsByIp.get(ip);
   if (!entry || now - entry.windowStart > WINDOW_MS) {
@@ -27,7 +27,7 @@ function tooManyAttempts(ip) {
   return entry.count >= MAX_ATTEMPTS;
 }
 
-function recordFailedAttempt(ip) {
+export function recordFailedAttempt(ip) {
   const now = Date.now();
   const entry = attemptsByIp.get(ip);
   if (!entry || now - entry.windowStart > WINDOW_MS) {
@@ -37,7 +37,7 @@ function recordFailedAttempt(ip) {
   }
 }
 
-function parseCookies(header) {
+export function parseCookies(header) {
   const cookies = {};
   if (!header) return cookies;
   header.split(";").forEach((pair) => {
@@ -50,13 +50,13 @@ function parseCookies(header) {
   return cookies;
 }
 
-async function sha256Hex(text) {
+export async function sha256Hex(text) {
   const data = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest("SHA-256", data);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function pinPage(showError, pinLength) {
+export function pinPage(showError, pinLength) {
   const len = pinLength >= 4 && pinLength <= 8 ? pinLength : 6;
   const boxes = Array.from({ length: len })
     .map((_, i) => `<input class="pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" data-idx="${i}" />`)

@@ -4,10 +4,12 @@ import {
   PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
 import { styles, tooltipStyle } from "./styles.js";
+import {
+  topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney,
+  filterTransactions, groupKeyOf, buildChartData,
+} from "./logic.js";
 
 let RAW_DATA = [];
-
-const topCategory = (cat) => (cat || "Uncategorized").split(":")[0];
 
 let CATS = [];
 let SUBCATS = [];
@@ -18,42 +20,11 @@ let MAX_DATE = "";
 // data + derived lookups that the rest of the app (and the system prompt) rely on.
 function loadData(rows) {
   RAW_DATA = rows;
-  CATS = [...new Set(RAW_DATA.map(d => topCategory(d.Category)))];
-  SUBCATS = [...new Set(RAW_DATA.map(d => d.Category.trim()))].sort();
-  if (RAW_DATA.length) {
-    MIN_DATE = RAW_DATA.reduce((a, d) => d.Date < a ? d.Date : a, RAW_DATA[0].Date);
-    MAX_DATE = RAW_DATA.reduce((a, d) => d.Date > a ? d.Date : a, RAW_DATA[0].Date);
-  }
+  ({ CATS, SUBCATS, MIN_DATE, MAX_DATE } = computeDataMeta(RAW_DATA));
 }
 
 const PALETTE = ["#3FA796", "#C1666B", "#E8B04B", "#7B8FA1", "#9B6B9E", "#5C9DAD", "#B98B5E", "#6E9F7E", "#A65D5D", "#8F7EBA", "#5E8B7E", "#C97D60", "#4E8FA8", "#B0567A", "#7EA85E", "#A87E4E", "#6E7EBA", "#C9A05E", "#8E6E9F", "#5E9B8E", "#B87E8E", "#7E9BA8", "#A8945E", "#8E7E5E"];
 const catColor = (cat) => PALETTE[CATS.indexOf(topCategory(cat)) % PALETTE.length];
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const fmtDate = (iso) => {
-  if (typeof iso !== "string" || !iso.includes("-")) return iso == null ? "" : String(iso);
-  const parts = iso.split("-");
-  if (parts.length < 3) return iso;
-  const [y, m, d] = parts;
-  const mi = parseInt(m, 10) - 1;
-  if (!MONTHS[mi] || isNaN(parseInt(d, 10))) return iso;
-  const yy = y.slice(-2);
-  return `${parseInt(d, 10)} ${MONTHS[mi]} ${yy}`;
-};
-const fmtMonth = (ym) => {
-  if (typeof ym !== "string" || !ym.includes("-")) return ym == null ? "" : String(ym);
-  const [y, m] = ym.split("-");
-  const mi = parseInt(m, 10) - 1;
-  if (!MONTHS[mi]) return ym;
-  return `${MONTHS[mi]} ${y.slice(-2)}`;
-};
-const isDateKey = (groupBy) => groupBy === "day" || groupBy === "week" || groupBy === "month";
-const fmtGroupKey = (k, groupBy) => groupBy === "month" ? fmtMonth(k) : (isDateKey(groupBy) ? fmtDate(k) : k);
-
-const fmtMoney = (n) => {
-  const sign = n < 0 ? "-" : "";
-  return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
 
 function buildSystemPrompt() {
   return `You translate a question about a personal bank-transaction ledger into a strict JSON filter/chart spec. Never compute totals yourself.
@@ -99,61 +70,14 @@ Rules:
 function QueryCard({ id, question, spec, error, onRemove }) {
   const [selectedKey, setSelectedKey] = useState(null);
 
-  const baseFiltered = useMemo(() => {
-    if (!spec) return [];
-    return RAW_DATA.filter(d => {
-      if (spec.categories && spec.categories.length && !spec.categories.includes(topCategory(d.Category))) return false;
-      if (spec.categoryContains && !d.Category.toLowerCase().includes(spec.categoryContains.toLowerCase())) return false;
-      if (spec.payeeContains && !d.Payee.toLowerCase().includes(spec.payeeContains.toLowerCase())) return false;
-      if (spec.dateStart && d.Date < spec.dateStart) return false;
-      if (spec.dateEnd && d.Date > spec.dateEnd) return false;
-      if (spec.type === "expense" && d.Amount >= 0) return false;
-      if (spec.type === "income" && d.Amount <= 0) return false;
-      const mag = Math.abs(d.Amount);
-      if (spec.amountMin != null && mag < spec.amountMin) return false;
-      if (spec.amountMax != null && mag > spec.amountMax) return false;
-      return true;
-    });
-  }, [spec]);
+  const baseFiltered = useMemo(() => filterTransactions(RAW_DATA, spec), [spec]);
 
-  const groupKeyOf = (d) => {
-    if (!spec) return "";
-    if (spec.groupBy === "category") return topCategory(d.Category);
-    if (spec.groupBy === "payee") return d.Payee;
-    if (spec.groupBy === "day") return d.Date;
-    if (spec.groupBy === "month") return d.Date.slice(0, 7);
-    if (spec.groupBy === "week") {
-      const dt = new Date(d.Date + "T00:00:00");
-      const day0 = new Date(dt);
-      day0.setDate(dt.getDate() - dt.getDay());
-      return day0.toISOString().slice(0, 10);
-    }
-    return "";
-  };
-
-  const chartData = useMemo(() => {
-    if (!spec || spec.groupBy === "none") return [];
-    const map = {};
-    baseFiltered.forEach(d => {
-      const k = groupKeyOf(d);
-      if (!map[k]) map[k] = { key: k, total: 0, count: 0 };
-      map[k].total += Math.abs(d.Amount);
-      map[k].count += 1;
-    });
-    let arr = Object.values(map);
-    if (spec.groupBy === "day" || spec.groupBy === "week" || spec.groupBy === "month") {
-      arr.sort((a, b) => a.key.localeCompare(b.key));
-    } else {
-      arr.sort((a, b) => b.total - a.total);
-    }
-    if (spec.groupBy === "payee" && arr.length > 10) arr = arr.slice(0, 10);
-    return arr;
-  }, [baseFiltered, spec]);
+  const chartData = useMemo(() => buildChartData(baseFiltered, spec), [baseFiltered, spec]);
 
   const displayed = useMemo(() => {
     if (!selectedKey) return baseFiltered;
-    return baseFiltered.filter(d => groupKeyOf(d) === selectedKey);
-  }, [baseFiltered, selectedKey]);
+    return baseFiltered.filter(d => groupKeyOf(spec, d) === selectedKey);
+  }, [baseFiltered, selectedKey, spec]);
 
   const stats = useMemo(() => {
     const expenses = displayed.filter(d => d.Amount < 0);
