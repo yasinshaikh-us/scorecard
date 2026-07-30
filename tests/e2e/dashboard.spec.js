@@ -12,6 +12,7 @@ const FIXTURE_ROWS = [
 ];
 
 const FIXTURE_SPEC = {
+  isLedgerQuery: true,
   categories: ["Groceries"],
   categoryContains: null,
   payeeContains: null,
@@ -50,4 +51,24 @@ test("asking a question renders only the matching transactions and a chart", asy
 
   // A chart rendered alongside the table.
   await expect(page.locator(".recharts-wrapper")).toBeVisible();
+});
+
+test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/api/query", (route) =>
+    route.fulfill({
+      json: { content: [{ type: "text", text: JSON.stringify({ isLedgerQuery: false }) }] },
+    })
+  );
+
+  await page.goto("/");
+
+  await page.getByRole("textbox").fill("What is the weather currently in New York?");
+  await page.getByRole("button", { name: "Ask" }).click();
+
+  await expect(page.getByText(/only answers questions about your own bank-transaction ledger/)).toBeVisible();
+
+  // No chart or transaction rows should have been rendered for a rejected question.
+  await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
+  await expect(page.getByText("Chase Mortgage")).toHaveCount(0);
 });
