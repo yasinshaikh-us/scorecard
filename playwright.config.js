@@ -24,5 +24,13 @@ export default defineConfig({
     port: 4173,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
+    env: {
+      // Needed at build time so the client bundle has values to read
+      // (see src/supabaseClient.js). auth.getSession() only ever reads
+      // the locally-seeded session from localStorage in this suite (see
+      // tests/e2e/dashboard.spec.js), so these never need to be real.
+      VITE_SUPABASE_URL: "https://e2e-test-project.supabase.co",
+      VITE_SUPABASE_ANON_KEY: "e2e-test-anon-key-not-real",
+    },
   },
 });

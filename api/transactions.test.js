@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import handler, { fetchAllRows } from "./transactions.js";
 
 const SUPABASE_URL = "https://project.supabase.co";
-const KEY = "test-key";
+const ANON_KEY = "test-anon-key";
+const ACCESS_TOKEN = "test-user-access-token";
 
 // Mimics Supabase/PostgREST's Range-header pagination: returns rows
 // [from, to] (inclusive, 0-indexed) out of a total, page size implied by
@@ -47,7 +48,7 @@ describe("fetchAllRows", () => {
 
   it("pages through multiple partial pages and returns every row (regression test for the Max Rows truncation bug)", async () => {
     global.fetch = fakeSupabaseFetch(2500);
-    const rows = await fetchAllRows(SUPABASE_URL, KEY);
+    const rows = await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(rows.length).toBe(2500);
     expect(global.fetch).toHaveBeenCalledTimes(3);
     expect(global.fetch.mock.calls[0][1].headers.Range).toBe("0-999");
@@ -57,29 +58,29 @@ describe("fetchAllRows", () => {
 
   it("makes one extra (empty) request when the total is an exact multiple of the page size", async () => {
     global.fetch = fakeSupabaseFetch(2000);
-    const rows = await fetchAllRows(SUPABASE_URL, KEY);
+    const rows = await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(rows.length).toBe(2000);
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   it("returns everything in one request when under a single page", async () => {
     global.fetch = fakeSupabaseFetch(3);
-    const rows = await fetchAllRows(SUPABASE_URL, KEY);
+    const rows = await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(rows.length).toBe(3);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("sends the key only on the apikey header (not Authorization)", async () => {
+  it("sends the anon key on apikey and the caller's own access token on Authorization", async () => {
     global.fetch = fakeSupabaseFetch(1);
-    await fetchAllRows(SUPABASE_URL, KEY);
+    await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     const headers = global.fetch.mock.calls[0][1].headers;
-    expect(headers.apikey).toBe(KEY);
-    expect(headers.Authorization).toBeUndefined();
+    expect(headers.apikey).toBe(ANON_KEY);
+    expect(headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
   });
 
   it("throws with the upstream status/body on failure", async () => {
     global.fetch = fakeSupabaseFetch(0, { failStatus: 503 });
-    await expect(fetchAllRows(SUPABASE_URL, KEY)).rejects.toMatchObject({
+    await expect(fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN)).rejects.toMatchObject({
       status: 503,
       body: { message: "boom" },
     });
@@ -92,7 +93,7 @@ describe("handler", () => {
 
   beforeEach(() => {
     process.env.SUPABASE_URL = SUPABASE_URL;
-    process.env.SUPABASE_SERVICE_ROLE_KEY = KEY;
+    process.env.VITE_SUPABASE_ANON_KEY = ANON_KEY;
   });
   afterEach(() => {
     global.fetch = realFetch;
@@ -101,21 +102,27 @@ describe("handler", () => {
 
   it("rejects non-GET methods", async () => {
     const res = fakeRes();
-    await handler({ method: "POST" }, res);
+    await handler({ method: "POST", headers: {} }, res);
     expect(res.statusCode).toBe(405);
   });
 
   it("500s when env vars are missing", async () => {
     delete process.env.SUPABASE_URL;
     const res = fakeRes();
-    await handler({ method: "GET" }, res);
+    await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
     expect(res.statusCode).toBe(500);
+  });
+
+  it("401s when there's no Authorization header (defense in depth alongside middleware.js)", async () => {
+    const res = fakeRes();
+    await handler({ method: "GET", headers: {} }, res);
+    expect(res.statusCode).toBe(401);
   });
 
   it("maps date/payee/category/amount to Date/Payee/Category/Amount with Amount coerced to a number", async () => {
     global.fetch = fakeSupabaseFetch(2);
     const res = fakeRes();
-    await handler({ method: "GET" }, res);
+    await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual([
       { Date: "2024-01-01", Payee: "Payee0", Category: "Groceries", Amount: -1.5 },
@@ -126,7 +133,7 @@ describe("handler", () => {
   it("passes through the upstream status and error body on failure", async () => {
     global.fetch = fakeSupabaseFetch(0, { failStatus: 503 });
     const res = fakeRes();
-    await handler({ method: "GET" }, res);
+    await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
     expect(res.statusCode).toBe(503);
     expect(res.body).toEqual({ error: { message: "boom" } });
   });
