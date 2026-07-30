@@ -98,19 +98,28 @@ By default the app is public to anyone with the URL. To require a PIN:
 
 1. In Vercel: **Project Settings → Environment Variables**
 2. Add `SITE_PIN` = a 4-8 digit number of your choice (e.g. `4821`), for all three environments (Production, Preview, Development)
-3. Push/redeploy
+3. Add `SESSION_SECRET` = a long random string (e.g. `openssl rand -hex 32`), for all three environments too
+4. Push/redeploy
 
 Visiting the app now shows a PIN entry screen first. Enter it once and it's
-remembered on that browser/device for 30 days via a cookie — no need to
-re-enter it every time you open the PWA.
+remembered on that browser/device for 30 days via a signed, `httpOnly`
+session cookie — no need to re-enter it every time you open the PWA.
 
 To remove the lock entirely, delete the `SITE_PIN` environment variable and
 redeploy (the middleware auto-disables itself if `SITE_PIN` isn't set, so
-you're never at risk of being locked out by a misconfiguration).
+you're never at risk of being locked out by a misconfiguration). If
+`SITE_PIN` is set but `SESSION_SECRET` isn't, the app fails closed (500)
+instead — a signed session needs a real secret, so it refuses to run with
+one missing rather than falling back to something weaker.
 
 This is implemented via `middleware.js` at the project root — a
 framework-agnostic Vercel feature (works on the free Hobby plan, unlike
-Vercel's built-in Password Protection which requires a paid add-on).
+Vercel's built-in Password Protection which requires a paid add-on). The
+PIN comparison and session token (`lib/auth.js`) are timing-safe and
+HMAC-signed with an expiry, and repeated wrong guesses from the same IP are
+throttled (8 attempts per 5-minute window) — the same design used by the
+`location` app's `lib/auth.ts`/`middleware.ts`, so both PIN gates share one
+security model.
 
 ## Running tests
 

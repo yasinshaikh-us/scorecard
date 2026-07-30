@@ -1,64 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import middleware, {
-  pinPage, parseCookies, sha256Hex, tooManyAttempts, recordFailedAttempt, MAX_ATTEMPTS,
-} from "./middleware.js";
-
-describe("parseCookies", () => {
-  it("returns an empty object for a missing/empty header", () => {
-    expect(parseCookies(null)).toEqual({});
-    expect(parseCookies("")).toEqual({});
-  });
-
-  it("parses a single cookie", () => {
-    expect(parseCookies("analysis_auth=abc123")).toEqual({ analysis_auth: "abc123" });
-  });
-
-  it("parses multiple cookies and decodes values", () => {
-    const out = parseCookies("a=1; b=hello%20world; c=3");
-    expect(out).toEqual({ a: "1", b: "hello world", c: "3" });
-  });
-});
-
-describe("sha256Hex", () => {
-  it("is deterministic for the same input", async () => {
-    const a = await sha256Hex("hello:world");
-    const b = await sha256Hex("hello:world");
-    expect(a).toBe(b);
-  });
-
-  it("produces a 64-char lowercase hex string", async () => {
-    const hash = await sha256Hex("anything");
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it("differs for different input", async () => {
-    const a = await sha256Hex("pin1");
-    const b = await sha256Hex("pin2");
-    expect(a).not.toBe(b);
-  });
-});
-
-describe("tooManyAttempts / recordFailedAttempt", () => {
-  it("a fresh IP is never too many", () => {
-    expect(tooManyAttempts("10.0.0.1")).toBe(false);
-  });
-
-  it("locks out after MAX_ATTEMPTS failures from the same IP", () => {
-    const ip = "10.0.0.2";
-    expect(tooManyAttempts(ip)).toBe(false); // seeds the window
-    for (let i = 0; i < MAX_ATTEMPTS; i++) recordFailedAttempt(ip);
-    expect(tooManyAttempts(ip)).toBe(true);
-  });
-
-  it("doesn't affect other IPs", () => {
-    const ip = "10.0.0.3";
-    const otherIp = "10.0.0.4";
-    tooManyAttempts(ip);
-    for (let i = 0; i < MAX_ATTEMPTS; i++) recordFailedAttempt(ip);
-    expect(tooManyAttempts(ip)).toBe(true);
-    expect(tooManyAttempts(otherIp)).toBe(false);
-  });
-});
+import { describe, it, expect, afterEach } from "vitest";
+import middleware, { pinPage } from "./middleware.js";
+import {
+  createSessionToken,
+  SESSION_COOKIE_NAME,
+  MAX_ATTEMPTS,
+} from "./lib/auth.js";
 
 describe("pinPage", () => {
   it("renders one .pin-box input per PIN digit", () => {
@@ -92,8 +38,17 @@ describe("middleware", () => {
     expect(await middleware(req)).toBeUndefined();
   });
 
+  it("fails closed (500) when SITE_PIN is set but SESSION_SECRET isn't", async () => {
+    process.env.SITE_PIN = "4821";
+    delete process.env.SESSION_SECRET;
+    const req = new Request("http://x.test/");
+    const res = await middleware(req);
+    expect(res.status).toBe(500);
+  });
+
   it("shows the PIN page (401) for a GET request with no valid cookie", async () => {
     process.env.SITE_PIN = "4821";
+    process.env.SESSION_SECRET = "test-session-secret";
     const req = new Request("http://x.test/", { headers: { "x-forwarded-for": "10.1.0.1" } });
     const res = await middleware(req);
     expect(res).toBeInstanceOf(Response);
@@ -101,17 +56,50 @@ describe("middleware", () => {
     expect(await res.text()).toContain("Enter your PIN");
   });
 
-  it("passes through when the request has the correct auth cookie", async () => {
+  it("passes through when the request has a valid session cookie", async () => {
     process.env.SITE_PIN = "4821";
-    const expected = await sha256Hex("4821:analysis-lock");
+    process.env.SESSION_SECRET = "test-session-secret";
+    const token = await createSessionToken();
     const req = new Request("http://x.test/", {
-      headers: { cookie: `analysis_auth=${expected}`, "x-forwarded-for": "10.1.0.2" },
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${token}`, "x-forwarded-for": "10.1.0.2" },
     });
     expect(await middleware(req)).toBeUndefined();
   });
 
-  it("sets the auth cookie and redirects on a correct PIN submission", async () => {
+  it("rejects a malformed cookie the same way as a missing one", async () => {
     process.env.SITE_PIN = "4821";
+    process.env.SESSION_SECRET = "test-session-secret";
+    const req = new Request("http://x.test/", {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=garbage`, "x-forwarded-for": "10.1.0.6" },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an expired session token even if otherwise well-formed", async () => {
+    process.env.SITE_PIN = "4821";
+    process.env.SESSION_SECRET = "test-session-secret";
+    const expiry = Date.now() - 1000;
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode("test-session-secret"),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(String(expiry)));
+    const mac = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const req = new Request("http://x.test/", {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${expiry}.${mac}`, "x-forwarded-for": "10.1.0.7" },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(401);
+  });
+
+  it("sets a session cookie and redirects on a correct PIN submission", async () => {
+    process.env.SITE_PIN = "4821";
+    process.env.SESSION_SECRET = "test-session-secret";
     const req = new Request("http://x.test/", {
       method: "POST",
       headers: { "x-forwarded-for": "10.1.0.3" },
@@ -119,12 +107,16 @@ describe("middleware", () => {
     });
     const res = await middleware(req);
     expect(res.status).toBe(302);
-    const expected = await sha256Hex("4821:analysis-lock");
-    expect(res.headers.get("set-cookie")).toContain(`analysis_auth=${expected}`);
+
+    const setCookie = res.headers.get("set-cookie");
+    expect(setCookie).toContain(`${SESSION_COOKIE_NAME}=`);
+    expect(setCookie.toLowerCase()).toContain("httponly");
+    expect(setCookie.toLowerCase()).toContain("samesite=lax");
   });
 
   it("rejects an incorrect PIN submission with a 401 error page", async () => {
     process.env.SITE_PIN = "4821";
+    process.env.SESSION_SECRET = "test-session-secret";
     const req = new Request("http://x.test/", {
       method: "POST",
       headers: { "x-forwarded-for": "10.1.0.4" },
@@ -137,6 +129,7 @@ describe("middleware", () => {
 
   it("locks out an IP with 429 after MAX_ATTEMPTS wrong PIN submissions", async () => {
     process.env.SITE_PIN = "4821";
+    process.env.SESSION_SECRET = "test-session-secret";
     const ip = "10.1.0.5";
     const wrongPinReq = () =>
       new Request("http://x.test/", {
