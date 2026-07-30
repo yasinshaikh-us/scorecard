@@ -32,12 +32,15 @@ jobs:
   smoke-test:
     needs: unit-tests
     runs-on: ubuntu-latest
+    # Pinned to the exact @playwright/test version in package-lock.json —
+    # Playwright's browser binaries are version-locked to the test runner,
+    # so this tag must be bumped alongside any @playwright/test upgrade.
+    # Ships Chromium/Firefox/WebKit pre-installed, skipping the slowest
+    # step in this job (`playwright install --with-deps`, an apt install
+    # of ~100+ system packages plus the browser download).
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.0-jammy
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
