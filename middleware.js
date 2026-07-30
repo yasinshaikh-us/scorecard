@@ -2,59 +2,33 @@
 // Gates the whole app behind a numeric PIN. Free, works on the Hobby plan,
 // framework-agnostic (not a Next.js-only feature).
 //
-// Setup: add an environment variable SITE_PIN (e.g. "4821") in
-// Vercel -> Project Settings -> Environment Variables, then redeploy.
-// If SITE_PIN is not set, the gate is skipped (app stays open) so you
-// never get locked out by forgetting to configure it.
+// Setup: add SITE_PIN (e.g. "4821") and SESSION_SECRET (any long random
+// string, e.g. `openssl rand -hex 32`) in Vercel -> Project Settings ->
+// Environment Variables, then redeploy.
+//
+// If SITE_PIN is not set, the gate is skipped entirely (app stays open)
+// so you never get locked out by forgetting to configure it. SESSION_SECRET
+// has no such fallback: if SITE_PIN is set but SESSION_SECRET isn't, the
+// app fails closed (500) rather than issuing a session cookie with no
+// integrity check — same behavior as the location app's middleware.
+//
+// Session verification, PIN comparison, and the brute-force guard all live
+// in lib/auth.js, which mirrors the location app's lib/auth.ts: HMAC-signed
+// expiring session tokens and timing-safe comparisons throughout.
 
-const COOKIE_NAME = "analysis_auth";
-const COOKIE_MAX_AGE_DAYS = 30;
+import {
+  SESSION_COOKIE_NAME,
+  SESSION_MAX_AGE_SECONDS,
+  MAX_ATTEMPTS,
+  tooManyAttempts,
+  recordFailedAttempt,
+  parseCookies,
+  createSessionToken,
+  verifySessionToken,
+  verifyPin,
+} from "./lib/auth.js";
 
-// Best-effort in-memory brute-force guard. State is per-isolate (resets on
-// cold start / redeploy, and isn't shared across edge regions), but it's
-// enough to stop a naive script from hammering a 4-8 digit PIN.
-export const MAX_ATTEMPTS = 8;
-const WINDOW_MS = 5 * 60 * 1000;
-const attemptsByIp = new Map();
-
-export function tooManyAttempts(ip) {
-  const now = Date.now();
-  const entry = attemptsByIp.get(ip);
-  if (!entry || now - entry.windowStart > WINDOW_MS) {
-    attemptsByIp.set(ip, { windowStart: now, count: 0 });
-    return false;
-  }
-  return entry.count >= MAX_ATTEMPTS;
-}
-
-export function recordFailedAttempt(ip) {
-  const now = Date.now();
-  const entry = attemptsByIp.get(ip);
-  if (!entry || now - entry.windowStart > WINDOW_MS) {
-    attemptsByIp.set(ip, { windowStart: now, count: 1 });
-  } else {
-    entry.count += 1;
-  }
-}
-
-export function parseCookies(header) {
-  const cookies = {};
-  if (!header) return cookies;
-  header.split(";").forEach((pair) => {
-    const idx = pair.indexOf("=");
-    if (idx === -1) return;
-    const k = pair.slice(0, idx).trim();
-    const v = pair.slice(idx + 1).trim();
-    cookies[k] = decodeURIComponent(v);
-  });
-  return cookies;
-}
-
-export async function sha256Hex(text) {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+export { MAX_ATTEMPTS, tooManyAttempts, recordFailedAttempt, parseCookies };
 
 export function pinPage(showError, pinLength) {
   const len = pinLength >= 4 && pinLength <= 8 ? pinLength : 6;
@@ -160,10 +134,15 @@ export default async function middleware(request) {
   const PIN = process.env.SITE_PIN;
   if (!PIN) return; // not configured — don't lock anyone out
 
-  const cookies = parseCookies(request.headers.get("cookie"));
-  const expected = await sha256Hex(PIN + ":analysis-lock");
+  if (!process.env.SESSION_SECRET) {
+    return new Response("Server misconfigured: SESSION_SECRET is not set.", {
+      status: 500,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
 
-  if (cookies[COOKIE_NAME] === expected) {
+  const cookies = parseCookies(request.headers.get("cookie"));
+  if (await verifySessionToken(cookies[SESSION_COOKIE_NAME])) {
     return; // already authenticated, let the request through
   }
 
@@ -180,11 +159,12 @@ export default async function middleware(request) {
     const form = await request.formData();
     const submitted = (form.get("pin") || "").toString().trim();
 
-    if (submitted === PIN) {
+    if (verifyPin(submitted)) {
+      const token = await createSessionToken();
       const headers = new Headers({ Location: request.url });
       headers.append(
         "Set-Cookie",
-        `${COOKIE_NAME}=${expected}; Path=/; Max-Age=${COOKIE_MAX_AGE_DAYS * 86400}; HttpOnly; Secure; SameSite=Lax`
+        `${SESSION_COOKIE_NAME}=${token}; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}; HttpOnly; Secure; SameSite=Lax`
       );
       return new Response(null, { status: 302, headers });
     }
