@@ -4,6 +4,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
 import { styles, tooltipStyle } from "./styles.js";
+import ThemeToggle from "./ThemeToggle.jsx";
 import {
   topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney,
   filterTransactions, groupKeyOf, buildChartData,
@@ -106,7 +107,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
           <div style={styles.qLabel}>"{question}"</div>
           <button onClick={onRemove} style={styles.closeBtn}>&times;</button>
         </div>
-        <div style={{ color: "#C1666B", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: "8px 0" }}>
+        <div style={{ color: "var(--danger)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>
           Couldn't parse that one — try rephrasing. ({error})
         </div>
       </div>
@@ -119,7 +120,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
           <div style={styles.qLabel}>"{question}"</div>
           <button onClick={onRemove} style={styles.closeBtn}>&times;</button>
         </div>
-        <div style={{ color: "#8B93A0", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: "8px 0" }}>
+        <div style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>
           This app only answers questions about your own bank-transaction ledger — try something like "how much did I spend on groceries last month?"
         </div>
       </div>
@@ -153,31 +154,31 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
                 >
                   {chartData.map((d, i) => (
                     <Cell key={i} fill={spec.groupBy === "category" ? catColor(d.key) : PALETTE[i % PALETTE.length]}
-                      stroke={selectedKey === d.key ? "#EDE8DE" : "none"} strokeWidth={2} />
+                      stroke={selectedKey === d.key ? "var(--text)" : "none"} strokeWidth={2} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
               </PieChart>
             ) : spec.chartType === "line" ? (
               <LineChart data={chartData}>
-                <CartesianGrid stroke="#2A313B" strokeDasharray="2 4" />
-                <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "#8B93A0", fontSize: 11, fontFamily: "Inter" }} />
-                <YAxis tick={{ fill: "#8B93A0", fontSize: 11, fontFamily: "Inter" }} />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" />
+                <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
                 <Tooltip labelFormatter={(k) => fmtGroupKey(k, spec.groupBy)} formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
-                <Line type="monotone" dataKey="total" stroke="#3FA796" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="total" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             ) : (
               <BarChart data={chartData} layout={spec.groupBy === "payee" ? "vertical" : "horizontal"}>
-                <CartesianGrid stroke="#2A313B" strokeDasharray="2 4" />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" />
                 {spec.groupBy === "payee" ? (
                   <>
-                    <XAxis type="number" tick={{ fill: "#8B93A0", fontSize: 11, fontFamily: "Inter" }} />
-                    <YAxis type="category" dataKey="key" width={120} tick={{ fill: "#8B93A0", fontSize: 11, fontFamily: "Inter" }} />
+                    <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
+                    <YAxis type="category" dataKey="key" width={120} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
                   </>
                 ) : (
                   <>
-                    <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "#8B93A0", fontSize: 11, fontFamily: "Inter" }} />
-                    <YAxis tick={{ fill: "#8B93A0", fontSize: 11, fontFamily: "Inter" }} />
+                    <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
+                    <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
                   </>
                 )}
                 <Tooltip labelFormatter={(k) => fmtGroupKey(k, spec.groupBy)} formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
@@ -185,7 +186,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
                   onClick={(d) => { const k = d && (d.payload ? d.payload.key : d.key); if (k !== undefined) setSelectedKey(selectedKey === k ? null : k); }}>
                   {chartData.map((d, i) => (
                     <Cell key={i}
-                      fill={spec.groupBy === "category" ? catColor(d.key) : "#3FA796"}
+                      fill={spec.groupBy === "category" ? catColor(d.key) : "var(--accent)"}
                       opacity={selectedKey && selectedKey !== d.key ? 0.35 : 1} />
                   ))}
                 </Bar>
@@ -214,20 +215,20 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
           <tbody>
             {sortedRows.map((d, i) => (
               <tr key={i}>
-                <td style={styles.td}>{fmtDate(d.Date)}</td>
+                <td style={{ ...styles.td, ...styles.mono }}>{fmtDate(d.Date)}</td>
                 <td style={styles.td}>{d.Payee}</td>
                 <td style={styles.td}>
                   <span style={{ ...styles.tag, background: catColor(d.Category) + "26", color: catColor(d.Category) }}>
                     {topCategory(d.Category)}
                   </span>
                 </td>
-                <td style={{ ...styles.td, textAlign: "right", fontFamily: "'Inter', sans-serif", color: d.Amount < 0 ? "#C1666B" : "#3FA796" }}>
+                <td style={{ ...styles.td, ...styles.mono, textAlign: "right", color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
                   {fmtMoney(d.Amount)}
                 </td>
               </tr>
             ))}
             {sortedRows.length === 0 && (
-              <tr><td colSpan={4} style={{ ...styles.td, textAlign: "center", color: "#5A6270" }}>No matching transactions</td></tr>
+              <tr><td colSpan={4} style={{ ...styles.td, textAlign: "center", color: "var(--text-faint)" }}>No matching transactions</td></tr>
             )}
           </tbody>
         </table>
@@ -301,23 +302,22 @@ export default function LedgerDashboard() {
   return (
     <div style={styles.page}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-        * { box-sizing: border-box; }
-        ::placeholder { color: #5A6270; }
+        ::placeholder { color: var(--text-faint); }
         button:disabled { opacity: 0.3; cursor: default; }
       `}</style>
 
       <div style={styles.header}>
         <div style={styles.brand}>Analysis</div>
+        <ThemeToggle />
       </div>
 
       {dataStatus === "loading" && (
-        <div style={{ textAlign: "center", color: "#8B93A0", fontSize: 13, fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, fontFamily: "var(--font-body)" }}>
           Loading transaction data…
         </div>
       )}
       {dataStatus === "error" && (
-        <div style={{ textAlign: "center", color: "#C1666B", fontSize: 13, fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ textAlign: "center", color: "var(--danger)", fontSize: 13, fontFamily: "var(--font-body)" }}>
           Couldn't load transaction data — check the Supabase connection.
         </div>
       )}
@@ -342,7 +342,7 @@ export default function LedgerDashboard() {
         {cards.map(c => c.pending ? (
           <div key={c.id} style={styles.card}>
             <div style={styles.qLabel}>"{c.question}"</div>
-            <div style={{ color: "#5A6270", fontFamily: "'Inter', sans-serif", fontSize: 13, padding: "8px 0" }}>thinking…</div>
+            <div style={{ color: "var(--text-faint)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>thinking…</div>
           </div>
         ) : (
           <QueryCard key={c.id} {...c} onRemove={() => setCards(prev => prev.filter(x => x.id !== c.id))} />
