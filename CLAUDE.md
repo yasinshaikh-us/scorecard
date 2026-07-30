@@ -32,3 +32,14 @@ Claude does not need to call `subscribe_pr_activity` (or wait for
 it owns. Check PR/CI state directly (e.g. `pull_request_read`) and act
 once the merge criteria above are met — no need to subscribe to or wait
 on GitHub webhook notifications first.
+
+## CI check-in cadence
+
+GitHub webhooks reliably push CI *failures* into the conversation, but not
+CI *success* — so catching the moment a PR goes green still requires
+polling, not just waiting for a notification. This repo's CI pipeline
+(build -> unit-tests -> smoke-test) typically finishes in well under two
+minutes end-to-end, so poll roughly once a minute after opening a PR,
+not every 8-10 minutes — merge as soon as the merge-authorization criteria
+above are satisfied instead of leaving a green PR sitting unmerged for
+several extra minutes.
