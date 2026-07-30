@@ -41,36 +41,81 @@ export function pinPage(showError, pinLength) {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#14181D" />
 <title>Analysis</title>
+<script>
+  // Blocking (runs before first paint) so the PIN screen honors a saved
+  // theme choice immediately, same mechanism as index.html/App.jsx.
+  (function () {
+    try {
+      var stored = localStorage.getItem("theme");
+      var theme = stored === "light" || stored === "dark"
+        ? stored
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    } catch (e) {}
+  })();
+</script>
 <style>
+  :root {
+    --bg: #F7F4EC; --surface-recessed: #EFEBE0; --border: #DEDACC;
+    --text: #1B1F24; --text-muted: #5B6470; --text-faint: #8A93A0;
+    --accent: #1F7A6C; --accent-strong: #175E53; --danger: #A23F49;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181D; --surface-recessed: #171B21; --border: #2A313B;
+      --text: #EDE8DE; --text-muted: #8B93A0; --text-faint: #5A6270;
+      --accent: #3FA796; --accent-strong: #2C8577; --danger: #C1666B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181D; --surface-recessed: #171B21; --border: #2A313B;
+    --text: #EDE8DE; --text-muted: #8B93A0; --text-faint: #5A6270;
+    --accent: #3FA796; --accent-strong: #2C8577; --danger: #C1666B;
+  }
+  :root[data-theme="light"] {
+    --bg: #F7F4EC; --surface-recessed: #EFEBE0; --border: #DEDACC;
+    --text: #1B1F24; --text-muted: #5B6470; --text-faint: #8A93A0;
+    --accent: #1F7A6C; --accent-strong: #175E53; --danger: #A23F49;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #10141B; font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg); font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
-  .wrap { width: 320px; padding: 24px; text-align: center; }
+  .wrap { width: 320px; padding: 24px; text-align: center; position: relative; }
+  .theme-toggle {
+    position: absolute; top: 0; right: 0;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--border); background: transparent; color: var(--text-faint);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
   .icon-badge {
     width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 20px;
-    background: linear-gradient(135deg, #3FA796, #2C8577);
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 10px 24px rgba(63, 167, 150, 0.28);
   }
-  h1 { color: #EDE8DE; font-size: 19px; font-weight: 600; margin: 0 0 6px; }
-  .sub { color: #8B93A0; font-size: 13px; margin: 0 0 26px; }
-  .err { color: #C1666B; font-size: 13px; margin: -14px 0 18px; }
+  h1 { color: var(--text); font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+  .sub { color: var(--text-muted); font-size: 13px; margin: 0 0 26px; }
+  .err { color: var(--danger); font-size: 13px; margin: -14px 0 18px; }
   form { margin: 0; }
   .pin-row { display: flex; gap: 10px; justify-content: center; margin-bottom: 26px; }
   .pin-box {
     width: 42px; height: 52px; text-align: center; font-size: 22px; font-weight: 600;
-    border-radius: 10px; border: 1px solid #2A313B; background: #171B21; color: #EDE8DE;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface-recessed); color: var(--text);
     outline: none; -webkit-text-security: disc;
   }
-  .pin-box:focus { border-color: #3FA796; box-shadow: 0 0 0 3px rgba(63, 167, 150, 0.18); }
-  .help { color: #5A6270; font-size: 12px; line-height: 1.6; max-width: 280px; margin: 0 auto; }
+  .pin-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(63, 167, 150, 0.18); }
+  .help { color: var(--text-faint); font-size: 12px; line-height: 1.6; max-width: 280px; margin: 0 auto; }
 </style>
 </head>
 <body>
   <div class="wrap">
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme">
+      <svg id="theme-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+    </button>
     <div class="icon-badge">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="5" y="11" width="14" height="9" rx="2.5" stroke="#0E1218" stroke-width="1.8"/>
@@ -124,6 +169,26 @@ export function pinPage(showError, pinLength) {
       });
 
       if (boxesEls[0]) boxesEls[0].focus();
+
+      // Theme toggle: same sun/moon-icon convention as the rest of the app.
+      var SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>';
+      var MOON = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+      var toggleBtn = document.getElementById("theme-toggle");
+      var icon = document.getElementById("theme-icon");
+      function paintIcon() {
+        var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        icon.innerHTML = isDark ? SUN : MOON;
+      }
+      paintIcon();
+      toggleBtn.addEventListener("click", function () {
+        var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        try { localStorage.setItem("theme", next); } catch (e) {}
+        document.querySelector('meta[name="theme-color"]').setAttribute(
+          "content", next === "dark" ? "#14181D" : "#F7F4EC"
+        );
+        paintIcon();
+      });
     })();
   </script>
 </body>
