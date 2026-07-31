@@ -1,7 +1,10 @@
 // Vercel serverless function.
-// Runs server-side only. Set SUPABASE_URL and VITE_SUPABASE_ANON_KEY in
-// your Vercel project's Environment Variables (Project Settings ->
-// Environment Variables), not here.
+// Runs server-side only. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+// in your Vercel project's Environment Variables (Project Settings ->
+// Environment Variables), not here. Same two vars the browser bundle
+// uses (see src/supabaseClient.js) — deliberately one shared pair rather
+// than a separate server-only SUPABASE_URL, so there's only one place to
+// configure and no chance of the two drifting apart.
 //
 // This forwards the caller's own Supabase access token (the Authorization
 // header middleware.js already validated) straight through to PostgREST,
@@ -57,10 +60,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const url = process.env.SUPABASE_URL;
+  const url = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
-    res.status(500).json({ error: "SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set on the server." });
+    res.status(500).json({ error: "VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set on the server." });
     return;
   }
 

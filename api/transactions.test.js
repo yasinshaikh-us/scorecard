@@ -92,7 +92,7 @@ describe("handler", () => {
   const realEnv = { ...process.env };
 
   beforeEach(() => {
-    process.env.SUPABASE_URL = SUPABASE_URL;
+    process.env.VITE_SUPABASE_URL = SUPABASE_URL;
     process.env.VITE_SUPABASE_ANON_KEY = ANON_KEY;
   });
   afterEach(() => {
@@ -107,7 +107,7 @@ describe("handler", () => {
   });
 
   it("500s when env vars are missing", async () => {
-    delete process.env.SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_URL;
     const res = fakeRes();
     await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
     expect(res.statusCode).toBe(500);

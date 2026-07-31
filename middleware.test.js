@@ -15,7 +15,7 @@ describe("middleware", () => {
   const realFetch = global.fetch;
 
   beforeEach(() => {
-    process.env.SUPABASE_URL = SUPABASE_URL;
+    process.env.VITE_SUPABASE_URL = SUPABASE_URL;
     process.env.VITE_SUPABASE_ANON_KEY = ANON_KEY;
   });
   afterEach(() => {
@@ -34,7 +34,7 @@ describe("middleware", () => {
   });
 
   it("500s an API request when Supabase env vars aren't configured", async () => {
-    delete process.env.SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_URL;
     const res = await middleware(req("/api/transactions", { authorization: "Bearer x" }));
     expect(res.status).toBe(500);
   });
