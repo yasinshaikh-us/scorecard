@@ -1,5 +1,34 @@
 import { test, expect } from "@playwright/test";
 
+// Auth is Google OAuth via Supabase (see middleware.js, src/Login.jsx);
+// a real "Continue with Google" flow can't be driven headlessly here, so
+// instead of signing in for real, each authenticated test seeds a
+// locally-fabricated (unsigned, never sent anywhere) session directly
+// into localStorage under supabase-js's own storage key — that's enough
+// for auth.getSession() to resolve locally without a network call, which
+// is all App.jsx's auth gate checks before rendering the dashboard.
+// Actual data access is still fully mocked at the network layer below, so
+// this needs no real Supabase/Anthropic credentials either way.
+const FAKE_ACCESS_TOKEN =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMTExMTExMS0xMTExLTExMTEtMTExMS0xMTExMTExMTExMTEiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJleHAiOjQwNzA5MDg4MDAsInJvbGUiOiJhdXRoZW50aWNhdGVkIn0.fakesignature";
+
+async function signInFake(page) {
+  await page.addInitScript((jwt) => {
+    const session = {
+      access_token: jwt,
+      token_type: "bearer",
+      expires_in: 3600,
+      expires_at: 4070908800,
+      refresh_token: "fake-refresh-token",
+      user: { id: "11111111-1111-1111-1111-111111111111", email: "test@example.com" },
+    };
+    // Storage key format is supabase-js's own convention:
+    // `sb-<project-ref>-auth-token`, ref parsed from VITE_SUPABASE_URL
+    // (playwright.config.js sets it to https://e2e-test-project.supabase.co).
+    localStorage.setItem("sb-e2e-test-project-auth-token", JSON.stringify(session));
+  }, FAKE_ACCESS_TOKEN);
+}
+
 // Fixture data standing in for what /api/transactions (Supabase) would
 // return, and a canned filter spec standing in for what /api/query
 // (Anthropic) would return for a "how much did I spend on groceries?"
@@ -26,7 +55,14 @@ const FIXTURE_SPEC = {
   title: "Grocery spending",
 };
 
+test("an unauthenticated visitor sees the Google sign-in screen, not the dashboard", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Continue with Google" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ask" })).toHaveCount(0);
+});
+
 test("asking a question renders only the matching transactions and a chart", async ({ page }) => {
+  await signInFake(page);
   await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   await page.route("**/api/query", (route) =>
     route.fulfill({
@@ -54,6 +90,7 @@ test("asking a question renders only the matching transactions and a chart", asy
 });
 
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
+  await signInFake(page);
   await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   await page.route("**/api/query", (route) =>
     route.fulfill({

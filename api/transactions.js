@@ -1,17 +1,14 @@
 // Vercel serverless function.
-// Runs server-side only — this is where your Supabase service-role key
-// actually lives. The browser never sees it. Set SUPABASE_URL and
-// SUPABASE_SERVICE_ROLE_KEY in your Vercel project's Environment Variables
-// (Project Settings -> Environment Variables), not here.
+// Runs server-side only. Set SUPABASE_URL and VITE_SUPABASE_ANON_KEY in
+// your Vercel project's Environment Variables (Project Settings ->
+// Environment Variables), not here.
 //
-// SUPABASE_SERVICE_ROLE_KEY accepts either Supabase key format: the legacy
-// service_role JWT, or the newer sb_secret_... key. Only send it on the
-// apikey header — the newer format isn't a JWT and gets rejected if also
-// sent as an Authorization: Bearer token.
-//
-// Row Level Security is enabled on the `transactions` table with no
-// policies, so the anon/publishable key has zero access — only the
-// service-role key (used here, server-side only) can read it.
+// This forwards the caller's own Supabase access token (the Authorization
+// header middleware.js already validated) straight through to PostgREST,
+// rather than using the service-role key — that's what makes
+// `transactions`' `auth.uid() = user_id` RLS policy the thing actually
+// restricting each request to its own rows, instead of app code doing it.
+// The service-role key never appears in this file.
 //
 // Supabase's Data API caps every request at a project-configured "Max Rows"
 // value (1000 by default) no matter what `limit` we ask for, so a single
@@ -21,7 +18,7 @@
 
 const PAGE_SIZE = 1000;
 
-export async function fetchAllRows(url, serviceKey) {
+export async function fetchAllRows(url, anonKey, accessToken) {
   const rows = [];
   let from = 0;
 
@@ -30,7 +27,8 @@ export async function fetchAllRows(url, serviceKey) {
       `${url}/rest/v1/transactions?select=date,payee,category,amount&order=date.asc`,
       {
         headers: {
-          apikey: serviceKey,
+          apikey: anonKey,
+          Authorization: `Bearer ${accessToken}`,
           Range: `${from}-${from + PAGE_SIZE - 1}`,
         },
       }
@@ -60,14 +58,20 @@ export default async function handler(req, res) {
   }
 
   const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) {
-    res.status(500).json({ error: "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set on the server." });
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    res.status(500).json({ error: "SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set on the server." });
+    return;
+  }
+
+  const accessToken = (req.headers.authorization || "").match(/^Bearer (.+)$/i)?.[1];
+  if (!accessToken) {
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
   try {
-    const rows = await fetchAllRows(url, serviceKey);
+    const rows = await fetchAllRows(url, anonKey, accessToken);
 
     const data = rows.map((r) => ({
       Date: r.date,

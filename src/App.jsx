@@ -5,6 +5,8 @@ import {
 } from "recharts";
 import { styles, tooltipStyle } from "./styles.js";
 import ThemeToggle from "./ThemeToggle.jsx";
+import Login from "./Login.jsx";
+import { getSupabaseClient } from "./supabaseClient.js";
 import {
   topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney,
   filterTransactions, groupKeyOf, buildChartData,
@@ -237,7 +239,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
   );
 }
 
-export default function LedgerDashboard() {
+function LedgerDashboard({ accessToken, onSignOut }) {
   const [input, setInput] = useState("");
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -247,7 +249,9 @@ export default function LedgerDashboard() {
   const [dataStatus, setDataStatus] = useState("loading"); // "loading" | "ready" | "error"
 
   useEffect(() => {
-    fetch("/api/transactions")
+    fetch("/api/transactions", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
       .then(res => {
         if (!res.ok) throw new Error(`Failed to fetch transactions (${res.status})`);
         return res.json();
@@ -308,7 +312,24 @@ export default function LedgerDashboard() {
 
       <div style={styles.header}>
         <div style={styles.brand}>Analysis</div>
-        <ThemeToggle />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={onSignOut}
+            style={{
+              background: "none",
+              border: "1px solid var(--border)",
+              borderRadius: 7,
+              padding: "6px 12px",
+              color: "var(--text-muted)",
+              fontFamily: "var(--font-body)",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            Sign out
+          </button>
+          <ThemeToggle />
+        </div>
       </div>
 
       {dataStatus === "loading" && (
@@ -349,6 +370,33 @@ export default function LedgerDashboard() {
         ))}
       </div>
     </div>
+  );
+}
+
+// Top-level auth gate: renders the dashboard once signed in, otherwise
+// the Google sign-in screen. All actual data isolation happens server-side
+// (RLS on `transactions`, keyed off the access token forwarded to
+// api/transactions.js) — this is just what decides which screen to show.
+export default function App() {
+  const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) return null;
+  if (!session) return <Login />;
+
+  return (
+    <LedgerDashboard
+      accessToken={session.access_token}
+      onSignOut={() => getSupabaseClient().auth.signOut()}
+    />
   );
 }
 
