@@ -8,7 +8,7 @@ import ThemeToggle from "./ThemeToggle.jsx";
 import Login from "./Login.jsx";
 import { getSupabaseClient } from "./supabaseClient.js";
 import {
-  topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney,
+  topCategory, computeDataMeta, fmtDate, fmtGroupKey, fmtMoney,
   filterTransactions, groupKeyOf, buildChartData,
 } from "./logic.js";
 
