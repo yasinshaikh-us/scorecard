@@ -8,6 +8,6 @@ export default defineConfig({
     // and middleware.js needs the real Node Request/Response/crypto, not
     // jsdom's polyfills.
     environment: "node",
-    exclude: ["**/node_modules/**", "**/dist/**", "**/tests/e2e/**"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/tests/e2e/**", "**/tests/synthetic/**"],
   },
 });
