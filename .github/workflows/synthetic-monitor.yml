@@ -1,0 +1,29 @@
+name: Synthetic Monitor
+
+# Black-box monitoring against the real deployed app — separate from ci.yml,
+# which only ever runs mocked, credential-free checks as a pre-merge gate.
+# Layer 1 (tests/synthetic/canary.spec.js) needs no secrets. Layers 2/3 will
+# need real Supabase/Google credentials once their provisioning procedure is
+# decided; those will be added as repo/environment secrets and referenced
+# here when that work lands.
+
+on:
+  schedule:
+    # Hourly. Revisit once layers 2/3 land — those make real
+    # Anthropic/Supabase calls per run, which cost real API usage.
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    # Pinned to the same Playwright version/container as ci.yml's
+    # smoke-test job — keep these two in sync if either is bumped.
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.0-jammy
+    env:
+      SYNTHETIC_BASE_URL: ${{ vars.SYNTHETIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run test:synthetic
