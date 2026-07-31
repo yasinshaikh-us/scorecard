@@ -55,8 +55,7 @@ a deployed environment.)
 2. In Vercel: **New Project → Import** your repo.
 3. In **Project Settings → Environment Variables**, add:
    - `ANTHROPIC_API_KEY` = your key from console.anthropic.com
-   - `SUPABASE_URL` = your Supabase project URL (read server-side, in `middleware.js`)
-   - `VITE_SUPABASE_URL` = the same project URL (exposed to the browser bundle, so the sign-in button can redirect to Google)
+   - `VITE_SUPABASE_URL` = your Supabase project URL — read both server-side (`middleware.js`, `api/transactions.js`) and client-side (the browser bundle needs it to redirect to Google); deliberately one shared variable rather than a separate server-only `SUPABASE_URL`, so there's nothing to keep in sync
    - `VITE_SUPABASE_ANON_KEY` = your Supabase anon/publishable key (also exposed to the browser — safe by design)
 4. Deploy. Vercel auto-detects the Vite build and the `/api` folder as
    serverless functions.

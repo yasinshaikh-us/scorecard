@@ -20,11 +20,11 @@ export default async function middleware(request) {
     return; // static SPA shell — always public, see comment above
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) {
     return new Response(
-      JSON.stringify({ error: "Server misconfigured: SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set." }),
+      JSON.stringify({ error: "Server misconfigured: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set." }),
       { status: 500, headers: { "content-type": "application/json" } }
     );
   }
