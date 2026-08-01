@@ -1,11 +1,39 @@
-// Layer 3 of the synthetic-monitoring framework: direct-to-Supabase
-// cross-checks. Reads the same rows the app would display (via a
-// read-scoped key or the monitoring account's own RLS-bound session) and
-// diffs them against what /api/transactions and the dashboard actually
-// render for the same rows — the strongest signal for catching subtle
-// date/timezone transform bugs, since it compares against ground truth
-// rather than another derived value.
-//
-// Needs read access to the live `transactions` table (credentials +
-// how they're supplied to CI are still being worked out) and a decision on
-// which rows/date ranges to spot-check each run. No tests here yet.
+import { test, expect } from "@playwright/test";
+import { signIn, insertTransactions, deleteAllTransactions } from "./fixtures/monitor-session.js";
+
+// Layer 3: compares a known value written directly to Supabase against
+// what the app's own API returns for that same row — the strongest
+// signal for a date/serialization bug, since it checks against ground
+// truth rather than another derived value.
+
+test.describe("direct Supabase cross-check", () => {
+  let session;
+
+  test.beforeAll(async () => {
+    session = await signIn();
+  });
+
+  test.beforeEach(async () => {
+    await deleteAllTransactions(session);
+  });
+
+  test.afterAll(async () => {
+    if (session) await deleteAllTransactions(session);
+  });
+
+  test("/api/transactions returns the exact date stored in Supabase", async ({ request }) => {
+    const knownDate = "2026-02-14"; // fixed, arbitrary — exercises exact date-string passthrough
+    await insertTransactions(session, [
+      { date: knownDate, payee: "SYNTHETIC-MONITOR-CROSSCHECK", category: "Groceries", amount: -1 },
+    ]);
+
+    const resp = await request.get("/api/transactions", {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    expect(resp.status()).toBe(200);
+    const rows = await resp.json();
+    const row = rows.find((r) => r.Payee === "SYNTHETIC-MONITOR-CROSSCHECK");
+    expect(row, "fixture row should be present in /api/transactions").toBeTruthy();
+    expect(row.Date).toBe(knownDate);
+  });
+});
