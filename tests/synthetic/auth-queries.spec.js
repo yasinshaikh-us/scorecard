@@ -63,11 +63,24 @@ test.describe("natural-language ledger queries", () => {
     // so the same fixture data should produce identical chart labels
     // regardless of which timezone renders them; a mismatch here
     // reproduces the bug live rather than just asserting it in the abstract.
+    //
+    // Fixture spans ~5 weeks and the question states the range explicitly —
+    // the system prompt's own granularity rule maps that span to groupBy
+    // "week" regardless of the LLM's phrasing interpretation, so this
+    // reliably exercises the buggy path instead of occasionally falling
+    // back to groupBy "day" (the safe, string-slicing path) for a
+    // single-row, unscoped question.
+    const today = new Date();
+    const fiveWeeksAgo = new Date(today);
+    fiveWeeksAgo.setDate(today.getDate() - 35);
     await insertTransactions(session, [
-      { date: isoDate(new Date()), payee: FIXTURE_PAYEE, category: "Groceries", amount: -10 },
+      { date: isoDate(fiveWeeksAgo), payee: FIXTURE_PAYEE, category: "Groceries", amount: -10 },
+      { date: isoDate(today), payee: FIXTURE_PAYEE, category: "Groceries", amount: -20 },
     ]);
 
-    const question = `Show me a week-by-week breakdown of my spending at ${FIXTURE_PAYEE}`;
+    const question = `Show me a week-by-week breakdown of my spending at ${FIXTURE_PAYEE} from ${isoDate(
+      fiveWeeksAgo
+    )} to ${isoDate(today)}`;
 
     async function chartLabelsIn(timezoneId) {
       const context = await browser.newContext({ timezoneId });
