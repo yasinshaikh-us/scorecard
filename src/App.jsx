@@ -9,7 +9,7 @@ import Login from "./Login.jsx";
 import { getSupabaseClient } from "./supabaseClient.js";
 import {
   topCategory, computeDataMeta, fmtDate, fmtGroupKey, fmtMoney,
-  filterTransactions, groupKeyOf, buildChartData,
+  filterTransactions, groupKeyOf, buildChartData, cleanRows, parseQueryResponse,
 } from "./logic.js";
 
 let RAW_DATA = [];
@@ -207,15 +207,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         return res.json();
       })
       .then(rows => {
-        const cleaned = rows
-          .filter(r => r.Date && r.Payee && r.Category && r.Amount !== undefined && r.Amount !== null && !isNaN(r.Amount))
-          .map(r => ({
-            Date: String(r.Date).trim(),
-            Payee: String(r.Payee).trim(),
-            Category: String(r.Category).trim(),
-            Amount: Number(r.Amount),
-          }));
-        loadData(cleaned);
+        loadData(cleanRows(rows));
         setDataStatus("ready");
       })
       .catch(() => setDataStatus("error"));
@@ -236,16 +228,16 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         },
         body: JSON.stringify({ question: q }),
       });
-      const data = await resp.json();
-      const textBlock = (data.content || []).find(b => b.type === "text");
-      let raw = textBlock ? textBlock.text : "";
-      raw = raw.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed = JSON.parse(raw);
-      if (parsed.isLedgerQuery === false) {
-        setCards(prev => prev.map(c => c.id === id ? { ...c, offTopic: true, pending: false } : c));
-      } else {
-        setCards(prev => prev.map(c => c.id === id ? { ...c, spec: parsed, pending: false } : c));
+      if (resp.status === 401) {
+        // A stale/expired token isn't something rephrasing the question
+        // fixes — drop back to the sign-in screen instead of showing a
+        // confusing error card.
+        onSignOut();
+        return;
       }
+      const data = await resp.json();
+      const result = parseQueryResponse(resp.ok, data);
+      setCards(prev => prev.map(c => c.id === id ? { ...c, ...result, pending: false } : c));
     } catch (e) {
       setCards(prev => prev.map(c => c.id === id ? { ...c, error: String(e.message || e), pending: false } : c));
     } finally {

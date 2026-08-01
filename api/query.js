@@ -14,7 +14,7 @@
 // fixed regardless of what the client sends.
 
 import { fetchAllRows } from "./transactions.js";
-import { computeDataMeta } from "../src/logic.js";
+import { computeDataMeta, cleanRows } from "../src/logic.js";
 
 function buildSystemPrompt(CATS, SUBCATS, MIN_DATE, MAX_DATE) {
   return `You translate a question about a personal bank-transaction ledger into a strict JSON filter/chart spec. Never compute totals yourself.
@@ -98,12 +98,19 @@ export default async function handler(req, res) {
 
   try {
     const rawRows = await fetchAllRows(url, anonKey, accessToken);
-    const rows = rawRows.map((r) => ({
-      Date: r.date,
-      Payee: r.payee,
-      Category: r.category,
-      Amount: Number(r.amount),
-    }));
+    // Same cleaning the client applies to its own /api/transactions
+    // fetch (src/logic.js :: cleanRows) — a row with a missing/null
+    // field (e.g. an uncategorized transaction) is silently dropped
+    // rather than reaching computeDataMeta, which requires every row to
+    // have a real Category string.
+    const rows = cleanRows(
+      rawRows.map((r) => ({
+        Date: r.date,
+        Payee: r.payee,
+        Category: r.category,
+        Amount: Number(r.amount),
+      }))
+    );
     const { CATS, SUBCATS, MIN_DATE, MAX_DATE } = computeDataMeta(rows);
     const system = buildSystemPrompt(CATS, SUBCATS, MIN_DATE, MAX_DATE);
 
@@ -116,7 +123,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-5",
-        max_tokens: 1000,
+        max_tokens: 1500,
         system,
         messages: [{ role: "user", content: question }],
       }),

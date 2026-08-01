@@ -5,6 +5,26 @@ export const topCategory = (cat) => (cat || "Uncategorized").split(":")[0];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// Filters out rows missing a required field and coerces types into a
+// clean {Date, Payee, Category, Amount} shape. The one place this
+// happens, shared by every consumer of raw transaction rows (the
+// client's own fetch handler in App.jsx, and api/query.js's separate
+// server-side re-fetch for building its system prompt) so they can't
+// independently drift out of sync -- a row with a missing/null Category
+// was previously silently dropped on the client but crashed
+// api/query.js's computeDataMeta call, since only the client applied
+// this filter.
+export function cleanRows(rows) {
+  return rows
+    .filter((r) => r.Date && r.Payee && r.Category && r.Amount !== undefined && r.Amount !== null && !isNaN(r.Amount))
+    .map((r) => ({
+      Date: String(r.Date).trim(),
+      Payee: String(r.Payee).trim(),
+      Category: String(r.Category).trim(),
+      Amount: Number(r.Amount),
+    }));
+}
+
 // Computes the derived lookups the rest of the app (and the system prompt)
 // rely on from a flat array of {Date, Payee, Category, Amount} rows.
 export function computeDataMeta(rows) {
@@ -102,4 +122,36 @@ export function buildChartData(filteredRows, spec) {
   }
   if (spec.groupBy === "payee" && arr.length > 10) arr = arr.slice(0, 10);
   return arr;
+}
+
+// Interprets the /api/query response into exactly one of
+// {error}/{offTopic}/{spec} — pulled out of App.jsx so the "did the
+// request actually fail" branch is unit-testable. Previously that check
+// didn't exist at all: any non-2xx response (an expired token, a
+// downstream Anthropic/Supabase failure, ...) still fell through to
+// parsing `data.content` as if it were a successful Claude reply, which
+// is undefined on an error body — producing a "Couldn't parse that one"
+// card with a "JSON.parse('')" error message that had nothing to do
+// with what actually went wrong.
+export function parseQueryResponse(ok, data) {
+  if (!ok) {
+    const message =
+      typeof data?.error === "string"
+        ? data.error
+        : data?.error?.error?.message || data?.error?.message || "Request failed";
+    return { error: message };
+  }
+
+  const textBlock = (data.content || []).find((b) => b.type === "text");
+  if (!textBlock) {
+    return { error: "Claude did not return a text response." };
+  }
+
+  const raw = textBlock.text.replace(/```json/g, "").replace(/```/g, "").trim();
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed.isLedgerQuery === false ? { offTopic: true } : { spec: parsed };
+  } catch (e) {
+    return { error: String(e.message || e) };
+  }
 }

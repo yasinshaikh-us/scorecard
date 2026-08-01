@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney,
-  filterTransactions, groupKeyOf, buildChartData,
+  filterTransactions, groupKeyOf, buildChartData, cleanRows, parseQueryResponse,
 } from "./logic.js";
 
 const row = (Date, Payee, Category, Amount) => ({ Date, Payee, Category, Amount });
@@ -52,6 +52,86 @@ describe("computeDataMeta", () => {
     const meta = computeDataMeta(rows);
     expect(meta.CATS).toEqual(["Home", "Groceries"]);
     expect(meta.SUBCATS).toEqual(["Groceries", "Home:Mortgage", "Home:Rent"]);
+  });
+
+  it("crashes on a null Category if the caller skips cleanRows first (why api/query.js must call it)", () => {
+    // computeDataMeta trusts its input is already clean; this documents
+    // why api/query.js crashed with an unhandled "Cannot read
+    // properties of null (reading 'trim')" before it started running
+    // rows through cleanRows like the client already did.
+    expect(() => computeDataMeta([row("2026-01-01", "A", null, -1)])).toThrow();
+  });
+});
+
+describe("cleanRows", () => {
+  it("drops rows missing a required field instead of letting them reach computeDataMeta broken", () => {
+    const rows = [
+      row("2026-01-01", "Good Payee", "Groceries", -10),
+      row("2026-01-02", "No Category", null, -20),
+      { Date: "2026-01-03", Payee: "No Amount", Category: "Home", Amount: null },
+      { Date: "2026-01-04", Payee: "NaN Amount", Category: "Home", Amount: "not-a-number" },
+      row(null, "No Date", "Home", -5),
+      row("2026-01-05", null, "Home", -6),
+    ];
+    const out = cleanRows(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0].Payee).toBe("Good Payee");
+  });
+
+  it("trims strings and coerces Amount to a number", () => {
+    const out = cleanRows([{ Date: " 2026-01-01 ", Payee: " Chipotle ", Category: " Dining ", Amount: "-12.50" }]);
+    expect(out).toEqual([{ Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5 }]);
+  });
+
+  it("keeps a zero Amount (falsy, but valid)", () => {
+    const out = cleanRows([row("2026-01-01", "Free Sample", "Groceries", 0)]);
+    expect(out).toHaveLength(1);
+  });
+});
+
+describe("parseQueryResponse", () => {
+  it("extracts a plain string error from a non-ok response", () => {
+    expect(parseQueryResponse(false, { error: "Unauthorized" })).toEqual({ error: "Unauthorized" });
+  });
+
+  it("extracts Anthropic's nested error.error.message shape from a non-ok response", () => {
+    const data = { error: { type: "error", error: { message: "rate limited" } } };
+    expect(parseQueryResponse(false, data)).toEqual({ error: "rate limited" });
+  });
+
+  it("falls back to a generic message when a non-ok response has no recognizable error shape", () => {
+    expect(parseQueryResponse(false, {})).toEqual({ error: "Request failed" });
+  });
+
+  it("returns offTopic for an isLedgerQuery: false response", () => {
+    const data = { content: [{ type: "text", text: '{"isLedgerQuery": false}' }] };
+    expect(parseQueryResponse(true, data)).toEqual({ offTopic: true });
+  });
+
+  it("returns the parsed spec for a well-formed ledger query response", () => {
+    const data = { content: [{ type: "text", text: '{"isLedgerQuery": true, "chartType": "bar"}' }] };
+    expect(parseQueryResponse(true, data)).toEqual({ spec: { isLedgerQuery: true, chartType: "bar" } });
+  });
+
+  it("strips markdown code fences before parsing", () => {
+    const data = { content: [{ type: "text", text: '```json\n{"isLedgerQuery": false}\n```' }] };
+    expect(parseQueryResponse(true, data)).toEqual({ offTopic: true });
+  });
+
+  it("errors instead of throwing when there's no text content block (regression: this used to reach JSON.parse('') and blame a parse failure for what was really a missing/failed response)", () => {
+    expect(parseQueryResponse(true, { content: [] })).toEqual({
+      error: "Claude did not return a text response.",
+    });
+    expect(parseQueryResponse(true, {})).toEqual({
+      error: "Claude did not return a text response.",
+    });
+  });
+
+  it("errors instead of throwing when the text block isn't valid JSON", () => {
+    const data = { content: [{ type: "text", text: "not json" }] };
+    const result = parseQueryResponse(true, data);
+    expect(result.error).toBeTruthy();
+    expect(result.spec).toBeUndefined();
   });
 });
 
