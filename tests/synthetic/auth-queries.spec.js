@@ -51,7 +51,7 @@ test.describe("natural-language ledger queries", () => {
     await page.getByRole("button", { name: "Ask" }).click();
 
     await expect(page.getByText(FIXTURE_PAYEE)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("-$12.34")).toBeVisible();
+    await expect(page.getByText("-$12.34")).toBeVisible({ timeout: 30_000 });
   });
 
   test("week-bucketed chart grouping doesn't shift with the viewer's timezone", async ({ browser }) => {

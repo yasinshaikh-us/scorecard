@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:synthetic": "playwright test -c playwright.synthetic.config.js",
+    "test:synthetic": "playwright test -c playwright.synthetic.config.js tests/synthetic/canary.spec.js",
     "test:synthetic:auth": "playwright test -c playwright.synthetic.config.js tests/synthetic/auth-queries.spec.js tests/synthetic/db-crosscheck.spec.js"
   },
   "dependencies": {
