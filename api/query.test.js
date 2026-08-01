@@ -121,6 +121,30 @@ describe("handler", () => {
     expect(res.body).toEqual({ content: [{ type: "text", text: '{"foo":"bar"}' }] });
   });
 
+  it("doesn't crash when a transaction has a null category (regression: computeDataMeta requires a real Category string on every row)", async () => {
+    global.fetch = vi.fn(async (url, opts) => {
+      if (String(url).includes("supabase.co")) {
+        return {
+          ok: true,
+          json: async () => [
+            { date: "2024-01-01", payee: "Store", category: "Groceries:Food", amount: "-12.50" },
+            // An uncategorized transaction -- the client's own
+            // /api/transactions consumer silently drops rows like this
+            // one; this endpoint must too, not crash on it.
+            { date: "2024-01-02", payee: "Mystery", category: null, amount: "-5.00" },
+          ],
+        };
+      }
+      const sentBody = JSON.parse(opts.body);
+      expect(sentBody.system).toContain("Groceries");
+      return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"foo":"bar"}' }] }) };
+    });
+    const res = fakeRes();
+    await handler(reqWith({ body: { question: "how much did I spend on groceries?" } }), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ content: [{ type: "text", text: '{"foo":"bar"}' }] });
+  });
+
   it("passes through the upstream status and error body on Anthropic failure", async () => {
     global.fetch = vi.fn(async (url) => {
       if (String(url).includes("supabase.co")) {
