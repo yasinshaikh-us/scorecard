@@ -94,10 +94,15 @@ export function groupKeyOf(spec, d) {
   if (spec.groupBy === "day") return d.Date;
   if (spec.groupBy === "month") return d.Date.slice(0, 7);
   if (spec.groupBy === "week") {
-    const dt = new Date(d.Date + "T00:00:00");
-    const day0 = new Date(dt);
-    day0.setDate(dt.getDate() - dt.getDay());
-    return day0.toISOString().slice(0, 10);
+    // Computed entirely in UTC-anchored arithmetic (Date.UTC + getUTCDay),
+    // never through a locally-parsed Date or toISOString() round trip —
+    // that used to parse d.Date as local midnight and convert the result
+    // back to UTC, which silently shifted the computed week-start back a
+    // day for viewers in positive-UTC-offset timezones.
+    const [y, m, day] = d.Date.split("-").map(Number);
+    const utcMs = Date.UTC(y, m - 1, day);
+    const dayOfWeek = new Date(utcMs).getUTCDay();
+    return new Date(utcMs - dayOfWeek * 86400000).toISOString().slice(0, 10);
   }
   return "";
 }
