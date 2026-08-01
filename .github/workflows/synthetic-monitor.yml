@@ -2,15 +2,15 @@ name: Synthetic Monitor
 
 # Black-box monitoring against the real deployed app — separate from ci.yml,
 # which only ever runs mocked, credential-free checks as a pre-merge gate.
-# Layer 1 (tests/synthetic/canary.spec.js) needs no secrets. Layers 2/3 will
-# need real Supabase/Google credentials once their provisioning procedure is
-# decided; those will be added as repo/environment secrets and referenced
-# here when that work lands.
+# Layer 1 (tests/synthetic/canary.spec.js) needs no secrets and runs hourly.
+# Layers 2/3 (tests/synthetic/auth-queries.spec.js, db-crosscheck.spec.js)
+# sign in as a dedicated monitoring Supabase user and make real Anthropic
+# calls plus real (RLS-isolated) writes to production — manual-dispatch
+# only for now, not on the cron, to keep cost and blast radius bounded.
 
 on:
   schedule:
-    # Hourly. Revisit once layers 2/3 land — those make real
-    # Anthropic/Supabase calls per run, which cost real API usage.
+    # Hourly, layer 1 only — see the `authenticated` job below for layers 2/3.
     - cron: "0 * * * *"
   workflow_dispatch:
 
@@ -27,3 +27,19 @@ jobs:
       - uses: actions/checkout@v4
       - run: npm ci
       - run: npm run test:synthetic
+
+  authenticated:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.0-jammy
+    env:
+      SYNTHETIC_BASE_URL: ${{ vars.SYNTHETIC_BASE_URL }}
+      MONITOR_SUPABASE_URL: ${{ vars.MONITOR_SUPABASE_URL }}
+      MONITOR_SUPABASE_ANON_KEY: ${{ vars.MONITOR_SUPABASE_ANON_KEY }}
+      MONITOR_USER_EMAIL: ${{ vars.MONITOR_USER_EMAIL }}
+      MONITOR_USER_PASSWORD: ${{ secrets.MONITOR_USER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run test:synthetic:auth
