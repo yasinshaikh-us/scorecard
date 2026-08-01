@@ -23,6 +23,15 @@ export default defineConfig({
   testDir: "./tests/synthetic",
   timeout: 30_000,
   fullyParallel: true,
+  // Every layer-2/3 spec file signs in as the same dedicated monitoring
+  // account and wipes ALL of that account's fixture rows in its
+  // beforeEach (see fixtures/monitor-session.js's deleteAllTransactions).
+  // test.describe.configure({ mode: "serial" }) only orders tests within
+  // one file — on a multi-core runner, Playwright still schedules
+  // different spec files onto separate workers in parallel, so one
+  // file's cleanup can delete fixture rows another file just inserted
+  // mid-test. Pinning a single worker serializes across files too.
+  workers: 1,
   retries: 1,
   reporter: "list",
   use: {
