@@ -253,6 +253,19 @@ describe("groupKeyOf", () => {
     // 2026-01-15 is a Thursday; that week's Sunday is 2026-01-11.
     expect(groupKeyOf({ groupBy: "week" }, row("2026-01-15", "X", "Home", -1))).toBe("2026-01-11");
   });
+  it("computes the same week-start regardless of the runtime's local timezone (regression: this used to round-trip a locally-parsed Date through toISOString(), shifting the result back a day for positive-UTC-offset zones like Asia/Kolkata)", () => {
+    const original = process.env.TZ;
+    try {
+      process.env.TZ = "America/Los_Angeles"; // UTC-7/-8: the old bug never shifted this direction
+      const negativeOffset = groupKeyOf({ groupBy: "week" }, row("2026-01-15", "X", "Home", -1));
+      process.env.TZ = "Asia/Kolkata"; // UTC+5:30: the old bug shifted the week-start back a day
+      const positiveOffset = groupKeyOf({ groupBy: "week" }, row("2026-01-15", "X", "Home", -1));
+      expect(positiveOffset).toBe(negativeOffset);
+      expect(positiveOffset).toBe("2026-01-11");
+    } finally {
+      process.env.TZ = original;
+    }
+  });
   it("returns empty string for a null spec or unknown groupBy", () => {
     expect(groupKeyOf(null, row("2026-01-01", "X", "Home", -1))).toBe("");
     expect(groupKeyOf({ groupBy: "none" }, row("2026-01-01", "X", "Home", -1))).toBe("");
