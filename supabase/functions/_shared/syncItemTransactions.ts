@@ -1,0 +1,87 @@
+// Pulls everything new since the item's stored cursor via
+// /transactions/sync and upserts it into public.transactions.
+//
+// Sign convention: Plaid's `amount` is positive for money leaving the
+// account and negative for money coming in. This app stores the opposite
+// (src/App.jsx / src/logic.js treat Amount < 0 as an expense, > 0 as
+// income — see the manually-imported rows), so we negate it on the way in.
+
+import { plaidClient } from "./plaid.ts";
+import { supabaseAdmin } from "./supabaseAdmin.ts";
+
+function categoryFor(tx: any) {
+  return tx.personal_finance_category?.primary || tx.category?.join(" > ") || "Uncategorized";
+}
+
+function payeeFor(tx: any) {
+  return tx.merchant_name || tx.name || "Unknown";
+}
+
+export async function syncItemTransactions(itemId: string) {
+  const db = supabaseAdmin();
+  const client = plaidClient();
+
+  const { data: item, error: itemError } = await db
+    .from("plaid_items")
+    .select("id, user_id, access_token, cursor")
+    .eq("item_id", itemId)
+    .single();
+
+  if (itemError || !item) {
+    throw new Error(`No plaid_items row for item_id=${itemId}: ${itemError?.message || "not found"}`);
+  }
+
+  let cursor = item.cursor;
+  let hasMore = true;
+  const added: any[] = [];
+  const modified: any[] = [];
+  const removed: any[] = [];
+
+  while (hasMore) {
+    const resp = await client.transactionsSync({
+      access_token: item.access_token,
+      cursor: cursor || undefined,
+    });
+
+    added.push(...resp.data.added);
+    modified.push(...resp.data.modified);
+    removed.push(...resp.data.removed);
+    hasMore = resp.data.has_more;
+    cursor = resp.data.next_cursor;
+  }
+
+  const upserts = [...added, ...modified].map((tx) => ({
+    plaid_transaction_id: tx.transaction_id,
+    plaid_account_id: tx.account_id,
+    user_id: item.user_id,
+    date: tx.date,
+    payee: payeeFor(tx),
+    category: categoryFor(tx),
+    amount: -tx.amount,
+    source: "plaid",
+  }));
+
+  if (upserts.length > 0) {
+    const { error: upsertError } = await db
+      .from("transactions")
+      .upsert(upserts, { onConflict: "plaid_transaction_id" });
+    if (upsertError) throw upsertError;
+  }
+
+  if (removed.length > 0) {
+    const removedIds = removed.map((tx) => tx.transaction_id);
+    const { error: deleteError } = await db
+      .from("transactions")
+      .delete()
+      .in("plaid_transaction_id", removedIds);
+    if (deleteError) throw deleteError;
+  }
+
+  const { error: cursorUpdateError } = await db
+    .from("plaid_items")
+    .update({ cursor, updated_at: new Date().toISOString() })
+    .eq("id", item.id);
+  if (cursorUpdateError) throw cursorUpdateError;
+
+  return { added: added.length, modified: modified.length, removed: removed.length };
+}

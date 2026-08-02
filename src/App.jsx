@@ -6,6 +6,7 @@ import {
 import { styles, tooltipStyle } from "./styles.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 import Login from "./Login.jsx";
+import PlaidLinkGate from "./PlaidLinkGate.jsx";
 import { getSupabaseClient } from "./supabaseClient.js";
 import {
   topCategory, computeDataMeta, fmtDate, fmtGroupKey, fmtMoney,
@@ -321,6 +322,9 @@ function LedgerDashboard({ accessToken, onSignOut }) {
 // api/transactions.js) — this is just what decides which screen to show.
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+  // undefined = checking, null = no linked bank yet, object = at least one plaid_items row
+  const [plaidItem, setPlaidItem] = useState(undefined);
+  const [skippedLink, setSkippedLink] = useState(false);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -331,8 +335,31 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!session) {
+      setPlaidItem(undefined);
+      return;
+    }
+    const supabase = getSupabaseClient();
+    supabase
+      .from("plaid_items")
+      .select("id, institution_name, status")
+      .limit(1)
+      .then(({ data }) => setPlaidItem(data?.[0] ?? null));
+  }, [session]);
+
   if (session === undefined) return null;
   if (!session) return <Login />;
+  if (plaidItem === undefined) return null; // checking for a linked bank
+
+  if (plaidItem === null && !skippedLink) {
+    return (
+      <PlaidLinkGate
+        accessToken={session.access_token}
+        onDone={() => setSkippedLink(true)}
+      />
+    );
+  }
 
   return (
     <LedgerDashboard
