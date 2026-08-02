@@ -61,8 +61,19 @@ test("an unauthenticated visitor sees the Google sign-in screen, not the dashboa
   await expect(page.getByRole("button", { name: "Ask" })).toHaveCount(0);
 });
 
+// Both authenticated tests below are exercising ledger Q&A, not the
+// bank-linking flow, so they mock plaid_items as "already linked" —
+// otherwise App.jsx would show the (unrelated) PlaidLinkGate screen
+// instead of the dashboard these tests assert against.
+function mockAlreadyLinked(page) {
+  return page.route("**/rest/v1/plaid_items*", (route) =>
+    route.fulfill({ json: [{ id: "item-1", institution_name: "Test Bank", status: "active" }] })
+  );
+}
+
 test("asking a question renders only the matching transactions and a chart", async ({ page }) => {
   await signInFake(page);
+  await mockAlreadyLinked(page);
   await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   await page.route("**/api/query", (route) =>
     route.fulfill({
@@ -91,6 +102,7 @@ test("asking a question renders only the matching transactions and a chart", asy
 
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
   await signInFake(page);
+  await mockAlreadyLinked(page);
   await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   await page.route("**/api/query", (route) =>
     route.fulfill({

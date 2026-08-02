@@ -345,7 +345,22 @@ export default function App() {
       .from("plaid_items")
       .select("id, institution_name, status")
       .limit(1)
-      .then(({ data }) => setPlaidItem(data?.[0] ?? null));
+      .then(({ data, error }) => {
+        // Fail open: an unreachable/broken link-status check shouldn't
+        // block the dashboard. `false` is a distinct "unknown" sentinel
+        // from null ("confirmed: no linked bank"), so it never triggers
+        // the Link gate below.
+        if (error) {
+          console.error("Failed to check plaid_items", error);
+          setPlaidItem(false);
+          return;
+        }
+        setPlaidItem(data?.[0] ?? null);
+      })
+      .catch((err) => {
+        console.error("Failed to check plaid_items", err);
+        setPlaidItem(false);
+      });
   }, [session]);
 
   if (session === undefined) return null;
