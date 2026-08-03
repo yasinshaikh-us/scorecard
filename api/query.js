@@ -64,8 +64,8 @@ Rules:
 - Pick chartType/groupBy that best visualizes the question:
   -- Comparing a handful of named categories/groups as parts of a whole ("breakdown", "breakup", "split", "percentage", "share of spend", "versus" between categories) -> chartType "pie", groupBy "category" (or restrict via the categories field to just the named groups).
   -- Ranking or comparing many categories/merchants by raw magnitude ("top merchants", "which category do I spend the most on") -> chartType "bar", groupBy "category" or "payee".
-  -- Spending/income over time, or any request scoped to a date range (e.g. "list of X over the last year") -> chartType "line" or "bar", groupBy chosen per the granularity rule above.
-  -- A single-number, yes/no, or list-only question with no obvious time or category angle -> still default to chartType "bar", groupBy "category" (or "day"/"week"/"month" if a date range is implied) so a chart is always present.
+  -- Spending/income over time, or any request scoped to a date range (e.g. "list of X over the last year") -> groupBy chosen per the granularity rule above, then pick chartType from that granularity: groupBy "month" (the longer spans -- 6+ months, "this year", "over time", multi-year) -> chartType "line", since a trend across many months reads as a continuous line, not a wall of thin bars; groupBy "day" or "week" (shorter spans) -> chartType "bar", since each bucket is a small, meaningfully discrete comparison.
+  -- A single-number, yes/no, or list-only question with no obvious time or category angle -> still default to chartType "bar", groupBy "category" (or "day"/"week"/"month" if a date range is implied, applying the same month->line, day/week->bar rule above) so a chart is always present.
 - title should read naturally, e.g. "Dining spend by week" not "category=Dining".
 - Respond with raw JSON only.`;
 }
