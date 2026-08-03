@@ -27,7 +27,7 @@ export default function Login() {
         <ThemeToggle />
       </div>
 
-      <div style={styles.brand}>Fathom</div>
+      <div style={styles.brand}>fa/thm</div>
       <div style={{ color: "var(--text-muted)", fontSize: 13, marginTop: -8 }}>
         Sign in to continue
       </div>

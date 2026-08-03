@@ -151,7 +151,7 @@ function AuthedApp({ accessToken, onSignOut }) {
           onClick={(e) => { e.preventDefault(); navigate("home"); }}
           style={{ ...styles.brand, cursor: "pointer", textDecoration: "none", color: "inherit" }}
         >
-          Fathom
+          fa/thm
         </a>
         <div style={styles.navRow}>
           <a

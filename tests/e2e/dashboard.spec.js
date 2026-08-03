@@ -332,9 +332,9 @@ test("Rules is reachable from Home, and closing it (X or Back) returns to the pa
 
   await page.goto("/");
   await page.getByRole("link", { name: "Rules" }).click();
-  await expect(page.getByText("Category rules")).toBeVisible();
+  await expect(page.getByText("Rules Engine")).toBeVisible();
 
   await page.getByRole("button", { name: "×" }).click();
-  await expect(page.getByText("Category rules")).toHaveCount(0);
+  await expect(page.getByText("Rules Engine")).toHaveCount(0);
   await expect(page.getByText("Quick Questions")).toBeVisible();
 });
