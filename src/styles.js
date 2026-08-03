@@ -212,6 +212,19 @@ export const styles = {
     borderRadius: 20,
     fontFamily: "var(--font-body)",
   },
+  // Icon-only category badge -- replaces the old text tag in the
+  // transactions table so the column can shrink to just fit an icon,
+  // leaving more room for Payee. The full category name is still
+  // reachable via the icon's native title tooltip and the row-hover
+  // detail popover, it's just not printed in the column itself.
+  categoryIconBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 26,
+    height: 26,
+    borderRadius: "50%",
+  },
   // Numeric/data columns (dates, amounts, coordinates) get the monospace
   // face and tabular figures so digits line up in columns — same
   // convention as the location app's route table.
