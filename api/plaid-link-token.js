@@ -25,7 +25,7 @@ export default async function handler(req, res) {
 
     const response = await client.linkTokenCreate({
       user: { client_user_id: user.id },
-      client_name: "Ledger",
+      client_name: "Analysis",
       products: [Products.Transactions, Products.Auth],
       // Balance isn't a Link product — it's fetched on demand for
       // already-linked accounts, so it doesn't go in this list.
