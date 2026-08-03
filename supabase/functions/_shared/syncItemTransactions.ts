@@ -8,6 +8,7 @@
 
 import { plaidClient } from "./plaid.ts";
 import { supabaseAdmin } from "./supabaseAdmin.ts";
+import { applyCategoryRules, type CategoryRule } from "./categoryRules.ts";
 
 function categoryFor(tx: any) {
   return tx.personal_finance_category?.primary || tx.category?.join(" > ") || "Uncategorized";
@@ -60,17 +61,34 @@ export async function syncItemTransactions(itemId: string) {
     cursor = resp.data.next_cursor;
   }
 
-  const upserts = [...added, ...modified].map((tx) => ({
-    plaid_transaction_id: tx.transaction_id,
-    plaid_account_id: tx.account_id,
-    user_id: item.user_id,
-    date: tx.date,
-    payee: payeeFor(tx),
-    category: categoryFor(tx),
-    amount: -tx.amount,
-    source: "plaid",
-    is_transfer: isTransferFor(tx),
-  }));
+  const { data: rules, error: rulesError } = await db
+    .from("category_rules")
+    .select("match_field, match_value, set_category, set_payee")
+    .eq("user_id", item.user_id)
+    .eq("enabled", true)
+    .order("priority", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (rulesError) throw rulesError;
+
+  const upserts = [...added, ...modified].map((tx) => {
+    const rawPayee = payeeFor(tx);
+    const rawCategory = categoryFor(tx);
+    const { category, payee } = applyCategoryRules(rawPayee, rawCategory, (rules || []) as CategoryRule[]);
+
+    return {
+      plaid_transaction_id: tx.transaction_id,
+      plaid_account_id: tx.account_id,
+      user_id: item.user_id,
+      date: tx.date,
+      raw_payee: rawPayee,
+      raw_category: rawCategory,
+      payee,
+      category,
+      amount: -tx.amount,
+      source: "plaid",
+      is_transfer: isTransferFor(tx),
+    };
+  });
 
   if (upserts.length > 0) {
     const { error: upsertError } = await db
