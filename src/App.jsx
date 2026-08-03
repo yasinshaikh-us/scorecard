@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Home as HomeIcon, MessageCircleQuestion, Filter, LogOut } from "lucide-react";
 import { styles } from "./styles.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 import Login from "./Login.jsx";
@@ -156,28 +157,32 @@ function AuthedApp({ accessToken, onSignOut }) {
           <a
             href="/"
             onClick={(e) => { e.preventDefault(); navigate("home"); }}
-            style={{ ...styles.navLink, ...(page === "home" ? styles.navLinkActive : {}) }}
+            title="Home"
+            aria-label="Home"
+            style={{ ...styles.navIconBtn, ...(page === "home" ? styles.navIconBtnActive : {}) }}
           >
-            Home
+            <HomeIcon size={17} />
           </a>
           <a
             href="/ask"
             onClick={(e) => { e.preventDefault(); navigate("ask"); }}
-            style={{ ...styles.navLink, ...(page === "ask" ? styles.navLinkActive : {}) }}
+            title="Ask"
+            aria-label="Ask"
+            style={{ ...styles.navIconBtn, ...(page === "ask" ? styles.navIconBtnActive : {}) }}
           >
-            Ask
+            <MessageCircleQuestion size={17} />
           </a>
           <a
             href="#rules"
             onClick={(e) => { e.preventDefault(); openRules(); }}
-            style={styles.navLink}
+            title="Rules"
+            aria-label="Rules"
+            style={styles.navIconBtn}
           >
-            Rules
+            <Filter size={17} />
           </a>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={onSignOut} style={styles.headerBtn}>
-            Sign out
+          <button onClick={onSignOut} title="Sign out" aria-label="Sign out" style={styles.navIconBtn}>
+            <LogOut size={17} />
           </button>
           <ThemeToggle />
         </div>
