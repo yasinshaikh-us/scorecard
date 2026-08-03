@@ -170,6 +170,15 @@ describe("fetchAccountLabels", () => {
       body: { message: "boom" },
     });
   });
+
+  it("truncates a longer-than-4-digit mask down to the last 4 digits", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => [{ account_id: "acc_1", name: "Chase Checking", mask: "123456789" }],
+    }));
+    const labels = await fetchAccountLabels(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
+    expect(labels).toEqual({ acc_1: "Chase Checking ••6789" });
+  });
 });
 
 describe("accountLabelFor", () => {
