@@ -80,7 +80,24 @@ describe("cleanRows", () => {
 
   it("trims strings and coerces Amount to a number", () => {
     const out = cleanRows([{ Date: " 2026-01-01 ", Payee: " Chipotle ", Category: " Dining ", Amount: "-12.50" }]);
-    expect(out).toEqual([{ Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5 }]);
+    expect(out).toEqual([{
+      Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5,
+      Account: "Manual entry", IsTransfer: false,
+    }]);
+  });
+
+  it("defaults Account to 'Manual entry' and IsTransfer to false when absent (rows fetched before either field existed)", () => {
+    const out = cleanRows([row("2026-01-01", "Chipotle", "Dining", -12.5)]);
+    expect(out[0].Account).toBe("Manual entry");
+    expect(out[0].IsTransfer).toBe(false);
+  });
+
+  it("passes through a real Account label and coerces IsTransfer to a boolean", () => {
+    const out = cleanRows([
+      { Date: "2026-01-01", Payee: "Transfer", Category: "Transfer", Amount: -500, Account: " Chase Checking ••1234 ", IsTransfer: 1 },
+    ]);
+    expect(out[0].Account).toBe("Chase Checking ••1234");
+    expect(out[0].IsTransfer).toBe(true);
   });
 
   it("keeps a zero Amount (falsy, but valid)", () => {
@@ -234,6 +251,37 @@ describe("filterTransactions", () => {
     const out = filterTransactions(rows, { categoryContains: "mortgage", type: "expense" });
     expect(out.map((r) => r.Payee)).toEqual(["Chase Mortgage"]);
   });
+
+  describe("multi-account fields (Account, IsTransfer)", () => {
+    const multiAccountRows = [
+      { ...row("2026-01-01", "Chipotle", "Dining & Drinks:Restaurants", -21.95), Account: "Chase Checking ••1234", IsTransfer: false },
+      { ...row("2026-01-02", "Paycheck", "Personal Income:Paycheck", 4000), Account: "Chase Checking ••1234", IsTransfer: false },
+      { ...row("2026-01-03", "Transfer to Savings", "Transfer", -1000), Account: "Chase Checking ••1234", IsTransfer: true },
+      { ...row("2026-01-03", "Transfer from Checking", "Transfer", 1000), Account: "Ally Savings ••5678", IsTransfer: true },
+    ];
+
+    it("excludes IsTransfer rows by default, even for type 'all' (regression: multi-account transfers must not double-count as both an expense and income)", () => {
+      const out = filterTransactions(multiAccountRows, { type: "all" });
+      expect(out.map((r) => r.Payee).sort()).toEqual(["Chipotle", "Paycheck"]);
+    });
+
+    it("includes IsTransfer rows when includeTransfers is true", () => {
+      const out = filterTransactions(multiAccountRows, { type: "all", includeTransfers: true });
+      expect(out.length).toBe(4);
+    });
+
+    it("type 'transfer' returns only IsTransfer rows, regardless of includeTransfers", () => {
+      const out = filterTransactions(multiAccountRows, { type: "transfer" });
+      expect(out.map((r) => r.Payee).sort()).toEqual(["Transfer from Checking", "Transfer to Savings"]);
+    });
+
+    it("accountContains matches case-insensitively against Account", () => {
+      const out = filterTransactions(multiAccountRows, { type: "all", accountContains: "savings" });
+      expect(out).toEqual([]); // the one Savings row is a transfer, excluded by default
+      const out2 = filterTransactions(multiAccountRows, { type: "all", accountContains: "savings", includeTransfers: true });
+      expect(out2.map((r) => r.Payee)).toEqual(["Transfer from Checking"]);
+    });
+  });
 });
 
 describe("groupKeyOf", () => {
@@ -242,6 +290,13 @@ describe("groupKeyOf", () => {
   });
   it("groups by payee", () => {
     expect(groupKeyOf({ groupBy: "payee" }, row("2026-01-01", "Chipotle", "Dining", -1))).toBe("Chipotle");
+  });
+  it("groups by account", () => {
+    const d = { ...row("2026-01-01", "Chipotle", "Dining", -1), Account: "Chase Checking ••1234" };
+    expect(groupKeyOf({ groupBy: "account" }, d)).toBe("Chase Checking ••1234");
+  });
+  it("falls back to 'Manual entry' grouping by account when Account is missing", () => {
+    expect(groupKeyOf({ groupBy: "account" }, row("2026-01-01", "Chipotle", "Dining", -1))).toBe("Manual entry");
   });
   it("groups by day (the raw date)", () => {
     expect(groupKeyOf({ groupBy: "day" }, row("2026-01-01", "X", "Home", -1))).toBe("2026-01-01");

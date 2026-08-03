@@ -29,8 +29,32 @@ function loadData(rows) {
 const PALETTE = ["#3FA796", "#C1666B", "#E8B04B", "#7B8FA1", "#9B6B9E", "#5C9DAD", "#B98B5E", "#6E9F7E", "#A65D5D", "#8F7EBA", "#5E8B7E", "#C97D60", "#4E8FA8", "#B0567A", "#7EA85E", "#A87E4E", "#6E7EBA", "#C9A05E", "#8E6E9F", "#5E9B8E", "#B87E8E", "#7E9BA8", "#A8945E", "#8E7E5E"];
 const catColor = (cat) => PALETTE[CATS.indexOf(topCategory(cat)) % PALETTE.length];
 
+function RowDetailPopover({ x, y, row }) {
+  const left = Math.min(x + 14, window.innerWidth - 272);
+  const top = Math.min(y + 14, window.innerHeight - 190);
+  const type = row.IsTransfer ? "Internal transfer" : row.Amount < 0 ? "Expense" : "Income";
+  return (
+    <div style={{ ...styles.rowDetailPopover, left, top }}>
+      <div style={styles.rowDetailTitle}>{row.Payee}</div>
+      {[
+        ["Date", fmtDate(row.Date)],
+        ["Amount", fmtMoney(row.Amount)],
+        ["Category", row.Category],
+        ["Account", row.Account],
+        ["Type", type],
+      ].map(([label, value]) => (
+        <div key={label} style={styles.rowDetailRow}>
+          <span style={styles.rowDetailLabel}>{label}</span>
+          <span style={styles.rowDetailValue}>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
   const [selectedKey, setSelectedKey] = useState(null);
+  const [hoverInfo, setHoverInfo] = useState(null);
 
   const baseFiltered = useMemo(() => filterTransactions(RAW_DATA, spec), [spec]);
 
@@ -167,7 +191,13 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
           </thead>
           <tbody>
             {sortedRows.map((d, i) => (
-              <tr key={i}>
+              <tr
+                key={i}
+                className="tx-row"
+                onMouseEnter={(e) => setHoverInfo({ row: d, x: e.clientX, y: e.clientY })}
+                onMouseMove={(e) => setHoverInfo((h) => (h && h.row === d ? { ...h, x: e.clientX, y: e.clientY } : h))}
+                onMouseLeave={() => setHoverInfo((h) => (h && h.row === d ? null : h))}
+              >
                 <td style={{ ...styles.td, ...styles.mono }}>{fmtDate(d.Date)}</td>
                 <td style={styles.td}>{d.Payee}</td>
                 <td style={styles.td}>
@@ -186,6 +216,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
           </tbody>
         </table>
       </div>
+      {hoverInfo && <RowDetailPopover {...hoverInfo} />}
     </div>
   );
 }
@@ -251,6 +282,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
       <style>{`
         ::placeholder { color: var(--text-faint); }
         button:disabled { opacity: 0.3; cursor: default; }
+        .tx-row:hover { background: var(--surface-recessed); }
       `}</style>
 
       <div style={styles.header}>
