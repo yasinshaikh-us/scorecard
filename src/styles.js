@@ -226,11 +226,15 @@ export const styles = {
     minWidth: 84,
     textAlign: "right",
   },
+  // --text-faint measures ~2.5:1 contrast against --surface in dark mode
+  // (well under WCAG AA's 4.5:1 for normal text) -- --text-muted clears
+  // ~5:1 in both themes and is what every other secondary-but-readable
+  // label in the app already uses (qLabel, balancesLabel, ...).
   txDate: {
     fontFamily: "var(--font-mono)",
     fontVariantNumeric: "tabular-nums",
     fontSize: 11,
-    color: "var(--text-faint)",
+    color: "var(--text-muted)",
   },
   txEmpty: {
     textAlign: "center",

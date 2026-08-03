@@ -107,7 +107,7 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
       <style>{`.rule-delete-btn:hover { color: var(--danger); background: var(--surface-recessed); }`}</style>
       <div style={styles.modalPanel} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeaderRow}>
-          <div style={styles.modalTitle}>Category rules</div>
+          <div style={styles.modalTitle}>Rules Engine</div>
           <button onClick={onClose} style={styles.closeBtn}>&times;</button>
         </div>
 
@@ -134,9 +134,9 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
                   style={styles.ruleCheckbox}
                 />
                 <span style={styles.ruleRowText}>
-                  <b>{r.priority}</b> — if <b>{r.match_field}</b> contains "<b>{r.match_value}</b>"
-                  {r.set_category && <> → category <b>{r.set_category}</b></>}
-                  {r.set_payee && <> → payee <b>{r.set_payee}</b></>}
+                  {r.priority} — if {r.match_field} contains "{r.match_value}"
+                  {r.set_category && <> → category {r.set_category}</>}
+                  {r.set_payee && <> → payee {r.set_payee}</>}
                 </span>
                 <button
                   onClick={() => deleteRule(r)}
