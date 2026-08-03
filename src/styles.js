@@ -308,44 +308,36 @@ export const styles = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  headerBtn: {
-    background: "none",
-    border: "1px solid var(--border)",
-    borderRadius: 7,
-    padding: "6px 12px",
-    color: "var(--text-muted)",
-    fontFamily: "var(--font-body)",
-    fontSize: 12,
-    cursor: "pointer",
-  },
-  // Persistent Home/Ask/Rules nav, rendered as real <a> tags (not buttons)
-  // so Cmd/Ctrl-click and "open in new tab" behave like normal navigation
-  // even though there's no router underneath -- click handling just
-  // preventDefault()s and drives the same pushState logic.
+  // Persistent Home/Ask/Rules/Sign-out icon row, all in one flex group so
+  // they stay on a single line -- Home/Ask/Rules render as real <a> tags
+  // (not buttons) so Cmd/Ctrl-click and "open in new tab" behave like
+  // normal navigation even though there's no router underneath, while
+  // Sign out is a real <button> since it's an action, not navigation.
   navRow: {
     display: "flex",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
   },
-  navLink: {
-    display: "inline-block",
+  // Same circular-badge shape as ThemeToggle for a consistent icon-button
+  // language across the header. Border is a single shorthand key in both
+  // variants (never a separate borderColor longhand) -- mixing the two
+  // across conditionally-merged style objects previously left a stuck
+  // border color when React cleared the longhand key between renders.
+  navIconBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    width: 34,
+    height: 34,
+    borderRadius: "50%",
+    border: "1px solid var(--border)",
     background: "none",
-    border: "1px solid transparent",
-    borderRadius: 7,
-    padding: "6px 12px",
     color: "var(--text-muted)",
-    fontFamily: "var(--font-body)",
-    fontSize: 13,
-    fontWeight: 500,
     textDecoration: "none",
     cursor: "pointer",
   },
-  // Same "border" shorthand key as navLink (not a separate borderColor
-  // longhand) -- mixing a shorthand with a longhand override across two
-  // style objects that get conditionally merged left a stuck border color
-  // once React cleared the longhand key between renders (falls back to
-  // currentColor instead of the shorthand's original transparent).
-  navLinkActive: {
+  navIconBtnActive: {
     color: "var(--text)",
     border: "1px solid var(--border)",
     background: "var(--surface-recessed)",
