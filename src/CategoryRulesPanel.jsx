@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { getSupabaseClient } from "./supabaseClient.js";
 import { styles } from "./styles.js";
 
@@ -103,40 +104,50 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
+      <style>{`.rule-delete-btn:hover { color: var(--danger); background: var(--surface-recessed); }`}</style>
       <div style={styles.modalPanel} onClick={(e) => e.stopPropagation()}>
         <div style={styles.modalHeaderRow}>
           <div style={styles.modalTitle}>Category rules</div>
           <button onClick={onClose} style={styles.closeBtn}>&times;</button>
         </div>
 
-        <div style={{ color: "var(--text-muted)", fontSize: 12, fontFamily: "var(--font-body)" }}>
+        <div style={styles.ruleDescription}>
           Rules apply automatically to new transactions as they sync, and retroactively to
           existing history whenever you add, change, disable, or delete one — like an inbox
           filter with "apply to existing" always on.
         </div>
 
-        {rules === null && (
-          <div style={{ color: "var(--text-faint)", fontSize: 13 }}>Loading…</div>
-        )}
+        {rules === null && <div style={styles.ruleEmpty}>Loading…</div>}
 
         {rules && rules.length > 0 && (
-          <div>
+          <div style={styles.ruleListWrap}>
             {rules.map((r) => (
               <div key={r.id} style={styles.ruleRow}>
-                <input type="checkbox" checked={r.enabled} onChange={() => toggleRule(r)} />
+                <input
+                  type="checkbox"
+                  checked={r.enabled}
+                  onChange={() => toggleRule(r)}
+                  style={styles.ruleCheckbox}
+                />
                 <span style={styles.ruleRowText}>
                   <b>{r.priority}</b> — if <b>{r.match_field}</b> contains "<b>{r.match_value}</b>"
                   {r.set_category && <> → category <b>{r.set_category}</b></>}
                   {r.set_payee && <> → payee <b>{r.set_payee}</b></>}
                 </span>
-                <button onClick={() => deleteRule(r)} style={styles.chipX}>Delete</button>
+                <button
+                  onClick={() => deleteRule(r)}
+                  style={styles.ruleDeleteBtn}
+                  className="rule-delete-btn"
+                  title="Delete rule"
+                  aria-label="Delete rule"
+                >
+                  <Trash2 size={15} />
+                </button>
               </div>
             ))}
           </div>
         )}
-        {rules && rules.length === 0 && (
-          <div style={{ color: "var(--text-faint)", fontSize: 13 }}>No rules yet.</div>
-        )}
+        {rules && rules.length === 0 && <div style={styles.ruleEmpty}>No rules yet.</div>}
 
         <div style={styles.ruleFormGrid}>
           <div style={styles.ruleFormLine}>
@@ -188,8 +199,8 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
           </div>
         </div>
 
-        {status && <div style={{ color: "var(--accent)", fontSize: 12 }}>{status}</div>}
-        {error && <div style={{ color: "var(--danger)", fontSize: 12 }}>{error}</div>}
+        {status && <div style={styles.ruleStatus}>{status}</div>}
+        {error && <div style={styles.ruleError}>{error}</div>}
       </div>
     </div>
   );
