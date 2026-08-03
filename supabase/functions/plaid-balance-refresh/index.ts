@@ -10,6 +10,7 @@
 
 import { plaidClient } from "../_shared/plaid.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { refreshAccountBalances } from "../_shared/refreshAccountBalances.ts";
 
 Deno.serve(async (req) => {
   const expected = `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`;
@@ -31,25 +32,7 @@ Deno.serve(async (req) => {
   }
 
   const results = await Promise.allSettled(
-    (items || []).map(async (item) => {
-      const resp = await client.accountsBalanceGet({ access_token: item.access_token });
-
-      const rows = resp.data.accounts.map((a) => ({
-        account_id: a.account_id,
-        user_id: item.user_id,
-        available: a.balances.available,
-        current: a.balances.current,
-        iso_currency_code: a.balances.iso_currency_code,
-        as_of: new Date().toISOString(),
-      }));
-
-      const { error: upsertError } = await db
-        .from("plaid_account_balances")
-        .upsert(rows, { onConflict: "account_id" });
-      if (upsertError) throw upsertError;
-
-      return item.item_id;
-    })
+    (items || []).map((item) => refreshAccountBalances(db, client, item).then(() => item.item_id))
   );
 
   const failed = results.filter((r) => r.status === "rejected");
