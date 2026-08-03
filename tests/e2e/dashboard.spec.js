@@ -71,6 +71,13 @@ function mockAlreadyLinked(page) {
   );
 }
 
+function mockAccountBalances(page, accounts, balances) {
+  return Promise.all([
+    page.route("**/rest/v1/plaid_accounts*", (route) => route.fulfill({ json: accounts })),
+    page.route("**/rest/v1/plaid_account_balances*", (route) => route.fulfill({ json: balances })),
+  ]);
+}
+
 test("asking a question renders only the matching transactions and a chart", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
@@ -156,6 +163,44 @@ test("clicking through multiple chart bars filters the table to each bar in turn
   // that focus must not leave a visible outline around the whole chart.
   const outline = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
   expect(outline).toBe("none");
+});
+
+test("lists a balance chip per linked account on the home screen", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockAccountBalances(
+    page,
+    [
+      { account_id: "acc_checking", name: "Chase Checking", mask: "1234" },
+      { account_id: "acc_savings", name: "Ally Savings", mask: "5678" },
+    ],
+    [
+      { account_id: "acc_checking", current: 2543.21, available: 2500 },
+      { account_id: "acc_savings", current: 18000.5, available: 18000.5 },
+    ]
+  );
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+
+  await page.goto("/");
+
+  await expect(page.getByText("Account Balances")).toBeVisible();
+  await expect(page.getByText("Chase Checking ••1234")).toBeVisible();
+  await expect(page.getByText("$2,543.21")).toBeVisible();
+  await expect(page.getByText("Ally Savings ••5678")).toBeVisible();
+  await expect(page.getByText("$18,000.50")).toBeVisible();
+});
+
+test("shows no balances section for a manual-only ledger (no linked accounts)", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockAccountBalances(page, [], []);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "Ask" })).toBeEnabled();
+  await expect(page.getByText("Account Balances")).toHaveCount(0);
+  await expect(page.getByText("Balance", { exact: true })).toHaveCount(0);
 });
 
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
