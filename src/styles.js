@@ -337,6 +337,55 @@ export const styles = {
     flex: 1,
     color: "var(--text)",
   },
+  ruleDescription: {
+    color: "var(--text-muted)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+    lineHeight: 1.5,
+  },
+  // Mirrors styles.listWrap (the transactions-table scroll pattern) so the
+  // rules list gets the same scroll boundary once it grows past a screenful.
+  ruleListWrap: {
+    borderTop: "1px solid var(--border)",
+    paddingTop: 6,
+    maxHeight: 320,
+    overflowY: "auto",
+    overflowX: "hidden",
+  },
+  ruleCheckbox: {
+    accentColor: "var(--accent)",
+    width: 15,
+    height: 15,
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  ruleDeleteBtn: {
+    background: "none",
+    border: "none",
+    color: "var(--text-faint)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4,
+    borderRadius: 6,
+    flexShrink: 0,
+  },
+  ruleStatus: {
+    color: "var(--accent)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+  },
+  ruleError: {
+    color: "var(--danger)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+  },
+  ruleEmpty: {
+    color: "var(--text-faint)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+  },
   ruleFormGrid: {
     display: "flex",
     flexDirection: "column",

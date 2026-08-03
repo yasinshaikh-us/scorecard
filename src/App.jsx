@@ -312,6 +312,30 @@ function LedgerDashboard({ accessToken, onSignOut }) {
   const [dataStatus, setDataStatus] = useState("loading"); // "loading" | "ready" | "error"
   const [showRules, setShowRules] = useState(false);
 
+  // The app has no router, so the Rules panel is a plain overlay toggled by
+  // state -- without this, the browser Back button doesn't close the panel,
+  // it navigates the whole SPA away. Pushing a history entry when the panel
+  // opens, and driving both close paths (X/backdrop and Back) through
+  // history.back(), keeps Back/Forward doing the expected thing.
+  function openRules() {
+    window.history.pushState({ rulesOpen: true }, "", window.location.pathname + window.location.search + "#rules");
+    setShowRules(true);
+  }
+  function closeRules() {
+    if (window.history.state?.rulesOpen) {
+      window.history.back();
+    } else {
+      setShowRules(false);
+    }
+  }
+  useEffect(() => {
+    function onPopState(e) {
+      setShowRules(!!(e.state && e.state.rulesOpen));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   function refreshTransactions() {
     return fetch("/api/transactions", {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -375,7 +399,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
       <div style={styles.header}>
         <div style={styles.brand}>Analysis</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setShowRules(true)} style={styles.headerBtn}>
+          <button onClick={openRules} style={styles.headerBtn}>
             Rules
           </button>
           <button onClick={onSignOut} style={styles.headerBtn}>
@@ -387,7 +411,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
 
       {showRules && (
         <CategoryRulesPanel
-          onClose={() => setShowRules(false)}
+          onClose={closeRules}
           onApplied={refreshTransactions}
         />
       )}
