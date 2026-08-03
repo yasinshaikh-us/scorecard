@@ -40,6 +40,54 @@ export const styles = {
     flexDirection: "column",
     gap: 10,
   },
+  // Home-screen account-balances strip: same card shell as everything else
+  // (styles.card), one chip per linked account so multiple accounts list
+  // side by side instead of collapsing into a single total.
+  balancesCard: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 12,
+    padding: "14px 18px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  balancesLabel: {
+    color: "var(--text-muted)",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    fontFamily: "var(--font-body)",
+  },
+  balancesRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  balanceChip: {
+    background: "var(--surface-recessed)",
+    borderRadius: 10,
+    padding: "10px 14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 3,
+    minWidth: 140,
+    flex: "1 1 140px",
+  },
+  balanceChipLabel: {
+    color: "var(--text-muted)",
+    fontSize: 11,
+    fontFamily: "var(--font-body)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  balanceChipAmount: {
+    fontFamily: "var(--font-mono)",
+    fontVariantNumeric: "tabular-nums",
+    fontSize: 19,
+    fontWeight: 600,
+  },
   inputWrap: {
     display: "flex",
     alignItems: "center",
