@@ -128,6 +128,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
                   outerRadius={80}
                   onClick={(d) => { const k = d && (d.payload ? d.payload.key : d.key); if (k !== undefined) setSelectedKey(selectedKey === k ? null : k); }}
                   cursor="pointer"
+                  isAnimationActive={false}
                 >
                   {chartData.map((d, i) => (
                     <Cell key={i} fill={spec.groupBy === "category" ? catColor(d.key) : PALETTE[i % PALETTE.length]}
@@ -159,7 +160,7 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
                   </>
                 )}
                 <Tooltip labelFormatter={(k) => fmtGroupKey(k, spec.groupBy)} formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
-                <Bar dataKey="total" radius={[3, 3, 3, 3]} cursor="pointer"
+                <Bar dataKey="total" radius={[3, 3, 3, 3]} cursor="pointer" isAnimationActive={false}
                   onClick={(d) => { const k = d && (d.payload ? d.payload.key : d.key); if (k !== undefined) setSelectedKey(selectedKey === k ? null : k); }}>
                   {chartData.map((d, i) => (
                     <Cell key={i}
@@ -283,7 +284,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         ::placeholder { color: var(--text-faint); }
         button:disabled { opacity: 0.3; cursor: default; }
         .tx-row:hover { background: var(--surface-recessed); }
-        .recharts-surface:focus:not(:focus-visible) { outline: none; }
+        .recharts-wrapper *:focus:not(:focus-visible) { outline: none; }
       `}</style>
 
       <div style={styles.header}>
