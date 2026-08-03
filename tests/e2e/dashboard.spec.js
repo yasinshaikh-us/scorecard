@@ -100,6 +100,64 @@ test("asking a question renders only the matching transactions and a chart", asy
   await expect(page.locator(".recharts-wrapper")).toBeVisible();
 });
 
+const WEEKLY_ROWS = [
+  { Date: "2026-01-05", Payee: "Week1 Purchase", Category: "Groceries", Amount: -100 },
+  { Date: "2026-01-12", Payee: "Week2 Purchase", Category: "Groceries", Amount: -200 },
+  { Date: "2026-01-19", Payee: "Week3 Purchase", Category: "Groceries", Amount: -300 },
+];
+
+const WEEKLY_SPEC = {
+  isLedgerQuery: true,
+  categories: null,
+  categoryContains: null,
+  payeeContains: null,
+  dateStart: "2026-01-01",
+  dateEnd: "2026-01-31",
+  type: "all",
+  amountMin: null,
+  amountMax: null,
+  chartType: "bar",
+  groupBy: "week",
+  title: "Weekly spend",
+};
+
+test("clicking through multiple chart bars filters the table to each bar in turn, with no leftover focus outline (regression: Recharts' entrance animation used to leave bars in a transient state where an early click could hit the wrong bar or none at all)", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: WEEKLY_ROWS }));
+  await page.route("**/api/query", (route) =>
+    route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(WEEKLY_SPEC) }] } })
+  );
+
+  await page.goto("/");
+  await page.getByRole("textbox").fill("weekly spend in january");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.getByText("Weekly spend", { exact: true })).toBeVisible();
+
+  const bars = page.locator(".recharts-bar-rectangle");
+  await expect(bars).toHaveCount(3);
+
+  // Click every bar in turn (immediately, no settling delay) and confirm
+  // the table always narrows to exactly that bar's transaction, never an
+  // unfiltered list and never the wrong week's row.
+  await bars.nth(0).click();
+  await expect(page.getByText("Week1 Purchase")).toBeVisible();
+  await expect(page.getByText("Week2 Purchase")).toHaveCount(0);
+
+  await bars.nth(1).click();
+  await expect(page.getByText("Week2 Purchase")).toBeVisible();
+  await expect(page.getByText("Week1 Purchase")).toHaveCount(0);
+
+  await bars.nth(2).click();
+  await expect(page.getByText("Week3 Purchase")).toBeVisible();
+  await expect(page.getByText("Week2 Purchase")).toHaveCount(0);
+
+  // Clicking a chart element focuses it (Recharts' accessibility layer);
+  // that focus must not leave a visible outline around the whole chart.
+  const outline = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
+  expect(outline).toBe("none");
+});
+
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
