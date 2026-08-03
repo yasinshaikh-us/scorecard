@@ -22,11 +22,13 @@ export const styles = {
   },
   header: {
     display: "flex",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
     borderBottom: "1px solid var(--border)",
     paddingBottom: 16,
     gap: 12,
+    rowGap: 10,
   },
   brand: {
     fontFamily: "var(--font-body)",
@@ -315,6 +317,68 @@ export const styles = {
     fontFamily: "var(--font-body)",
     fontSize: 12,
     cursor: "pointer",
+  },
+  // Persistent Home/Ask/Rules nav, rendered as real <a> tags (not buttons)
+  // so Cmd/Ctrl-click and "open in new tab" behave like normal navigation
+  // even though there's no router underneath -- click handling just
+  // preventDefault()s and drives the same pushState logic.
+  navRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  },
+  navLink: {
+    display: "inline-block",
+    background: "none",
+    border: "1px solid transparent",
+    borderRadius: 7,
+    padding: "6px 12px",
+    color: "var(--text-muted)",
+    fontFamily: "var(--font-body)",
+    fontSize: 13,
+    fontWeight: 500,
+    textDecoration: "none",
+    cursor: "pointer",
+  },
+  // Same "border" shorthand key as navLink (not a separate borderColor
+  // longhand) -- mixing a shorthand with a longhand override across two
+  // style objects that get conditionally merged left a stuck border color
+  // once React cleared the longhand key between renders (falls back to
+  // currentColor instead of the shorthand's original transparent).
+  navLinkActive: {
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    background: "var(--surface-recessed)",
+  },
+  pillRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+  },
+  homePill: {
+    background: "var(--surface-recessed)",
+    border: "1px solid var(--border)",
+    borderRadius: 20,
+    padding: "8px 14px",
+    color: "var(--text)",
+    fontFamily: "var(--font-body)",
+    fontSize: 13,
+    cursor: "pointer",
+  },
+  seeAllLink: {
+    background: "none",
+    border: "none",
+    color: "var(--accent)",
+    fontFamily: "var(--font-body)",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    padding: 0,
+  },
+  recentWrap: {
+    borderTop: "1px solid var(--border)",
+    paddingTop: 6,
   },
   modalOverlay: {
     position: "fixed",
