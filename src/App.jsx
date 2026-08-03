@@ -8,6 +8,7 @@ import ThemeToggle from "./ThemeToggle.jsx";
 import Login from "./Login.jsx";
 import PlaidLinkGate from "./PlaidLinkGate.jsx";
 import CategoryRulesPanel from "./CategoryRulesPanel.jsx";
+import { iconForCategory } from "./categoryIcons.js";
 import { getSupabaseClient } from "./supabaseClient.js";
 import {
   topCategory, computeDataMeta, fmtDate, fmtGroupKey, fmtMoney,
@@ -185,10 +186,10 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={{ ...styles.th, width: "18%" }}>Date</th>
-              <th style={{ ...styles.th, width: "38%" }}>Payee</th>
-              <th style={{ ...styles.th, width: "26%" }}>Category</th>
-              <th style={{ ...styles.th, width: "18%", textAlign: "right" }}>Amount</th>
+              <th style={{ ...styles.th, width: "16%" }}>Date</th>
+              <th style={{ ...styles.th, width: "50%" }}>Payee</th>
+              <th style={{ ...styles.th, width: "10%", textAlign: "center" }}>Ctgy</th>
+              <th style={{ ...styles.th, width: "24%", textAlign: "right" }}>Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -202,10 +203,19 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
               >
                 <td style={{ ...styles.td, ...styles.mono }}>{fmtDate(d.Date)}</td>
                 <td style={styles.td}>{d.Payee}</td>
-                <td style={styles.td}>
-                  <span style={{ ...styles.tag, background: catColor(d.Category) + "26", color: catColor(d.Category) }}>
-                    {topCategory(d.Category)}
-                  </span>
+                <td style={{ ...styles.td, textAlign: "center" }}>
+                  {(() => {
+                    const Icon = iconForCategory(topCategory(d.Category));
+                    return (
+                      <span
+                        title={d.Category}
+                        aria-label={d.Category}
+                        style={{ ...styles.categoryIconBadge, background: catColor(d.Category) + "26", color: catColor(d.Category) }}
+                      >
+                        <Icon size={14} />
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td style={{ ...styles.td, ...styles.mono, textAlign: "right", color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
                   {fmtMoney(d.Amount)}
