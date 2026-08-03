@@ -7,6 +7,7 @@ import { styles, tooltipStyle } from "./styles.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 import Login from "./Login.jsx";
 import PlaidLinkGate from "./PlaidLinkGate.jsx";
+import CategoryRulesPanel from "./CategoryRulesPanel.jsx";
 import { getSupabaseClient } from "./supabaseClient.js";
 import {
   topCategory, computeDataMeta, fmtDate, fmtGroupKey, fmtMoney,
@@ -299,9 +300,10 @@ function LedgerDashboard({ accessToken, onSignOut }) {
   const scrollRef = useRef(null);
 
   const [dataStatus, setDataStatus] = useState("loading"); // "loading" | "ready" | "error"
+  const [showRules, setShowRules] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/transactions", {
+  function refreshTransactions() {
+    return fetch("/api/transactions", {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then(res => {
@@ -313,6 +315,10 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         setDataStatus("ready");
       })
       .catch(() => setDataStatus("error"));
+  }
+
+  useEffect(() => {
+    refreshTransactions();
   }, []);
 
   async function runQuery(q) {
@@ -359,24 +365,22 @@ function LedgerDashboard({ accessToken, onSignOut }) {
       <div style={styles.header}>
         <div style={styles.brand}>Analysis</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={onSignOut}
-            style={{
-              background: "none",
-              border: "1px solid var(--border)",
-              borderRadius: 7,
-              padding: "6px 12px",
-              color: "var(--text-muted)",
-              fontFamily: "var(--font-body)",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
+          <button onClick={() => setShowRules(true)} style={styles.headerBtn}>
+            Rules
+          </button>
+          <button onClick={onSignOut} style={styles.headerBtn}>
             Sign out
           </button>
           <ThemeToggle />
         </div>
       </div>
+
+      {showRules && (
+        <CategoryRulesPanel
+          onClose={() => setShowRules(false)}
+          onApplied={refreshTransactions}
+        />
+      )}
 
       <AccountBalances />
 
