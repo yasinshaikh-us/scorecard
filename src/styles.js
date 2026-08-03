@@ -366,16 +366,6 @@ export const styles = {
     fontSize: 13,
     cursor: "pointer",
   },
-  seeAllLink: {
-    background: "none",
-    border: "none",
-    color: "var(--accent)",
-    fontFamily: "var(--font-body)",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    padding: 0,
-  },
   recentWrap: {
     borderTop: "1px solid var(--border)",
     paddingTop: 6,
@@ -430,6 +420,22 @@ export const styles = {
     fontSize: 13,
     fontFamily: "var(--font-body)",
     lineHeight: 1.5,
+  },
+  // Manual trigger for apply_category_rules() -- rules already reapply
+  // automatically on add/toggle/delete, but a scrubbing-logic change
+  // shipped separately (e.g. a new junk pattern added to clean_payee()
+  // itself) needs an explicit way to re-run against existing history
+  // without touching a rule.
+  ruleReapplyBtn: {
+    alignSelf: "flex-start",
+    background: "none",
+    border: "1px solid var(--border)",
+    borderRadius: 7,
+    padding: "6px 12px",
+    color: "var(--text-muted)",
+    fontFamily: "var(--font-body)",
+    fontSize: 12,
+    cursor: "pointer",
   },
   // Mirrors styles.listWrap (the transactions-table scroll pattern) so the
   // rules list gets the same scroll boundary once it grows past a screenful.

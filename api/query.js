@@ -56,11 +56,12 @@ Rules:
 - Internal transfers between the user's own linked accounts (IsTransfer=true, e.g. moving money from savings to checking) are excluded by default from every query, including type="all" — they aren't real spending or income, and once the ledger has more than one linked account, leaving them in double-counts the same transfer as both an expense and income. Only set includeTransfers=true (and normally type="transfer") when the question explicitly asks about transfers, moving money between accounts, or account-to-account activity.
 - If the question is about spending/expenses, type="expense". About income/deposits/payroll, type="income". About transfers between the user's own accounts, type="transfer" (and includeTransfers=true). Otherwise "all".
 - amountMin/amountMax filter on the transaction's magnitude (absolute value), regardless of sign. "less than $1,000" -> amountMax=1000. "more than $50" -> amountMin=50. "between $20 and $100" -> amountMin=20, amountMax=100. Leave null if the question has no dollar threshold.
-- When the question is about spending/income over time (or any time-bounded list like "last year", "last N months"), choose the time-grouping granularity based on the span actually being covered — never default to "day":
-  -- span under ~3 weeks (or no date range given, i.e. showing everything): groupBy "day"
+- When the question is about spending/income over time (or any time-bounded list like "last year", "last N months", or an unscoped list like "show me everything"), choose the time-grouping granularity from the span actually being covered — never default to "day" without checking the span first:
+  -- Compute the span from dateStart/dateEnd if the question gives one, otherwise from the full data range above (MIN_DATE to MAX_DATE) — "show me everything" with a multi-year dataset is a multi-year span, not a shortcut to "day".
+  -- span under ~3 weeks: groupBy "day"
   -- span from ~3 weeks up to ~4 months: groupBy "week"
   -- span longer than ~4 months (e.g. "last N months" where N >= 3, "this year", "over time" with a multi-year dataset): groupBy "month"
-  -- Compute the span from dateStart/dateEnd (or the full data range if none given) and pick accordingly — a 7-month question should produce roughly 7 bars (month), not ~210 (day).
+  -- A 7-month question should produce roughly 7 bars (month), not ~210 (day); an unscoped "everything" question over several years of data should produce a handful of monthly points, not thousands of daily ones.
 - Pick chartType/groupBy that best visualizes the question:
   -- Comparing a handful of named categories/groups as parts of a whole ("breakdown", "breakup", "split", "percentage", "share of spend", "versus" between categories) -> chartType "pie", groupBy "category" (or restrict via the categories field to just the named groups).
   -- Ranking or comparing many categories/merchants by raw magnitude ("top merchants", "which category do I spend the most on") -> chartType "bar", groupBy "category" or "payee".

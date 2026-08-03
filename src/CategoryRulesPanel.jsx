@@ -117,6 +117,10 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
           filter with "apply to existing" always on.
         </div>
 
+        <button style={styles.ruleReapplyBtn} onClick={reapply}>
+          Reapply now
+        </button>
+
         {rules === null && <div style={styles.ruleEmpty}>Loading…</div>}
 
         {rules && rules.length > 0 && (

@@ -48,12 +48,7 @@ export default function HomePage({ transactions, dataStatus, onAskShortcut }) {
       </div>
 
       <div style={styles.card}>
-        <div style={styles.cardHeaderRow}>
-          <div style={styles.balancesLabel}>Recent Activity</div>
-          <button style={styles.seeAllLink} disabled={!ready} onClick={() => onAskShortcut("Show me everything")}>
-            See all &rarr;
-          </button>
-        </div>
+        <div style={styles.balancesLabel}>Recent Activity</div>
         <div style={styles.recentWrap}>
           {recent.map((d, i) => {
             const Icon = iconForCategory(topCategory(d.Category));

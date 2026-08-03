@@ -38,6 +38,19 @@ export function cleanPayee(raw: string): string {
   let result = raw;
   result = result.replace(/\*[a-zA-Z0-9]+/g, "");
   result = result.replace(/\bxx+\d+\b/gi, "");
+
+  // "Online (Realtime) Transfer To/From <name> ..." boilerplate prefix --
+  // strip it so the counterparty name that follows becomes the payee.
+  result = result.replace(/^\s*(Online\s+)?(Realtime\s+)?Transfer\s+(To|From)\s+/i, "");
+
+  // "Transaction#: <code>" / "Reference#: <code>" labeled junk, whether or
+  // not a value follows -- label-based rather than trying to pattern-match
+  // the reference code itself, since those mix digits and letters (e.g.
+  // "9255370026RX") in ways the generic digit-run rule below can't
+  // reliably catch (no word boundary between the digits and the letters).
+  result = result.replace(/\bTransaction\s*#:?\s*[a-zA-Z0-9]*/gi, "");
+  result = result.replace(/\bReference\s*#:?\s*[a-zA-Z0-9]*/gi, "");
+
   result = result.replace(/\s#(\s|$)/g, " ");
   result = result.replace(/\b(PPD|WEB|CCD|ARC)\s*ID:?\s*\d+\b/gi, "");
   result = result.replace(/\d{3}[-.\s]\d{3}[-.\s]\d{4}/g, "");

@@ -128,8 +128,8 @@ function AuthedApp({ accessToken, onSignOut }) {
     }
   }
 
-  // Shortcut pills / "See all" on Home jump to Ask and immediately run a
-  // canned question through the exact same pipeline the input bar uses.
+  // Home's shortcut pills jump to Ask and immediately run a canned
+  // question through the exact same pipeline the input bar uses.
   function askAndGo(question) {
     navigate("ask");
     runQuery(question);
