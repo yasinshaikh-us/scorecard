@@ -9,6 +9,7 @@
 import { plaidClient } from "./plaid.ts";
 import { supabaseAdmin } from "./supabaseAdmin.ts";
 import { applyCategoryRules, type CategoryRule } from "./categoryRules.ts";
+import { refreshAccountBalances } from "./refreshAccountBalances.ts";
 
 function categoryFor(tx: any) {
   return tx.personal_finance_category?.primary || tx.category?.join(" > ") || "Uncategorized";
@@ -111,6 +112,18 @@ export async function syncItemTransactions(itemId: string) {
     .update({ cursor, updated_at: new Date().toISOString() })
     .eq("id", item.id);
   if (cursorUpdateError) throw cursorUpdateError;
+
+  // Piggyback a balance refresh onto every transaction webhook -- Plaid's
+  // Balance product has no webhook of its own, so this is what keeps
+  // balances near-real-time instead of waiting up to an hour for the next
+  // plaid-balance-refresh cron tick. Best-effort: a balance-refresh
+  // failure shouldn't fail the (already-successful) transaction sync or
+  // cause Plaid to retry the webhook.
+  try {
+    await refreshAccountBalances(db, client, item);
+  } catch (err) {
+    console.error(`Balance refresh failed for item ${itemId}`, err);
+  }
 
   return { added: added.length, modified: modified.length, removed: removed.length };
 }
