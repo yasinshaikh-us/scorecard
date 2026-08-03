@@ -283,6 +283,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         ::placeholder { color: var(--text-faint); }
         button:disabled { opacity: 0.3; cursor: default; }
         .tx-row:hover { background: var(--surface-recessed); }
+        .recharts-surface:focus:not(:focus-visible) { outline: none; }
       `}</style>
 
       <div style={styles.header}>
