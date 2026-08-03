@@ -88,7 +88,7 @@ test("asking a question renders only the matching transactions and a chart", asy
     })
   );
 
-  await page.goto("/");
+  await page.goto("/ask");
 
   const askButton = page.getByRole("button", { name: "Ask" });
   await expect(askButton).toBeEnabled();
@@ -136,7 +136,7 @@ test("clicking through multiple chart bars filters the table to each bar in turn
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(WEEKLY_SPEC) }] } })
   );
 
-  await page.goto("/");
+  await page.goto("/ask");
   await page.getByRole("textbox").fill("weekly spend in january");
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page.getByText("Weekly spend", { exact: true })).toBeVisible();
@@ -194,7 +194,7 @@ test("clicking a line chart point filters the table to that point, same as click
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(MONTHLY_SPEC) }] } })
   );
 
-  await page.goto("/");
+  await page.goto("/ask");
   await page.getByRole("textbox").fill("monthly spend");
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page.getByText("Monthly spend", { exact: true })).toBeVisible();
@@ -247,7 +247,7 @@ test("shows no balances section for a manual-only ledger (no linked accounts)", 
 
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "Ask" })).toBeEnabled();
+  await expect(page.getByText("Quick Questions")).toBeVisible();
   await expect(page.getByText("Account Balances")).toHaveCount(0);
   await expect(page.getByText("Balance", { exact: true })).toHaveCount(0);
 });
@@ -262,7 +262,7 @@ test("an off-topic question is rejected instead of silently showing all transact
     })
   );
 
-  await page.goto("/");
+  await page.goto("/ask");
 
   await page.getByRole("textbox").fill("What is the weather currently in New York?");
   await page.getByRole("button", { name: "Ask" }).click();
@@ -272,4 +272,69 @@ test("an off-topic question is rejected instead of silently showing all transact
   // No chart or transaction rows should have been rendered for a rejected question.
   await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
   await expect(page.getByText("Chase Mortgage")).toHaveCount(0);
+});
+
+function mockNoLinkedAccounts(page) {
+  return Promise.all([
+    page.route("**/rest/v1/plaid_accounts*", (route) => route.fulfill({ json: [] })),
+    page.route("**/rest/v1/plaid_account_balances*", (route) => route.fulfill({ json: [] })),
+  ]);
+}
+
+test("navigating from Home to Ask and back with the browser Back button works, and the URL reflects each page", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockNoLinkedAccounts(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+
+  await page.goto("/");
+  await expect(page.getByText("Quick Questions")).toBeVisible();
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Ask" }).click();
+  await expect(page).toHaveURL(/\/ask$/);
+  await expect(page.getByRole("textbox")).toBeVisible();
+  await expect(page.getByText("Quick Questions")).toHaveCount(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("Quick Questions")).toBeVisible();
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/ask$/);
+  await expect(page.getByRole("textbox")).toBeVisible();
+});
+
+test("clicking a Home shortcut pill jumps to Ask and runs the canned question automatically", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockNoLinkedAccounts(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/api/query", (route) =>
+    route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(FIXTURE_SPEC) }] } })
+  );
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Top categories" }).click();
+
+  await expect(page).toHaveURL(/\/ask$/);
+  await expect(page.getByText("Grocery spending")).toBeVisible();
+  await expect(page.getByText("QFC Foods")).toBeVisible();
+});
+
+test("Rules is reachable from Home, and closing it (X or Back) returns to the page that opened it", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockNoLinkedAccounts(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/rest/v1/category_rules*", (route) => route.fulfill({ json: [] }));
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "Rules" }).click();
+  await expect(page.getByText("Category rules")).toBeVisible();
+
+  await page.getByRole("button", { name: "×" }).click();
+  await expect(page.getByText("Category rules")).toHaveCount(0);
+  await expect(page.getByText("Quick Questions")).toBeVisible();
 });

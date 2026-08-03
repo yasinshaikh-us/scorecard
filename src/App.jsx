@@ -1,334 +1,70 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, Legend
-} from "recharts";
-import { styles, tooltipStyle } from "./styles.js";
+import { useState, useRef, useEffect } from "react";
+import { styles } from "./styles.js";
 import ThemeToggle from "./ThemeToggle.jsx";
 import Login from "./Login.jsx";
 import PlaidLinkGate from "./PlaidLinkGate.jsx";
 import CategoryRulesPanel from "./CategoryRulesPanel.jsx";
-import { iconForCategory } from "./categoryIcons.js";
+import HomePage from "./HomePage.jsx";
+import AskPage from "./AskPage.jsx";
 import { getSupabaseClient } from "./supabaseClient.js";
-import {
-  topCategory, computeDataMeta, fmtDate, fmtGroupKey, fmtMoney,
-  filterTransactions, groupKeyOf, buildChartData, cleanRows, parseQueryResponse,
-} from "./logic.js";
+import { loadData } from "./dataStore.js";
+import { cleanRows, parseQueryResponse } from "./logic.js";
 
-let RAW_DATA = [];
+const PATH_FOR_PAGE = { home: "/", ask: "/ask" };
+const pageForPathname = (pathname) => (pathname === "/ask" ? "ask" : "home");
 
-let CATS = [];
+// Top-level authenticated shell: persistent header/nav + whichever page is
+// active, plus the Rules modal that can be opened from any page. Owns all
+// the state a page might need (transaction data, the Ask feed) so moving
+// between pages never re-fetches or loses the in-progress feed.
+//
+// Navigation is hand-rolled (pushState/popstate) rather than a router
+// library -- there are only three destinations (Home, Ask, the Rules
+// modal), and this extends the same pattern already proven for the Rules
+// modal's back-button behavior. Nav items render as real <a> tags (not
+// buttons) so Cmd/Ctrl-click and "open in new tab" work like normal
+// navigation even though the actual navigation is handled in JS.
+function AuthedApp({ accessToken, onSignOut }) {
+  const [page, setPage] = useState(() => pageForPathname(window.location.pathname));
+  const [showRules, setShowRules] = useState(() => window.location.hash === "#rules");
 
-// Called once the CSV has been fetched & parsed. Populates the module-level
-// data + derived lookups the rest of the app relies on for rendering
-// (the system prompt is built server-side in api/query.js, from the same
-// transactions fetched independently there via RLS).
-function loadData(rows) {
-  RAW_DATA = rows;
-  ({ CATS } = computeDataMeta(RAW_DATA));
-}
-
-const PALETTE = ["#3FA796", "#C1666B", "#E8B04B", "#7B8FA1", "#9B6B9E", "#5C9DAD", "#B98B5E", "#6E9F7E", "#A65D5D", "#8F7EBA", "#5E8B7E", "#C97D60", "#4E8FA8", "#B0567A", "#7EA85E", "#A87E4E", "#6E7EBA", "#C9A05E", "#8E6E9F", "#5E9B8E", "#B87E8E", "#7E9BA8", "#A8945E", "#8E7E5E"];
-const catColor = (cat) => PALETTE[CATS.indexOf(topCategory(cat)) % PALETTE.length];
-
-function RowDetailPopover({ x, y, row }) {
-  const left = Math.min(x + 14, window.innerWidth - 272);
-  const top = Math.min(y + 14, window.innerHeight - 190);
-  return (
-    <div style={{ ...styles.rowDetailPopover, left, top }}>
-      <div style={styles.rowDetailTitle}>{row.Payee}</div>
-      {[
-        ["Date", fmtDate(row.Date)],
-        ["Amount", fmtMoney(row.Amount)],
-        ["Category", row.Category],
-        ["Account", row.Account],
-      ].map(([label, value]) => (
-        <div key={label} style={styles.rowDetailRow}>
-          <span style={styles.rowDetailLabel}>{label}</span>
-          <span style={styles.rowDetailValue}>{value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
-  const [selectedKey, setSelectedKey] = useState(null);
-  const [hoverInfo, setHoverInfo] = useState(null);
-
-  const baseFiltered = useMemo(() => filterTransactions(RAW_DATA, spec), [spec]);
-
-  const chartData = useMemo(() => buildChartData(baseFiltered, spec), [baseFiltered, spec]);
-
-  const displayed = useMemo(() => {
-    if (!selectedKey) return baseFiltered;
-    return baseFiltered.filter(d => groupKeyOf(spec, d) === selectedKey);
-  }, [baseFiltered, selectedKey, spec]);
-
-  const stats = useMemo(() => {
-    const expenses = displayed.filter(d => d.Amount < 0);
-    const income = displayed.filter(d => d.Amount > 0);
-    const spent = expenses.reduce((s, d) => s + Math.abs(d.Amount), 0);
-    const earned = income.reduce((s, d) => s + d.Amount, 0);
-    return { count: displayed.length, spent, earned, net: earned - spent };
-  }, [displayed]);
-
-  const sortedRows = useMemo(() => {
-    return displayed.slice().sort((a, b) => b.Date.localeCompare(a.Date));
-  }, [displayed]);
-
-  if (error) {
-    return (
-      <div style={styles.card}>
-        <div style={styles.cardHeaderRow}>
-          <div style={styles.qLabel}>"{question}"</div>
-          <button onClick={onRemove} style={styles.closeBtn}>&times;</button>
-        </div>
-        <div style={{ color: "var(--danger)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>
-          Couldn't parse that one — try rephrasing. ({error})
-        </div>
-      </div>
-    );
-  }
-  if (offTopic) {
-    return (
-      <div style={styles.card}>
-        <div style={styles.cardHeaderRow}>
-          <div style={styles.qLabel}>"{question}"</div>
-          <button onClick={onRemove} style={styles.closeBtn}>&times;</button>
-        </div>
-        <div style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>
-          This app only answers questions about your own bank-transaction ledger — try something like "how much did I spend on groceries last month?"
-        </div>
-      </div>
-    );
-  }
-  if (!spec) return null;
-
-  return (
-    <div style={styles.card}>
-      <div style={styles.cardHeaderRow}>
-        <div>
-          <div style={styles.qLabel}>"{question}"</div>
-          <div style={styles.titleLine}>{spec.title}</div>
-        </div>
-        <button onClick={onRemove} style={styles.closeBtn}>&times;</button>
-      </div>
-
-      {spec.chartType !== "none" && chartData.length > 0 && (
-        <div style={styles.chartWrap}>
-          <ResponsiveContainer width="100%" height={220}>
-            {spec.chartType === "pie" ? (
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="total"
-                  nameKey="key"
-                  cx="50%" cy="50%"
-                  outerRadius={80}
-                  onClick={(d) => { const k = d && (d.payload ? d.payload.key : d.key); if (k !== undefined) setSelectedKey(selectedKey === k ? null : k); }}
-                  cursor="pointer"
-                  isAnimationActive={false}
-                >
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={spec.groupBy === "category" ? catColor(d.key) : PALETTE[i % PALETTE.length]}
-                      stroke={selectedKey === d.key ? "var(--text)" : "none"} strokeWidth={2} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
-              </PieChart>
-            ) : spec.chartType === "line" ? (
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" />
-                <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                <Tooltip labelFormatter={(k) => fmtGroupKey(k, spec.groupBy)} formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  stroke="var(--accent)"
-                  strokeWidth={2}
-                  isAnimationActive={false}
-                  activeDot={false}
-                  dot={(dotProps) => {
-                    const { cx, cy, payload, index } = dotProps;
-                    const isSelected = selectedKey === payload.key;
-                    return (
-                      <circle
-                        key={`line-dot-${index}`}
-                        cx={cx}
-                        cy={cy}
-                        r={isSelected ? 5 : 4}
-                        fill={isSelected ? "var(--accent)" : "var(--surface)"}
-                        stroke="var(--accent)"
-                        strokeWidth={2}
-                        opacity={selectedKey && !isSelected ? 0.35 : 1}
-                        cursor="pointer"
-                        onClick={() => setSelectedKey(selectedKey === payload.key ? null : payload.key)}
-                      />
-                    );
-                  }}
-                />
-              </LineChart>
-            ) : (
-              <BarChart data={chartData} layout={spec.groupBy === "payee" ? "vertical" : "horizontal"}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" />
-                {spec.groupBy === "payee" ? (
-                  <>
-                    <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                    <YAxis type="category" dataKey="key" width={120} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                  </>
-                ) : (
-                  <>
-                    <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                    <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                  </>
-                )}
-                <Tooltip labelFormatter={(k) => fmtGroupKey(k, spec.groupBy)} formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
-                <Bar dataKey="total" radius={[3, 3, 3, 3]} cursor="pointer" isAnimationActive={false}
-                  onClick={(d) => { const k = d && (d.payload ? d.payload.key : d.key); if (k !== undefined) setSelectedKey(selectedKey === k ? null : k); }}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i}
-                      fill={spec.groupBy === "category" ? catColor(d.key) : "var(--accent)"}
-                      opacity={selectedKey && selectedKey !== d.key ? 0.35 : 1} />
-                  ))}
-                </Bar>
-              </BarChart>
-            )}
-          </ResponsiveContainer>
-          {selectedKey && (
-            <div style={styles.filterChip}>
-              filtered to <b>{fmtGroupKey(selectedKey, spec.groupBy)}</b>
-              <span onClick={() => setSelectedKey(null)} style={styles.chipX}>&times;</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={styles.listWrap}>
-        {sortedRows.map((d, i) => {
-          const Icon = iconForCategory(topCategory(d.Category));
-          return (
-            <div
-              key={i}
-              className="tx-row"
-              style={styles.txRow}
-              onMouseEnter={(e) => setHoverInfo({ row: d, x: e.clientX, y: e.clientY })}
-              onMouseMove={(e) => setHoverInfo((h) => (h && h.row === d ? { ...h, x: e.clientX, y: e.clientY } : h))}
-              onMouseLeave={() => setHoverInfo((h) => (h && h.row === d ? null : h))}
-            >
-              <div style={styles.txRowTop}>
-                <div style={styles.txPayee}>{d.Payee}</div>
-                <div style={styles.txRight}>
-                  <span
-                    title={d.Category}
-                    aria-label={d.Category}
-                    style={{ ...styles.categoryIconBadge, background: catColor(d.Category) + "26", color: catColor(d.Category) }}
-                  >
-                    <Icon size={14} />
-                  </span>
-                  <span style={{ ...styles.txAmount, color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
-                    {fmtMoney(d.Amount)}
-                  </span>
-                </div>
-              </div>
-              <div style={styles.txDate}>{fmtDate(d.Date)}</div>
-            </div>
-          );
-        })}
-        {sortedRows.length === 0 && <div style={styles.txEmpty}>No matching transactions</div>}
-      </div>
-      {hoverInfo && <RowDetailPopover {...hoverInfo} />}
-    </div>
-  );
-}
-
-// Home-screen balances strip. Reads plaid_accounts + plaid_account_balances
-// directly via the already-authenticated Supabase client (same RLS-scoped
-// pattern App.jsx already uses for the plaid_items link-status check) --
-// no new API route needed, since both tables already carry a `Users read
-// their own ...` policy for `authenticated`. Renders nothing for a
-// manual-only ledger (no linked accounts) or while still loading, so it
-// never introduces a layout flash or an empty card.
-function AccountBalances() {
-  const [balances, setBalances] = useState(null); // null = not loaded yet
-
-  useEffect(() => {
-    let cancelled = false;
-    const supabase = getSupabaseClient();
-    Promise.all([
-      supabase.from("plaid_accounts").select("account_id, name, mask"),
-      supabase.from("plaid_account_balances").select("account_id, current, available"),
-    ])
-      .then(([accountsRes, balancesRes]) => {
-        if (cancelled) return;
-        if (accountsRes.error || balancesRes.error) {
-          setBalances([]);
-          return;
-        }
-        const balanceByAccount = {};
-        (balancesRes.data || []).forEach((b) => { balanceByAccount[b.account_id] = b; });
-        const rows = (accountsRes.data || [])
-          .map((a) => {
-            const bal = balanceByAccount[a.account_id];
-            // Prefer the ledger ("current") balance -- what's actually in
-            // the account -- falling back to "available" (e.g. credit
-            // cards, where Plaid sometimes only populates one of the two).
-            const amount = bal?.current ?? bal?.available;
-            if (amount == null) return null;
-            return {
-              id: a.account_id,
-              label: `${a.name || "Account"}${a.mask ? ` ••${a.mask}` : ""}`,
-              amount: Number(amount),
-            };
-          })
-          .filter(Boolean);
-        setBalances(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setBalances([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!balances || balances.length === 0) return null;
-
-  return (
-    <div style={styles.balancesCard}>
-      <div style={styles.balancesLabel}>{balances.length > 1 ? "Account Balances" : "Balance"}</div>
-      <div style={styles.balancesRow}>
-        {balances.map((b) => (
-          <div key={b.id} style={styles.balanceChip}>
-            <div style={styles.balanceChipLabel}>{b.label}</div>
-            <div style={{ ...styles.balanceChipAmount, color: b.amount < 0 ? "var(--danger)" : "var(--text)" }}>
-              {fmtMoney(b.amount)}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LedgerDashboard({ accessToken, onSignOut }) {
   const [input, setInput] = useState("");
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const nextId = useRef(0);
-  const scrollRef = useRef(null);
 
+  const [transactions, setTransactions] = useState([]);
   const [dataStatus, setDataStatus] = useState("loading"); // "loading" | "ready" | "error"
-  const [showRules, setShowRules] = useState(false);
 
-  // The app has no router, so the Rules panel is a plain overlay toggled by
-  // state -- without this, the browser Back button doesn't close the panel,
-  // it navigates the whole SPA away. Pushing a history entry when the panel
-  // opens, and driving both close paths (X/backdrop and Back) through
-  // history.back(), keeps Back/Forward doing the expected thing.
+  // Seed a matching history entry for whatever the browser actually loaded
+  // (a direct link to /ask, a refresh with #rules still in the URL, ...)
+  // so the very first popstate (e.g. the first Back press) has real state
+  // to read instead of null.
+  useEffect(() => {
+    window.history.replaceState(
+      { page, rulesOpen: showRules },
+      "",
+      PATH_FOR_PAGE[page] + (showRules ? "#rules" : "")
+    );
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    function onPopState(e) {
+      setPage(e.state?.page || "home");
+      setShowRules(!!e.state?.rulesOpen);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function navigate(nextPage) {
+    if (nextPage === page) return;
+    window.history.pushState({ page: nextPage }, "", PATH_FOR_PAGE[nextPage]);
+    setPage(nextPage);
+  }
+
   function openRules() {
-    window.history.pushState({ rulesOpen: true }, "", window.location.pathname + window.location.search + "#rules");
+    window.history.pushState({ page, rulesOpen: true }, "", PATH_FOR_PAGE[page] + "#rules");
     setShowRules(true);
   }
   function closeRules() {
@@ -338,24 +74,19 @@ function LedgerDashboard({ accessToken, onSignOut }) {
       setShowRules(false);
     }
   }
-  useEffect(() => {
-    function onPopState(e) {
-      setShowRules(!!(e.state && e.state.rulesOpen));
-    }
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
 
   function refreshTransactions() {
     return fetch("/api/transactions", {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
-      .then(res => {
+      .then((res) => {
         if (!res.ok) throw new Error(`Failed to fetch transactions (${res.status})`);
         return res.json();
       })
-      .then(rows => {
-        loadData(cleanRows(rows));
+      .then((rows) => {
+        const cleaned = cleanRows(rows);
+        loadData(cleaned);
+        setTransactions(cleaned);
         setDataStatus("ready");
       })
       .catch(() => setDataStatus("error"));
@@ -363,7 +94,7 @@ function LedgerDashboard({ accessToken, onSignOut }) {
 
   useEffect(() => {
     refreshTransactions();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function runQuery(q) {
     if (!q.trim() || loading || dataStatus !== "ready") return;
@@ -389,12 +120,19 @@ function LedgerDashboard({ accessToken, onSignOut }) {
       }
       const data = await resp.json();
       const result = parseQueryResponse(resp.ok, data);
-      setCards(prev => prev.map(c => c.id === id ? { ...c, ...result, pending: false } : c));
+      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...result, pending: false } : c)));
     } catch (e) {
-      setCards(prev => prev.map(c => c.id === id ? { ...c, error: String(e.message || e), pending: false } : c));
+      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, error: String(e.message || e), pending: false } : c)));
     } finally {
       setLoading(false);
     }
+  }
+
+  // Shortcut pills / "See all" on Home jump to Ask and immediately run a
+  // canned question through the exact same pipeline the input bar uses.
+  function askAndGo(question) {
+    navigate("ask");
+    runQuery(question);
   }
 
   return (
@@ -407,11 +145,37 @@ function LedgerDashboard({ accessToken, onSignOut }) {
       `}</style>
 
       <div style={styles.header}>
-        <div style={styles.brand}>Analysis</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={openRules} style={styles.headerBtn}>
+        <a
+          href="/"
+          onClick={(e) => { e.preventDefault(); navigate("home"); }}
+          style={{ ...styles.brand, cursor: "pointer", textDecoration: "none", color: "inherit" }}
+        >
+          Analysis
+        </a>
+        <div style={styles.navRow}>
+          <a
+            href="/"
+            onClick={(e) => { e.preventDefault(); navigate("home"); }}
+            style={{ ...styles.navLink, ...(page === "home" ? styles.navLinkActive : {}) }}
+          >
+            Home
+          </a>
+          <a
+            href="/ask"
+            onClick={(e) => { e.preventDefault(); navigate("ask"); }}
+            style={{ ...styles.navLink, ...(page === "ask" ? styles.navLinkActive : {}) }}
+          >
+            Ask
+          </a>
+          <a
+            href="#rules"
+            onClick={(e) => { e.preventDefault(); openRules(); }}
+            style={styles.navLink}
+          >
             Rules
-          </button>
+          </a>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={onSignOut} style={styles.headerBtn}>
             Sign out
           </button>
@@ -426,8 +190,6 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         />
       )}
 
-      <AccountBalances />
-
       {dataStatus === "loading" && (
         <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, fontFamily: "var(--font-body)" }}>
           Loading transaction data…
@@ -439,32 +201,19 @@ function LedgerDashboard({ accessToken, onSignOut }) {
         </div>
       )}
 
-      <div style={styles.queryBar}>
-        <div style={styles.inputWrap}>
-          <input
-            style={styles.input}
-            value={input}
-            placeholder={dataStatus === "ready" ? "" : "Loading…"}
-            disabled={dataStatus !== "ready"}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && runQuery(input)}
-          />
-          <button style={styles.askBtn} onClick={() => runQuery(input)} disabled={loading || dataStatus !== "ready"}>
-            {loading ? "…" : "Ask"}
-          </button>
-        </div>
-      </div>
-
-      <div style={styles.feed} ref={scrollRef}>
-        {cards.map(c => c.pending ? (
-          <div key={c.id} style={styles.card}>
-            <div style={styles.qLabel}>"{c.question}"</div>
-            <div style={{ color: "var(--text-faint)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>thinking…</div>
-          </div>
-        ) : (
-          <QueryCard key={c.id} {...c} onRemove={() => setCards(prev => prev.filter(x => x.id !== c.id))} />
-        ))}
-      </div>
+      {page === "home" ? (
+        <HomePage transactions={transactions} dataStatus={dataStatus} onAskShortcut={askAndGo} />
+      ) : (
+        <AskPage
+          input={input}
+          onInputChange={setInput}
+          onAsk={() => runQuery(input)}
+          loading={loading}
+          dataStatus={dataStatus}
+          cards={cards}
+          onRemoveCard={(id) => setCards((prev) => prev.filter((c) => c.id !== id))}
+        />
+      )}
     </div>
   );
 }
@@ -530,10 +279,9 @@ export default function App() {
   }
 
   return (
-    <LedgerDashboard
+    <AuthedApp
       accessToken={session.access_token}
       onSignOut={() => getSupabaseClient().auth.signOut()}
     />
   );
 }
-
