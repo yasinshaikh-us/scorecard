@@ -165,6 +165,55 @@ test("clicking through multiple chart bars filters the table to each bar in turn
   expect(outline).toBe("none");
 });
 
+const MONTHLY_ROWS = [
+  { Date: "2026-01-15", Payee: "Jan Purchase", Category: "Groceries", Amount: -100 },
+  { Date: "2026-02-15", Payee: "Feb Purchase", Category: "Groceries", Amount: -200 },
+  { Date: "2026-03-15", Payee: "Mar Purchase", Category: "Groceries", Amount: -300 },
+];
+
+const MONTHLY_SPEC = {
+  isLedgerQuery: true,
+  categories: null,
+  categoryContains: null,
+  payeeContains: null,
+  dateStart: "2026-01-01",
+  dateEnd: "2026-03-31",
+  type: "all",
+  amountMin: null,
+  amountMax: null,
+  chartType: "line",
+  groupBy: "month",
+  title: "Monthly spend",
+};
+
+test("clicking a line chart point filters the table to that point, same as clicking a bar (regression: the line chart had no click handler at all, so it never filtered)", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: MONTHLY_ROWS }));
+  await page.route("**/api/query", (route) =>
+    route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(MONTHLY_SPEC) }] } })
+  );
+
+  await page.goto("/");
+  await page.getByRole("textbox").fill("monthly spend");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.getByText("Monthly spend", { exact: true })).toBeVisible();
+
+  const dots = page.locator(".recharts-line-dots circle");
+  await expect(dots).toHaveCount(3);
+
+  await dots.nth(0).click();
+  await expect(page.getByText("Jan Purchase")).toBeVisible();
+  await expect(page.getByText("Feb Purchase")).toHaveCount(0);
+
+  await dots.nth(1).click();
+  await expect(page.getByText("Feb Purchase")).toBeVisible();
+  await expect(page.getByText("Jan Purchase")).toHaveCount(0);
+
+  const outline = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
+  expect(outline).toBe("none");
+});
+
 test("lists a balance chip per linked account on the home screen", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
