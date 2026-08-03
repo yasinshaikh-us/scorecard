@@ -143,7 +143,32 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
                 <XAxis dataKey="key" tickFormatter={(k) => fmtGroupKey(k, spec.groupBy)} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
                 <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
                 <Tooltip labelFormatter={(k) => fmtGroupKey(k, spec.groupBy)} formatter={(v) => fmtMoney(v)} contentStyle={tooltipStyle} />
-                <Line type="monotone" dataKey="total" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                  activeDot={false}
+                  dot={(dotProps) => {
+                    const { cx, cy, payload, index } = dotProps;
+                    const isSelected = selectedKey === payload.key;
+                    return (
+                      <circle
+                        key={`line-dot-${index}`}
+                        cx={cx}
+                        cy={cy}
+                        r={isSelected ? 5 : 4}
+                        fill={isSelected ? "var(--accent)" : "var(--surface)"}
+                        stroke="var(--accent)"
+                        strokeWidth={2}
+                        opacity={selectedKey && !isSelected ? 0.35 : 1}
+                        cursor="pointer"
+                        onClick={() => setSelectedKey(selectedKey === payload.key ? null : payload.key)}
+                      />
+                    );
+                  }}
+                />
               </LineChart>
             ) : (
               <BarChart data={chartData} layout={spec.groupBy === "payee" ? "vertical" : "horizontal"}>
