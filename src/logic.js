@@ -6,12 +6,12 @@ export const topCategory = (cat) => (cat || "Uncategorized").split(":")[0];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Filters out rows missing a required field and coerces types into a
-// clean {Date, Payee, Category, Amount} shape. The one place this
-// happens, shared by every consumer of raw transaction rows (the
-// client's own fetch handler in App.jsx, and api/query.js's separate
-// server-side re-fetch for building its system prompt) so they can't
-// independently drift out of sync -- a row with a missing/null Category
-// was previously silently dropped on the client but crashed
+// clean {Date, Payee, Category, Amount, Account, IsTransfer} shape. The
+// one place this happens, shared by every consumer of raw transaction
+// rows (the client's own fetch handler in App.jsx, and api/query.js's
+// separate server-side re-fetch for building its system prompt) so they
+// can't independently drift out of sync -- a row with a missing/null
+// Category was previously silently dropped on the client but crashed
 // api/query.js's computeDataMeta call, since only the client applied
 // this filter.
 export function cleanRows(rows) {
@@ -22,6 +22,8 @@ export function cleanRows(rows) {
       Payee: String(r.Payee).trim(),
       Category: String(r.Category).trim(),
       Amount: Number(r.Amount),
+      Account: r.Account ? String(r.Account).trim() : "Manual entry",
+      IsTransfer: !!r.IsTransfer,
     }));
 }
 
@@ -67,14 +69,30 @@ export const fmtMoney = (n) => {
 };
 
 // Applies a query spec's filter fields ({categories, categoryContains,
-// payeeContains, dateStart, dateEnd, type, amountMin, amountMax}) to a rows
-// array.
+// payeeContains, accountContains, dateStart, dateEnd, type,
+// includeTransfers, amountMin, amountMax}) to a rows array.
+//
+// IsTransfer rows (internal transfers between the user's own linked
+// accounts, e.g. savings -> checking) are excluded by default, not just
+// when type is "expense"/"income": once a person has more than one
+// account, a transfer shows up as an expense row on one account and an
+// income row on the other, so leaving it in would double-count it in any
+// "all" or unfiltered total too. spec.type === "transfer" or
+// spec.includeTransfers === true opt back in for questions that are
+// actually about the transfers themselves.
 export function filterTransactions(rows, spec) {
   if (!spec) return [];
   return rows.filter((d) => {
+    const isTransfer = !!d.IsTransfer;
+    if (spec.type === "transfer") {
+      if (!isTransfer) return false;
+    } else if (isTransfer && !spec.includeTransfers) {
+      return false;
+    }
     if (spec.categories && spec.categories.length && !spec.categories.includes(topCategory(d.Category))) return false;
     if (spec.categoryContains && !d.Category.toLowerCase().includes(spec.categoryContains.toLowerCase())) return false;
     if (spec.payeeContains && !d.Payee.toLowerCase().includes(spec.payeeContains.toLowerCase())) return false;
+    if (spec.accountContains && !(d.Account || "").toLowerCase().includes(spec.accountContains.toLowerCase())) return false;
     if (spec.dateStart && d.Date < spec.dateStart) return false;
     if (spec.dateEnd && d.Date > spec.dateEnd) return false;
     if (spec.type === "expense" && d.Amount >= 0) return false;
@@ -91,6 +109,7 @@ export function groupKeyOf(spec, d) {
   if (!spec) return "";
   if (spec.groupBy === "category") return topCategory(d.Category);
   if (spec.groupBy === "payee") return d.Payee;
+  if (spec.groupBy === "account") return d.Account || "Manual entry";
   if (spec.groupBy === "day") return d.Date;
   if (spec.groupBy === "month") return d.Date.slice(0, 7);
   if (spec.groupBy === "week") {

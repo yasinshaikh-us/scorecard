@@ -87,13 +87,17 @@ describe("handler", () => {
 
   it("ignores a client-supplied system/messages and builds the system prompt itself from the caller's own transactions", async () => {
     global.fetch = vi.fn(async (url, opts) => {
+      if (String(url).includes("/plaid_accounts")) {
+        expect(opts.headers.apikey).toBe(ANON_KEY);
+        return { ok: true, json: async () => [{ account_id: "acc_1", name: "Chase Checking", mask: "1234" }] };
+      }
       if (String(url).includes("supabase.co")) {
         expect(opts.headers.apikey).toBe(ANON_KEY);
         expect(opts.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
         return {
           ok: true,
           json: async () => [
-            { date: "2024-01-01", payee: "Store", category: "Groceries:Food", amount: "-12.50" },
+            { date: "2024-01-01", payee: "Store", category: "Groceries:Food", amount: "-12.50", plaid_account_id: "acc_1", is_transfer: false },
           ],
         };
       }
@@ -103,6 +107,7 @@ describe("handler", () => {
       expect(sentBody.model).toBe("claude-sonnet-5");
       expect(sentBody.messages).toEqual([{ role: "user", content: "how much did I spend on groceries?" }]);
       expect(sentBody.system).toContain("Groceries");
+      expect(sentBody.system).toContain("Chase Checking ••1234");
       expect(sentBody.system).not.toContain("attacker-controlled system prompt");
       return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"foo":"bar"}' }] }) };
     });
@@ -123,6 +128,9 @@ describe("handler", () => {
 
   it("doesn't crash when a transaction has a null category (regression: computeDataMeta requires a real Category string on every row)", async () => {
     global.fetch = vi.fn(async (url, opts) => {
+      if (String(url).includes("/plaid_accounts")) {
+        return { ok: true, json: async () => [] };
+      }
       if (String(url).includes("supabase.co")) {
         return {
           ok: true,

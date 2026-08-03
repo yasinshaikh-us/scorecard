@@ -171,6 +171,56 @@ export const styles = {
     fontFamily: "var(--font-mono)",
     fontVariantNumeric: "tabular-nums",
   },
+  // Floating panel shown on table-row hover with every field the fixed
+  // table columns don't have room for (Account, full Category, IsTransfer).
+  // pointerEvents "none" so it never steals the hover off the row it's
+  // describing, and position "fixed" so it tracks the cursor regardless of
+  // scrolling inside the (scrollable) listWrap.
+  rowDetailPopover: {
+    position: "fixed",
+    zIndex: 50,
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "10px 12px",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+    fontFamily: "var(--font-body)",
+    minWidth: 200,
+    maxWidth: 260,
+    pointerEvents: "none",
+  },
+  rowDetailTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--text)",
+    marginBottom: 6,
+    paddingBottom: 6,
+    borderBottom: "1px solid var(--border-subtle)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  rowDetailRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "2px 0",
+  },
+  rowDetailLabel: {
+    color: "var(--text-muted)",
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    flexShrink: 0,
+  },
+  rowDetailValue: {
+    color: "var(--text)",
+    fontSize: 12,
+    textAlign: "right",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   themeToggle: {
     display: "flex",
     alignItems: "center",

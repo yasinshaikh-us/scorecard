@@ -17,6 +17,16 @@ function payeeFor(tx: any) {
   return tx.merchant_name || tx.name || "Unknown";
 }
 
+// Plaid's personal_finance_category.primary is TRANSFER_IN / TRANSFER_OUT
+// for money moving between the user's own linked accounts (as opposed to
+// real spending or income). Flagging these lets the query layer exclude
+// them from spend/income totals by default -- see the is_transfer column
+// migration for why that matters once a user has more than one account.
+function isTransferFor(tx: any) {
+  const primary = tx.personal_finance_category?.primary;
+  return primary === "TRANSFER_IN" || primary === "TRANSFER_OUT";
+}
+
 export async function syncItemTransactions(itemId: string) {
   const db = supabaseAdmin();
   const client = plaidClient();
@@ -59,6 +69,7 @@ export async function syncItemTransactions(itemId: string) {
     category: categoryFor(tx),
     amount: -tx.amount,
     source: "plaid",
+    is_transfer: isTransferFor(tx),
   }));
 
   if (upserts.length > 0) {

@@ -27,7 +27,7 @@ export async function fetchAllRows(url, anonKey, accessToken) {
 
   while (true) {
     const resp = await fetch(
-      `${url}/rest/v1/transactions?select=date,payee,category,amount&order=date.asc`,
+      `${url}/rest/v1/transactions?select=date,payee,category,amount,plaid_account_id,is_transfer&order=date.asc`,
       {
         headers: {
           apikey: anonKey,
@@ -54,6 +54,59 @@ export async function fetchAllRows(url, anonKey, accessToken) {
   return rows;
 }
 
+// plaid_accounts is small (one row per linked account, not per
+// transaction) so this is a single unpaged request. RLS on that table
+// (`auth.uid() = user_id`) scopes it the same way `transactions` is
+// scoped, via the caller's own access token.
+export async function fetchAccountLabels(url, anonKey, accessToken) {
+  const resp = await fetch(`${url}/rest/v1/plaid_accounts?select=account_id,name,mask`, {
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const rows = await resp.json();
+
+  if (!resp.ok) {
+    const err = new Error("Supabase request failed");
+    err.status = resp.status;
+    err.body = rows;
+    throw err;
+  }
+
+  const labels = {};
+  for (const r of rows) {
+    if (!r.account_id) continue;
+    labels[r.account_id] = `${r.name || "Account"}${r.mask ? ` ••${r.mask}` : ""}`;
+  }
+  return labels;
+}
+
+// A row with no plaid_account_id was entered manually, never linked to a
+// bank account. A row with a plaid_account_id that isn't in `labels` is a
+// data race, not an error to fail the request over (e.g. the account was
+// unlinked between the transactions fetch and the accounts fetch) — it
+// falls back to a generic label instead.
+export function accountLabelFor(row, labels) {
+  if (!row.plaid_account_id) return "Manual entry";
+  return labels[row.plaid_account_id] || "Linked account";
+}
+
+// Shared by this handler and api/query.js, so the {Date, Payee, Category,
+// Amount, Account, IsTransfer} shape served to the client and the shape
+// the NL query system prompt is built from can't drift apart.
+export function toClientRows(rawRows, labels) {
+  return rawRows.map((r) => ({
+    Date: r.date,
+    Payee: r.payee,
+    Category: r.category,
+    Amount: Number(r.amount),
+    Account: accountLabelFor(r, labels),
+    IsTransfer: !!r.is_transfer,
+  }));
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.status(405).json({ error: "Method not allowed" });
@@ -74,16 +127,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const rows = await fetchAllRows(url, anonKey, accessToken);
+    const [rawRows, labels] = await Promise.all([
+      fetchAllRows(url, anonKey, accessToken),
+      fetchAccountLabels(url, anonKey, accessToken),
+    ]);
 
-    const data = rows.map((r) => ({
-      Date: r.date,
-      Payee: r.payee,
-      Category: r.category,
-      Amount: Number(r.amount),
-    }));
-
-    res.status(200).json(data);
+    res.status(200).json(toClientRows(rawRows, labels));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.body || String(err.message || err) });
   }
