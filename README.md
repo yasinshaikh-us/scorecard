@@ -1,4 +1,4 @@
-# Analysis — personal ledger dashboard
+# Fathom — personal ledger dashboard
 
 A React + Recharts dashboard over your transaction history. Ask a question in
 plain English; a serverless function forwards the question (never your
