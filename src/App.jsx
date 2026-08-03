@@ -34,7 +34,6 @@ const catColor = (cat) => PALETTE[CATS.indexOf(topCategory(cat)) % PALETTE.lengt
 function RowDetailPopover({ x, y, row }) {
   const left = Math.min(x + 14, window.innerWidth - 272);
   const top = Math.min(y + 14, window.innerHeight - 190);
-  const type = row.IsTransfer ? "Internal transfer" : row.Amount < 0 ? "Expense" : "Income";
   return (
     <div style={{ ...styles.rowDetailPopover, left, top }}>
       <div style={styles.rowDetailTitle}>{row.Payee}</div>
@@ -43,7 +42,6 @@ function RowDetailPopover({ x, y, row }) {
         ["Amount", fmtMoney(row.Amount)],
         ["Category", row.Category],
         ["Account", row.Account],
-        ["Type", type],
       ].map(([label, value]) => (
         <div key={label} style={styles.rowDetailRow}>
           <span style={styles.rowDetailLabel}>{label}</span>
@@ -183,50 +181,37 @@ function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
       )}
 
       <div style={styles.listWrap}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={{ ...styles.th, width: "16%" }}>Date</th>
-              <th style={{ ...styles.th, width: "50%" }}>Payee</th>
-              <th style={{ ...styles.th, width: "10%", textAlign: "center" }}>Ctgy</th>
-              <th style={{ ...styles.th, width: "24%", textAlign: "right" }}>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRows.map((d, i) => (
-              <tr
-                key={i}
-                className="tx-row"
-                onMouseEnter={(e) => setHoverInfo({ row: d, x: e.clientX, y: e.clientY })}
-                onMouseMove={(e) => setHoverInfo((h) => (h && h.row === d ? { ...h, x: e.clientX, y: e.clientY } : h))}
-                onMouseLeave={() => setHoverInfo((h) => (h && h.row === d ? null : h))}
-              >
-                <td style={{ ...styles.td, ...styles.mono }}>{fmtDate(d.Date)}</td>
-                <td style={styles.td}>{d.Payee}</td>
-                <td style={{ ...styles.td, textAlign: "center" }}>
-                  {(() => {
-                    const Icon = iconForCategory(topCategory(d.Category));
-                    return (
-                      <span
-                        title={d.Category}
-                        aria-label={d.Category}
-                        style={{ ...styles.categoryIconBadge, background: catColor(d.Category) + "26", color: catColor(d.Category) }}
-                      >
-                        <Icon size={14} />
-                      </span>
-                    );
-                  })()}
-                </td>
-                <td style={{ ...styles.td, ...styles.mono, textAlign: "right", color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
-                  {fmtMoney(d.Amount)}
-                </td>
-              </tr>
-            ))}
-            {sortedRows.length === 0 && (
-              <tr><td colSpan={4} style={{ ...styles.td, textAlign: "center", color: "var(--text-faint)" }}>No matching transactions</td></tr>
-            )}
-          </tbody>
-        </table>
+        {sortedRows.map((d, i) => {
+          const Icon = iconForCategory(topCategory(d.Category));
+          return (
+            <div
+              key={i}
+              className="tx-row"
+              style={styles.txRow}
+              onMouseEnter={(e) => setHoverInfo({ row: d, x: e.clientX, y: e.clientY })}
+              onMouseMove={(e) => setHoverInfo((h) => (h && h.row === d ? { ...h, x: e.clientX, y: e.clientY } : h))}
+              onMouseLeave={() => setHoverInfo((h) => (h && h.row === d ? null : h))}
+            >
+              <div style={styles.txRowTop}>
+                <div style={styles.txPayee}>{d.Payee}</div>
+                <div style={styles.txRight}>
+                  <span
+                    title={d.Category}
+                    aria-label={d.Category}
+                    style={{ ...styles.categoryIconBadge, background: catColor(d.Category) + "26", color: catColor(d.Category) }}
+                  >
+                    <Icon size={14} />
+                  </span>
+                  <span style={{ ...styles.txAmount, color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
+                    {fmtMoney(d.Amount)}
+                  </span>
+                </div>
+              </div>
+              <div style={styles.txDate}>{fmtDate(d.Date)}</div>
+            </div>
+          );
+        })}
+        {sortedRows.length === 0 && <div style={styles.txEmpty}>No matching transactions</div>}
       </div>
       {hoverInfo && <RowDetailPopover {...hoverInfo} />}
     </div>

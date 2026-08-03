@@ -78,7 +78,11 @@ export async function fetchAccountLabels(url, anonKey, accessToken) {
   const labels = {};
   for (const r of rows) {
     if (!r.account_id) continue;
-    labels[r.account_id] = `${r.name || "Account"}${r.mask ? ` ••${r.mask}` : ""}`;
+    // Plaid's mask is normally already 4 digits, but truncate defensively
+    // so the label never surfaces more of the account number than the
+    // last four digits, regardless of what an institution sends back.
+    const mask = r.mask ? String(r.mask).slice(-4) : "";
+    labels[r.account_id] = `${r.name || "Account"}${mask ? ` ••${mask}` : ""}`;
   }
   return labels;
 }

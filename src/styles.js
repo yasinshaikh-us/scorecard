@@ -180,31 +180,57 @@ export const styles = {
     overflowY: "auto",
     overflowX: "hidden",
   },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    tableLayout: "fixed",
-    fontSize: 13,
-  },
-  th: {
-    textAlign: "left",
-    color: "var(--text-muted)",
-    fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-    fontFamily: "var(--font-body)",
-    padding: "0 6px 8px 6px",
-    borderBottom: "1px solid var(--border)",
-    position: "sticky",
-    top: 0,
-    background: "var(--surface)",
-  },
-  td: {
-    padding: "8px 6px",
+  // Two-line transaction row: payee (wraps rather than truncates) + the
+  // category icon and amount pinned to the right on the first line, date
+  // in a smaller muted font on the second -- keeps every field on screen
+  // without horizontal scrolling or ellipsis clipping on narrow/mobile
+  // widths, unlike the fixed-width table this replaced.
+  txRow: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    padding: "10px 6px",
     borderBottom: "1px solid var(--border-subtle)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    fontFamily: "var(--font-body)",
+  },
+  txRowTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  txPayee: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: "var(--text)",
+    wordBreak: "break-word",
+  },
+  txRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
+  },
+  txAmount: {
+    fontFamily: "var(--font-mono)",
+    fontVariantNumeric: "tabular-nums",
+    fontSize: 14,
+    fontWeight: 600,
     whiteSpace: "nowrap",
+  },
+  txDate: {
+    fontFamily: "var(--font-mono)",
+    fontVariantNumeric: "tabular-nums",
+    fontSize: 11,
+    color: "var(--text-faint)",
+  },
+  txEmpty: {
+    textAlign: "center",
+    color: "var(--text-faint)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+    padding: "16px 0",
   },
   tag: {
     fontSize: 11,
@@ -225,18 +251,11 @@ export const styles = {
     height: 26,
     borderRadius: "50%",
   },
-  // Numeric/data columns (dates, amounts, coordinates) get the monospace
-  // face and tabular figures so digits line up in columns — same
-  // convention as the location app's route table.
-  mono: {
-    fontFamily: "var(--font-mono)",
-    fontVariantNumeric: "tabular-nums",
-  },
-  // Floating panel shown on table-row hover with every field the fixed
-  // table columns don't have room for (Account, full Category, IsTransfer).
-  // pointerEvents "none" so it never steals the hover off the row it's
-  // describing, and position "fixed" so it tracks the cursor regardless of
-  // scrolling inside the (scrollable) listWrap.
+  // Floating panel shown on transaction-row hover with fields not already
+  // visible in the row itself (Account, full Category). pointerEvents
+  // "none" so it never steals the hover off the row it's describing, and
+  // position "fixed" so it tracks the cursor regardless of scrolling
+  // inside the (scrollable) listWrap.
   rowDetailPopover: {
     position: "fixed",
     zIndex: 50,
