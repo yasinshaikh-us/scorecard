@@ -188,15 +188,15 @@ export const styles = {
   txRow: {
     display: "flex",
     flexDirection: "column",
-    gap: 4,
-    padding: "10px 6px",
+    gap: 2,
+    padding: "6px 6px",
     borderBottom: "1px solid var(--border-subtle)",
     fontFamily: "var(--font-body)",
   },
   txRowTop: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 10,
   },
   txPayee: {
@@ -212,12 +212,17 @@ export const styles = {
     gap: 8,
     flexShrink: 0,
   },
+  // Fixed width + right-aligned so the amount's digit count (e.g. "-$2.64"
+  // vs "-$5,580.20") never shifts the category icon that precedes it --
+  // without this the icon column drifts left/right per row.
   txAmount: {
     fontFamily: "var(--font-mono)",
     fontVariantNumeric: "tabular-nums",
     fontSize: 14,
     fontWeight: 600,
     whiteSpace: "nowrap",
+    minWidth: 84,
+    textAlign: "right",
   },
   txDate: {
     fontFamily: "var(--font-mono)",
