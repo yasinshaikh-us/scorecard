@@ -89,8 +89,15 @@ test.describe("natural-language ledger queries", () => {
       await p.goto("/");
       await p.getByRole("textbox").fill(question);
       await p.getByRole("button", { name: "Ask" }).click();
-      await expect(p.locator(".recharts-cartesian-axis-tick").first()).toBeVisible({ timeout: 30_000 });
-      const labels = await p.locator(".recharts-cartesian-axis-tick").allTextContents();
+      // recharts v3 split the tick mark and its text label into separate
+      // sibling groups (.recharts-cartesian-axis-tick now wraps only the
+      // line; the visible label text lives in
+      // .recharts-cartesian-axis-tick-label) -- confirmed by inspecting the
+      // actual rendered SVG, not inferred from a changelog. The chart
+      // itself renders correctly; only this selector, written against
+      // recharts v2's DOM structure, was stale.
+      await expect(p.locator(".recharts-cartesian-axis-tick-label").first()).toBeVisible({ timeout: 30_000 });
+      const labels = await p.locator(".recharts-cartesian-axis-tick-label").allTextContents();
       await context.close();
       return labels;
     }
