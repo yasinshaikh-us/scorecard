@@ -2,16 +2,20 @@ import { useState, useEffect } from "react";
 import { styles } from "./styles.js";
 import { getSupabaseClient } from "./supabaseClient.js";
 import { fmtMoney } from "./logic.js";
+import { useBankLink } from "./useBankLink.js";
 
 // Accounts-summary strip. Reads plaid_accounts + plaid_account_balances
 // directly via the already-authenticated Supabase client (same RLS-scoped
 // pattern App.jsx uses for the plaid_items link-status check) -- no new
 // API route needed, since both tables already carry a `Users read their
-// own ...` policy for `authenticated`. Renders nothing for a manual-only
-// ledger (no linked accounts) or while still loading, so it never
-// introduces a layout flash or an empty card.
-export default function AccountBalances() {
+// own ...` policy for `authenticated`. Always renders once loaded (even
+// for a manual-only ledger with zero linked accounts) so the "+ Add bank"
+// button -- the only way to link a bank after the first-login gate --
+// has somewhere to live regardless of how many accounts are already
+// connected.
+export default function AccountBalances({ accessToken, onLinked }) {
   const [balances, setBalances] = useState(null); // null = not loaded yet
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,23 +55,38 @@ export default function AccountBalances() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshKey]);
 
-  if (!balances || balances.length === 0) return null;
+  const { startLink, connecting, error } = useBankLink(accessToken, () => {
+    setRefreshKey((k) => k + 1);
+    onLinked?.();
+  });
+
+  if (!balances) return null; // still loading -- avoid a layout flash
 
   return (
     <div style={styles.balancesCard}>
-      <div style={styles.balancesLabel}>{balances.length > 1 ? "Account Balances" : "Balance"}</div>
-      <div style={styles.balancesRow}>
-        {balances.map((b) => (
-          <div key={b.id} style={styles.balanceChip}>
-            <div style={styles.balanceChipLabel}>{b.label}</div>
-            <div style={{ ...styles.balanceChipAmount, color: b.amount < 0 ? "var(--danger)" : "var(--text)" }}>
-              {fmtMoney(b.amount)}
-            </div>
+      {balances.length > 0 ? (
+        <>
+          <div style={styles.balancesLabel}>{balances.length > 1 ? "Account Balances" : "Balance"}</div>
+          <div style={styles.balancesRow}>
+            {balances.map((b) => (
+              <div key={b.id} style={styles.balanceChip}>
+                <div style={styles.balanceChipLabel}>{b.label}</div>
+                <div style={{ ...styles.balanceChipAmount, color: b.amount < 0 ? "var(--danger)" : "var(--text)" }}>
+                  {fmtMoney(b.amount)}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      ) : (
+        <div style={styles.balancesEmpty}>No linked accounts yet</div>
+      )}
+      <button onClick={startLink} disabled={connecting} style={styles.addBankBtn}>
+        {connecting ? "Connecting…" : "+ Add bank"}
+      </button>
+      {error && <div style={styles.ruleError}>{error}</div>}
     </div>
   );
 }

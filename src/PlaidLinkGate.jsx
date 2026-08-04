@@ -1,62 +1,15 @@
 // Shown once, between sign-in and the dashboard, the first time a user
 // has no linked bank (no row in plaid_items). Skippable — this never
-// blocks access to the dashboard, it just offers the connection.
-//
-// Flow: fetch a link_token from api/plaid-link-token -> open Plaid Link
-// (usePlaidLink) -> on success, send the public_token to
-// api/plaid-exchange, which does the real exchange + storage server-side.
-// The browser never sees a Plaid access_token, only the short-lived
-// link_token and public_token Plaid itself hands back.
+// blocks access to the dashboard, it just offers the connection. Banks
+// can also be added later (including additional ones beyond the first)
+// via the "+ Add bank" button on Home, which shares this same Link flow
+// through useBankLink.
 
-import { useEffect, useState } from "react";
-import { usePlaidLink } from "react-plaid-link";
 import { styles } from "./styles.js";
+import { useBankLink } from "./useBankLink.js";
 
 export default function PlaidLinkGate({ accessToken, onDone }) {
-  const [linkToken, setLinkToken] = useState(null);
-  const [status, setStatus] = useState("idle"); // idle | connecting | error
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/plaid-link-token", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setLinkToken(data.link_token || null);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Couldn't reach the bank-connection service");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken]);
-
-  const { open, ready } = usePlaidLink({
-    token: linkToken,
-    onSuccess: async (publicToken) => {
-      setStatus("connecting");
-      setError(null);
-      try {
-        const resp = await fetch("/api/plaid-exchange", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ public_token: publicToken }),
-        });
-        if (!resp.ok) throw new Error("exchange failed");
-        onDone();
-      } catch {
-        setError("Couldn't finish connecting — try again");
-        setStatus("idle");
-      }
-    },
-  });
+  const { startLink, connecting, error } = useBankLink(accessToken, onDone);
 
   return (
     <div style={{ ...styles.page, alignItems: "center", justifyContent: "center", minHeight: "100vh", textAlign: "center" }}>
@@ -67,8 +20,8 @@ export default function PlaidLinkGate({ accessToken, onDone }) {
       </div>
 
       <button
-        onClick={() => open()}
-        disabled={!ready || status === "connecting"}
+        onClick={startLink}
+        disabled={connecting}
         style={{
           background: "var(--accent)",
           border: "none",
@@ -78,11 +31,11 @@ export default function PlaidLinkGate({ accessToken, onDone }) {
           fontFamily: "var(--font-body)",
           fontSize: 14,
           fontWeight: 600,
-          cursor: !ready || status === "connecting" ? "default" : "pointer",
-          opacity: !ready || status === "connecting" ? 0.5 : 1,
+          cursor: connecting ? "default" : "pointer",
+          opacity: connecting ? 0.5 : 1,
         }}
       >
-        {status === "connecting" ? "Connecting…" : "Connect a bank account"}
+        {connecting ? "Connecting…" : "Connect a bank account"}
       </button>
 
       <button

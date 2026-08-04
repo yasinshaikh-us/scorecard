@@ -207,7 +207,13 @@ function AuthedApp({ accessToken, onSignOut }) {
       )}
 
       {page === "home" ? (
-        <HomePage transactions={transactions} dataStatus={dataStatus} onAskShortcut={askAndGo} />
+        <HomePage
+          transactions={transactions}
+          dataStatus={dataStatus}
+          onAskShortcut={askAndGo}
+          accessToken={accessToken}
+          onBankLinked={refreshTransactions}
+        />
       ) : (
         <AskPage
           input={input}
