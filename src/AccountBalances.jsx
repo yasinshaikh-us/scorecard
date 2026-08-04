@@ -16,6 +16,7 @@ import { useBankLink } from "./useBankLink.js";
 export default function AccountBalances({ accessToken, onLinked }) {
   const [balances, setBalances] = useState(null); // null = not loaded yet
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +69,7 @@ export default function AccountBalances({ accessToken, onLinked }) {
     <div style={styles.balancesCard}>
       {balances.length > 0 ? (
         <>
-          <div style={styles.balancesLabel}>{balances.length > 1 ? "Account Balances" : "Balance"}</div>
+          <div style={styles.balancesLabel}>Banks</div>
           <div style={styles.balancesRow}>
             {balances.map((b) => (
               <div key={b.id} style={styles.balanceChip}>
@@ -83,9 +84,38 @@ export default function AccountBalances({ accessToken, onLinked }) {
       ) : (
         <div style={styles.balancesEmpty}>No linked accounts yet</div>
       )}
-      <button onClick={startLink} disabled={connecting} style={styles.addBankBtn}>
-        {connecting ? "Connecting…" : "+ Add bank"}
-      </button>
+
+      {showConfirm ? (
+        // Plaid Link's own account_filters already restricts selection to
+        // depository accounts (see api/plaid-link-token.js) -- this banner
+        // is what tells the user that *before* they're in Plaid's UI
+        // picking an account, not just silently excluding options there.
+        <div style={styles.addBankConfirm}>
+          <div style={styles.addBankConfirmText}>Only checking / savings accounts can be connected.</div>
+          <div style={styles.addBankConfirmActions}>
+            <button onClick={() => setShowConfirm(false)} style={styles.addBankConfirmCancel} autoFocus>
+              Cancel
+            </button>
+            <button
+              onClick={() => { setShowConfirm(false); startLink(); }}
+              style={styles.addBankConfirmProceed}
+              disabled={connecting}
+            >
+              {connecting ? "Connecting…" : "Proceed"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowConfirm(true)}
+          disabled={connecting}
+          style={styles.addBankBtn}
+          title="Add bank"
+          aria-label="Add bank"
+        >
+          {connecting ? "Connecting…" : "+"}
+        </button>
+      )}
       {error && <div style={styles.ruleError}>{error}</div>}
     </div>
   );

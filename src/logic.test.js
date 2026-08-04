@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney,
+  topCategory, computeDataMeta, fmtDate, fmtMonth, fmtGroupKey, fmtMoney, daysBefore,
   filterTransactions, groupKeyOf, buildChartData, cleanRows, parseQueryResponse,
 } from "./logic.js";
 
@@ -149,6 +149,28 @@ describe("parseQueryResponse", () => {
     const result = parseQueryResponse(true, data);
     expect(result.error).toBeTruthy();
     expect(result.spec).toBeUndefined();
+  });
+});
+
+describe("daysBefore", () => {
+  it("subtracts N days from a date, crossing a month boundary", () => {
+    expect(daysBefore("2026-04-03", 7)).toBe("2026-03-27");
+  });
+  it("crosses a year boundary", () => {
+    expect(daysBefore("2026-01-02", 7)).toBe("2025-12-26");
+  });
+  it("computes the same result regardless of the runtime's local timezone (same UTC-anchored pattern as groupKeyOf's week grouping)", () => {
+    const original = process.env.TZ;
+    try {
+      process.env.TZ = "America/Los_Angeles";
+      const negativeOffset = daysBefore("2026-04-03", 7);
+      process.env.TZ = "Asia/Kolkata";
+      const positiveOffset = daysBefore("2026-04-03", 7);
+      expect(positiveOffset).toBe(negativeOffset);
+      expect(positiveOffset).toBe("2026-03-27");
+    } finally {
+      process.env.TZ = original;
+    }
   });
 });
 

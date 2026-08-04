@@ -129,13 +129,6 @@ function AuthedApp({ accessToken, onSignOut }) {
     }
   }
 
-  // Home's shortcut pills jump to Ask and immediately run a canned
-  // question through the exact same pipeline the input bar uses.
-  function askAndGo(question) {
-    navigate("ask");
-    runQuery(question);
-  }
-
   return (
     <div style={styles.page}>
       <style>{`
@@ -210,7 +203,7 @@ function AuthedApp({ accessToken, onSignOut }) {
         <HomePage
           transactions={transactions}
           dataStatus={dataStatus}
-          onAskShortcut={askAndGo}
+          onGoToAsk={() => navigate("ask")}
           accessToken={accessToken}
           onBankLinked={refreshTransactions}
         />
@@ -219,6 +212,7 @@ function AuthedApp({ accessToken, onSignOut }) {
           input={input}
           onInputChange={setInput}
           onAsk={() => runQuery(input)}
+          onSuggestionClick={runQuery}
           loading={loading}
           dataStatus={dataStatus}
           cards={cards}
