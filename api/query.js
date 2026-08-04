@@ -43,8 +43,9 @@ Otherwise respond with ONLY this JSON object, no markdown fences, no prose:
   "includeTransfers": true | false,
   "amountMin": number or null,
   "amountMax": number or null,
+  "limit": integer or null,
   "chartType": "bar" | "pie" | "line",
-  "groupBy": "category" | "day" | "week" | "month" | "payee" | "account",
+  "groupBy": "category" | "day" | "week" | "month" | "payee" | "account" | "transaction",
   "title": "short 3-8 word title for this view, in plain language"
 }
 
@@ -64,9 +65,11 @@ Rules:
   -- A 7-month question should produce roughly 7 bars (month), not ~210 (day); an unscoped "everything" question over several years of data should produce a handful of monthly points, not thousands of daily ones.
 - Pick chartType/groupBy that best visualizes the question:
   -- Comparing a handful of named categories/groups as parts of a whole ("breakdown", "breakup", "split", "percentage", "share of spend", "versus" between categories) -> chartType "pie", groupBy "category" (or restrict via the categories field to just the named groups).
-  -- Ranking or comparing many categories/merchants by raw magnitude ("top merchants", "which category do I spend the most on") -> chartType "bar", groupBy "category" or "payee".
+  -- Ranking or comparing many categories/merchants by their TOTAL ("top merchants", "which places do I spend the most at", "which category do I spend the most on") -> chartType "bar", groupBy "category" or "payee" -- each bar is a sum across every matching transaction for that merchant/category, not one transaction.
+  -- Ranking individual transactions by their own size ("top 10 expenses", "5 biggest purchases", "largest transaction this year", "smallest 3 deposits", "my biggest expense in April") -> chartType "bar", groupBy "transaction" -- each bar is exactly one transaction. This is different from ranking merchants/categories above: a bare "top N expenses/purchases" with no merchant or category framing means individual transactions, not merchant totals.
   -- Spending/income over time, or any request scoped to a date range (e.g. "list of X over the last year") -> groupBy chosen per the granularity rule above, then pick chartType from that granularity: groupBy "month" (the longer spans -- 6+ months, "this year", "over time", multi-year) -> chartType "line", since a trend across many months reads as a continuous line, not a wall of thin bars; groupBy "day" or "week" (shorter spans) -> chartType "bar", since each bucket is a small, meaningfully discrete comparison.
   -- A single-number, yes/no, or list-only question with no obvious time or category angle -> still default to chartType "bar", groupBy "category" (or "day"/"week"/"month" if a date range is implied, applying the same month->line, day/week->bar rule above) so a chart is always present.
+- Set "limit" to the specific count whenever the question asks for a bounded top/bottom ranking of any kind -- individual transactions, merchants, or categories ("top 10", "5 biggest", "largest 3"). A bare superlative with no explicit number ("biggest expense", "smallest deposit") means limit 1. Leave "limit" null when the question doesn't ask for a specific count -- a sensible default (10) still applies automatically for merchant ("payee") and individual-transaction ("transaction") rankings so those charts never render an unbounded list.
 - title should read naturally, e.g. "Dining spend by week" not "category=Dining".
 - Respond with raw JSON only.`;
 }

@@ -325,6 +325,9 @@ describe("groupKeyOf", () => {
     expect(groupKeyOf(null, row("2026-01-01", "X", "Home", -1))).toBe("");
     expect(groupKeyOf({ groupBy: "none" }, row("2026-01-01", "X", "Home", -1))).toBe("");
   });
+  it("groups by transaction: payee + formatted date, one key per individual transaction", () => {
+    expect(groupKeyOf({ groupBy: "transaction" }, row("2026-01-15", "Chipotle", "Dining", -12))).toBe("Chipotle — 15 Jan 26");
+  });
 });
 
 describe("buildChartData", () => {
@@ -350,12 +353,69 @@ describe("buildChartData", () => {
     expect(out[0].total).toBe(5100); // Home:Rent (100) + Home:Mortgage (5000)
   });
 
-  it("caps payee grouping to the top 10 by total", () => {
+  it("caps payee grouping to the top 10 by total when no limit is given", () => {
     const manyPayees = Array.from({ length: 15 }, (_, i) =>
       row("2026-01-01", `Payee${i}`, "Shopping", -(i + 1))
     );
     const out = buildChartData(manyPayees, { groupBy: "payee" });
     expect(out.length).toBe(10);
     expect(out[0].key).toBe("Payee14"); // highest amount (-15) sorts first
+  });
+
+  it("respects an explicit limit for payee grouping instead of the default 10", () => {
+    const manyPayees = Array.from({ length: 15 }, (_, i) =>
+      row("2026-01-01", `Payee${i}`, "Shopping", -(i + 1))
+    );
+    const out = buildChartData(manyPayees, { groupBy: "payee", limit: 3 });
+    expect(out.length).toBe(3);
+    expect(out.map((d) => d.key)).toEqual(["Payee14", "Payee13", "Payee12"]);
+  });
+
+  it("does not cap category/account groupings by default, but does when an explicit limit is given (regression: 'top 3 categories' previously always returned every category)", () => {
+    const manyCategories = Array.from({ length: 15 }, (_, i) =>
+      row("2026-01-01", "X", `Cat${i}:Sub`, -(i + 1))
+    );
+    expect(buildChartData(manyCategories, { groupBy: "category" }).length).toBe(15);
+    const capped = buildChartData(manyCategories, { groupBy: "category", limit: 3 });
+    expect(capped.length).toBe(3);
+    expect(capped.map((d) => d.key)).toEqual(["Cat14", "Cat13", "Cat12"]);
+  });
+
+  // Regression coverage for "top 10 expenses in April 2023" rendering as a
+  // payee-total bar chart (e.g. one "Chipotle" bar summing every Chipotle
+  // visit that month) with an unrelated, unlimited, date-sorted list of
+  // every matching transaction underneath -- not the 10 individual
+  // largest transactions the question actually asked for.
+  describe("groupBy 'transaction' (ranking individual transactions by size)", () => {
+    it("ranks each transaction individually instead of summing same-payee transactions together", () => {
+      const rows = [
+        row("2026-01-05", "Chipotle", "Dining", -12),
+        row("2026-01-10", "Chipotle", "Dining", -8),
+        row("2026-01-15", "Rent Co", "Home:Rent", -2000),
+      ];
+      const out = buildChartData(rows, { groupBy: "transaction" });
+      // Two separate Chipotle entries, not one summed "Chipotle" bar.
+      expect(out.length).toBe(3);
+      expect(out.map((d) => d.total)).toEqual([2000, 12, 8]);
+    });
+
+    it("defaults to the top 10 individual transactions when no limit is given", () => {
+      const rows = Array.from({ length: 15 }, (_, i) => row("2026-01-01", `Payee${i}`, "Shopping", -(i + 1)));
+      const out = buildChartData(rows, { groupBy: "transaction" });
+      expect(out.length).toBe(10);
+      expect(out[0].total).toBe(15);
+    });
+
+    it("respects an explicit limit", () => {
+      const rows = Array.from({ length: 15 }, (_, i) => row("2026-01-01", `Payee${i}`, "Shopping", -(i + 1)));
+      const out = buildChartData(rows, { groupBy: "transaction", limit: 5 });
+      expect(out.length).toBe(5);
+    });
+
+    it("each entry carries the original row, so the list below the chart can show exactly this ranked set", () => {
+      const target = row("2026-01-05", "Chipotle", "Dining", -12);
+      const out = buildChartData([target], { groupBy: "transaction" });
+      expect(out[0].row).toBe(target);
+    });
   });
 });

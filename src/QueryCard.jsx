@@ -49,8 +49,15 @@ export default function QueryCard({ id, question, spec, error, offTopic, onRemov
   }, [baseFiltered, selectedKey, spec]);
 
   const sortedRows = useMemo(() => {
+    // groupBy "transaction" ranks individual transactions by size (see
+    // buildChartData) -- when nothing's been clicked to drill in further,
+    // the list below should show exactly that ranked/capped set, not an
+    // unrelated date-sorted browse of every matching transaction.
+    if (spec?.groupBy === "transaction" && !selectedKey) {
+      return chartData.map((c) => c.row);
+    }
     return displayed.slice().sort((a, b) => b.Date.localeCompare(a.Date));
-  }, [displayed]);
+  }, [displayed, selectedKey, spec, chartData]);
 
   if (error) {
     return (
@@ -79,6 +86,12 @@ export default function QueryCard({ id, question, spec, error, offTopic, onRemov
     );
   }
   if (!spec) return null;
+
+  // Merchant totals ("payee") and individual ranked transactions
+  // ("transaction") both use long, variable-width text labels (payee
+  // names, or "Payee — Date") -- neither fits the default horizontal-axis
+  // bar layout used for short category/date labels.
+  const longLabelChart = spec.groupBy === "payee" || spec.groupBy === "transaction";
 
   return (
     <div style={styles.card}>
@@ -146,12 +159,12 @@ export default function QueryCard({ id, question, spec, error, offTopic, onRemov
                 />
               </LineChart>
             ) : (
-              <BarChart data={chartData} layout={spec.groupBy === "payee" ? "vertical" : "horizontal"}>
+              <BarChart data={chartData} layout={longLabelChart ? "vertical" : "horizontal"}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="2 4" />
-                {spec.groupBy === "payee" ? (
+                {longLabelChart ? (
                   <>
                     <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-                    <YAxis type="category" dataKey="key" width={120} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
+                    <YAxis type="category" dataKey="key" width={150} tick={{ fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-body)" }} />
                   </>
                 ) : (
                   <>

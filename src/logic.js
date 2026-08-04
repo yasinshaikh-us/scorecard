@@ -110,6 +110,13 @@ export function groupKeyOf(spec, d) {
   if (spec.groupBy === "category") return topCategory(d.Category);
   if (spec.groupBy === "payee") return d.Payee;
   if (spec.groupBy === "account") return d.Account || "Manual entry";
+  // "transaction" ranks individual rows rather than summing them into a
+  // group (see buildChartData) -- the key doubles as the bar's label, so
+  // it's the payee + date rather than a bare id. Two transactions can
+  // collide here (same payee, same day) and get treated as one selection
+  // group if clicked; accepted as a rare, non-corrupting edge case rather
+  // than threading a synthetic per-row id through every call site.
+  if (spec.groupBy === "transaction") return `${d.Payee} — ${fmtDate(d.Date)}`;
   if (spec.groupBy === "day") return d.Date;
   if (spec.groupBy === "month") return d.Date.slice(0, 7);
   if (spec.groupBy === "week") {
@@ -128,9 +135,29 @@ export function groupKeyOf(spec, d) {
 
 // Builds the {key, total, count} chart series from already-filtered rows:
 // groups by groupKeyOf, sorts chronologically for date-based groupings
-// (descending total otherwise), and caps payee grouping to the top 10.
+// (descending total otherwise), and caps merchant/transaction rankings to
+// spec.limit (defaulting to 10 when the question didn't name a count) so
+// the chart never renders an unbounded list. Category/account rankings
+// are only capped when the question explicitly asked for a count -- the
+// category set is small and closed, so no default cap has ever been
+// needed there.
 export function buildChartData(filteredRows, spec) {
   if (!spec || spec.groupBy === "none") return [];
+
+  // Ranks individual transactions by size rather than summing them into
+  // groups -- each row stays its own entry (see groupKeyOf's collision
+  // note above), so this bypasses the group-and-sum map below entirely.
+  if (spec.groupBy === "transaction") {
+    // `row` carries the original transaction back to the caller (see
+    // QueryCard.jsx's sortedRows) so the list below the chart can show
+    // exactly this ranked/capped set instead of an unrelated date-sorted
+    // browse of every matching transaction.
+    let arr = filteredRows.map((d) => ({ key: groupKeyOf(spec, d), total: Math.abs(d.Amount), count: 1, row: d }));
+    arr.sort((a, b) => b.total - a.total);
+    const cap = spec.limit || 10;
+    return arr.slice(0, cap);
+  }
+
   const map = {};
   filteredRows.forEach((d) => {
     const k = groupKeyOf(spec, d);
@@ -143,8 +170,10 @@ export function buildChartData(filteredRows, spec) {
     arr.sort((a, b) => a.key.localeCompare(b.key));
   } else {
     arr.sort((a, b) => b.total - a.total);
+    const defaultCap = spec.groupBy === "payee" ? 10 : null;
+    const cap = spec.limit || defaultCap;
+    if (cap && arr.length > cap) arr = arr.slice(0, cap);
   }
-  if (spec.groupBy === "payee" && arr.length > 10) arr = arr.slice(0, 10);
   return arr;
 }
 
