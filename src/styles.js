@@ -543,17 +543,19 @@ export const styles = {
     fontSize: 13,
     width: 70,
   },
+  // Matches navIconBtn's size and color so it reads as part of the same
+  // row of icon buttons instead of a lighter, smaller outlier.
   themeToggle: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    width: 30,
-    height: 30,
+    width: 34,
+    height: 34,
     borderRadius: "50%",
     border: "1px solid var(--border)",
     background: "transparent",
-    color: "var(--text-faint)",
+    color: "var(--text-muted)",
     cursor: "pointer",
   },
 };
