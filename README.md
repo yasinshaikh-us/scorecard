@@ -11,6 +11,9 @@ Google session's own access token to Supabase. Row Level Security on the
 table restricts every request to that user's own rows (`auth.uid() =
 user_id`) — Postgres enforces the isolation, not app code.
 
+See [`SCHEMA.md`](SCHEMA.md) for the full database schema — every table,
+column, constraint, and RLS policy, including the Plaid bank-sync tables.
+
 ## 1. Install
 
 ```bash
@@ -74,14 +77,10 @@ chrome.
 
 ## Updating your transaction data
 
-Data lives in a Supabase Postgres table, `public.transactions`:
-
-| column   | type          | notes                                  |
-|----------|---------------|-----------------------------------------|
-| date     | date          | `YYYY-MM-DD`                            |
-| payee    | text          |                                          |
-| category | text          | `Top:Sub` format (e.g. `Home:Rent`)     |
-| amount   | numeric(12,2) | negative for expenses, positive for income |
+Data lives in a Supabase Postgres table, `public.transactions` — see
+[`SCHEMA.md`](SCHEMA.md#transactions) for the current full column list
+(manually-entered rows only ever need `date`, `payee`, `category`,
+`amount`; everything else is populated by the Plaid sync path).
 
 To add or update rows, run SQL against the table directly (Supabase SQL
 editor, `psql`, or the Supabase MCP tools) — e.g.:
