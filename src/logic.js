@@ -41,6 +41,18 @@ export function computeDataMeta(rows) {
   return { CATS, SUBCATS, MIN_DATE, MAX_DATE };
 }
 
+// N days before a YYYY-MM-DD date, as a YYYY-MM-DD string. Computed via
+// UTC-anchored arithmetic (Date.UTC), never a locally-parsed Date -- see
+// groupKeyOf's "week" case for why a local-midnight round trip silently
+// shifts the result by a day in positive-UTC-offset timezones. Anchored
+// to the data's own latest date rather than the runtime's real "now", so
+// "recent" means recent within the ledger even if it hasn't synced today.
+export function daysBefore(isoDate, days) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const ms = Date.UTC(y, m - 1, d) - days * 86400000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 export const fmtDate = (iso) => {
   if (typeof iso !== "string" || !iso.includes("-")) return iso == null ? "" : String(iso);
   const parts = iso.split("-");

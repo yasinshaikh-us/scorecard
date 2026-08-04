@@ -287,7 +287,7 @@ test("lists a balance chip per linked account on the home screen", async ({ page
 
   await page.goto("/");
 
-  await expect(page.getByText("Account Balances")).toBeVisible();
+  await expect(page.getByText("Banks", { exact: true })).toBeVisible();
   await expect(page.getByText("Chase Checking ••1234")).toBeVisible();
   await expect(page.getByText("$2,543.21")).toBeVisible();
   await expect(page.getByText("Ally Savings ••5678")).toBeVisible();
@@ -296,7 +296,7 @@ test("lists a balance chip per linked account on the home screen", async ({ page
   // The only way to link a bank after the first-login gate is this
   // button -- it must stay available even once accounts are linked, so
   // a second/third bank can be added too.
-  await expect(page.getByRole("button", { name: "+ Add bank" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add bank" })).toBeVisible();
 });
 
 test("shows an empty state (not a balance chip) for a manual-only ledger, with an Add bank button to link one", async ({ page }) => {
@@ -307,11 +307,33 @@ test("shows an empty state (not a balance chip) for a manual-only ledger, with a
 
   await page.goto("/");
 
-  await expect(page.getByText("Quick Questions")).toBeVisible();
-  await expect(page.getByText("Account Balances")).toHaveCount(0);
-  await expect(page.getByText("Balance", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Recent Activity")).toBeVisible();
+  await expect(page.getByText("Banks", { exact: true })).toHaveCount(0);
   await expect(page.getByText("No linked accounts yet")).toBeVisible();
-  await expect(page.getByRole("button", { name: "+ Add bank" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add bank" })).toBeVisible();
+});
+
+test("clicking the add-bank button shows the checking/savings-only banner, and Cancel dismisses it without starting Link", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockAccountBalances(page, [], []);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  let linkTokenRequested = false;
+  await page.route("**/api/plaid-link-token", (route) => {
+    linkTokenRequested = true;
+    route.fulfill({ json: { link_token: "unused" } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add bank" }).click();
+
+  await expect(page.getByText("Only checking / savings accounts can be connected.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add bank" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Only checking / savings accounts can be connected.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add bank" })).toBeVisible();
+  expect(linkTokenRequested).toBe(false);
 });
 
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
@@ -350,17 +372,17 @@ test("navigating from Home to Ask and back with the browser Back button works, a
   await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
 
   await page.goto("/");
-  await expect(page.getByText("Quick Questions")).toBeVisible();
+  await expect(page.getByText("Recent Activity")).toBeVisible();
   await expect(page.getByRole("textbox")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Ask" }).click();
+  await page.getByRole("link", { name: "Ask", exact: true }).click();
   await expect(page).toHaveURL(/\/ask$/);
   await expect(page.getByRole("textbox")).toBeVisible();
-  await expect(page.getByText("Quick Questions")).toHaveCount(0);
+  await expect(page.getByText("Recent Activity")).toHaveCount(0);
 
   await page.goBack();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText("Quick Questions")).toBeVisible();
+  await expect(page.getByText("Recent Activity")).toBeVisible();
   await expect(page.getByRole("textbox")).toHaveCount(0);
 
   await page.goForward();
@@ -368,7 +390,20 @@ test("navigating from Home to Ask and back with the browser Back button works, a
   await expect(page.getByRole("textbox")).toBeVisible();
 });
 
-test("clicking a Home shortcut pill jumps to Ask and runs the canned question automatically", async ({ page }) => {
+test("clicking the Ask link on Recent Activity navigates to the Ask page", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockNoLinkedAccounts(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "Ask a question" }).click();
+
+  await expect(page).toHaveURL(/\/ask$/);
+  await expect(page.getByRole("textbox")).toBeVisible();
+});
+
+test("the Ask page shows floating query suggestions before any question is asked, and clicking one runs it", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
@@ -377,12 +412,22 @@ test("clicking a Home shortcut pill jumps to Ask and runs the canned question au
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(FIXTURE_SPEC) }] } })
   );
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Top categories" }).click();
+  // The suggestions float via an infinite CSS animation, which never lets
+  // Playwright's actionability check see them as "stable" enough to click.
+  // Reduced motion is a real accessibility fallback built into the page
+  // (see AskPage.jsx), so this exercises that path instead of forcing the click.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/ask");
+  const suggestion = page.getByRole("button", { name: "Which category do I spend the most on?" });
+  await expect(suggestion).toBeVisible();
 
-  await expect(page).toHaveURL(/\/ask$/);
+  await suggestion.click();
   await expect(page.getByText("Grocery spending")).toBeVisible();
   await expect(page.getByText("QFC Foods")).toBeVisible();
+
+  // Once a question's been asked, the feed has real content -- the
+  // suggestions must not still be floating on top of it.
+  await expect(page.getByRole("button", { name: "Which category do I spend the most on?" })).toHaveCount(0);
 });
 
 test("Rules is reachable from Home, and closing it (X or Back) returns to the page that opened it", async ({ page }) => {
@@ -398,5 +443,44 @@ test("Rules is reachable from Home, and closing it (X or Back) returns to the pa
 
   await page.getByRole("button", { name: "×" }).click();
   await expect(page.getByText("Rules Engine")).toHaveCount(0);
-  await expect(page.getByText("Quick Questions")).toBeVisible();
+  await expect(page.getByText("Recent Activity")).toBeVisible();
+});
+
+test("deleting a rule requires confirmation (defaulting to Cancel) instead of deleting immediately", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockNoLinkedAccounts(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+
+  let deleteCalled = false;
+  await page.route("**/rest/v1/category_rules*", (route) => {
+    if (route.request().method() === "DELETE") {
+      deleteCalled = true;
+      route.fulfill({ status: 204, body: "" });
+      return;
+    }
+    route.fulfill({
+      json: [{ id: "rule-1", priority: 100, match_field: "payee", match_value: "starbucks", set_category: "Dining", set_payee: null, enabled: true }],
+    });
+  });
+  await page.route("**/rest/v1/rpc/apply_category_rules", (route) => route.fulfill({ json: 0 }));
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "Rules" }).click();
+  // No visible priority number prefix -- just the rule's own condition/action.
+  await expect(page.getByText('if payee contains "starbucks" → category Dining')).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete rule" }).click();
+  await expect(page.getByText("Delete this rule?")).toBeVisible();
+
+  // Cancel first -- must not delete, and the rule stays visible.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Delete this rule?")).toHaveCount(0);
+  await expect(page.getByText('if payee contains "starbucks" → category Dining')).toBeVisible();
+  expect(deleteCalled).toBe(false);
+
+  // Confirming with Delete actually removes it.
+  await page.getByRole("button", { name: "Delete rule" }).click();
+  await page.getByRole("button", { name: "Delete" }).click();
+  expect(deleteCalled).toBe(true);
 });

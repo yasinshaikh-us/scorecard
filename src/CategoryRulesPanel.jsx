@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import { getSupabaseClient } from "./supabaseClient.js";
 import { styles } from "./styles.js";
 
-const EMPTY_FORM = { matchField: "payee", matchValue: "", setCategory: "", setPayee: "", priority: 100 };
+const EMPTY_FORM = { matchField: "payee", matchValue: "", setCategory: "", setPayee: "" };
 
 // Structured rule builder ("if payee/category contains X, set category/
 // payee to Y") -- same mental model as an email inbox filter. Rules are
@@ -11,12 +11,21 @@ const EMPTY_FORM = { matchField: "payee", matchValue: "", setCategory: "", setPa
 // via the apply_category_rules() Postgres function, which this panel
 // calls after every add/edit/delete/toggle so the ledger always reflects
 // the current rule set, not just rules added after the fact.
+//
+// `priority` is still the underlying ordering column (apply_category_rules()
+// runs rules in ascending priority order, so a later/higher-priority rule
+// overwrites an earlier one's field on conflict), but it's purely an
+// implementation detail now -- the UI never shows or asks for a number.
+// The list is just top-to-bottom order (ascending priority), and a new
+// rule is always appended at the bottom (highest priority, wins conflicts)
+// by assigning it a priority higher than every existing rule's.
 export default function CategoryRulesPanel({ onClose, onApplied }) {
   const [rules, setRules] = useState(null); // null = loading
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   function loadRules() {
     const supabase = getSupabaseClient();
@@ -59,9 +68,12 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    // Always appended at the bottom of the list -- the highest priority,
+    // so it wins any conflict with an existing rule.
+    const nextPriority = rules && rules.length > 0 ? Math.max(...rules.map((r) => r.priority)) + 10 : 100;
     const { error } = await supabase.from("category_rules").insert({
       user_id: user.id,
-      priority: Number(form.priority) || 100,
+      priority: nextPriority,
       match_field: form.matchField,
       match_value: form.matchValue.trim(),
       set_category: form.setCategory.trim() || null,
@@ -92,6 +104,7 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
   }
 
   async function deleteRule(rule) {
+    setConfirmDeleteId(null);
     const supabase = getSupabaseClient();
     const { error } = await supabase.from("category_rules").delete().eq("id", rule.id);
     if (error) {
@@ -111,11 +124,7 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
           <button onClick={onClose} style={styles.closeBtn}>&times;</button>
         </div>
 
-        <div style={styles.ruleDescription}>
-          Rules apply automatically to new transactions as they sync, and retroactively to
-          existing history whenever you add, change, disable, or delete one — like an inbox
-          filter with "apply to existing" always on.
-        </div>
+        <div style={styles.ruleDescription}>Rules apply to new and existing transactions.</div>
 
         <button style={styles.ruleReapplyBtn} onClick={reapply}>
           Reapply now
@@ -127,26 +136,40 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
           <div style={styles.ruleListWrap}>
             {rules.map((r) => (
               <div key={r.id} style={styles.ruleRow}>
-                <input
-                  type="checkbox"
-                  checked={r.enabled}
-                  onChange={() => toggleRule(r)}
-                  style={styles.ruleCheckbox}
-                />
-                <span style={styles.ruleRowText}>
-                  {r.priority} — if {r.match_field} contains "{r.match_value}"
-                  {r.set_category && <> → category {r.set_category}</>}
-                  {r.set_payee && <> → payee {r.set_payee}</>}
-                </span>
-                <button
-                  onClick={() => deleteRule(r)}
-                  style={styles.ruleDeleteBtn}
-                  className="rule-delete-btn"
-                  title="Delete rule"
-                  aria-label="Delete rule"
-                >
-                  <Trash2 size={15} />
-                </button>
+                {confirmDeleteId === r.id ? (
+                  <div style={styles.ruleDeleteConfirm}>
+                    <span style={styles.ruleDeleteConfirmText}>Delete this rule?</span>
+                    <button onClick={() => setConfirmDeleteId(null)} style={styles.addBankConfirmCancel} autoFocus>
+                      Cancel
+                    </button>
+                    <button onClick={() => deleteRule(r)} style={styles.ruleDeleteConfirmDelete}>
+                      Delete
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="checkbox"
+                      checked={r.enabled}
+                      onChange={() => toggleRule(r)}
+                      style={styles.ruleCheckbox}
+                    />
+                    <span style={styles.ruleRowText}>
+                      if {r.match_field} contains "{r.match_value}"
+                      {r.set_category && <> → category {r.set_category}</>}
+                      {r.set_payee && <> → payee {r.set_payee}</>}
+                    </span>
+                    <button
+                      onClick={() => setConfirmDeleteId(r.id)}
+                      style={styles.ruleDeleteBtn}
+                      className="rule-delete-btn"
+                      title="Delete rule"
+                      aria-label="Delete rule"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -189,14 +212,7 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
             />
           </div>
           <div style={styles.ruleFormLine}>
-            priority
-            <input
-              type="number"
-              style={styles.formInputSmall}
-              value={form.priority}
-              onChange={(e) => setForm({ ...form, priority: e.target.value })}
-            />
-            <span style={{ fontSize: 11 }}>(lower runs first; later matches win ties)</span>
+            <span style={{ fontSize: 11 }}>New rules are added at the bottom of the list and win any conflict with rules above them.</span>
             <button style={styles.askBtn} onClick={addRule} disabled={saving}>
               {saving ? "Saving…" : "Add rule"}
             </button>

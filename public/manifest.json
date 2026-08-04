@@ -1,6 +1,6 @@
 {
-  "name": "Fathom",
-  "short_name": "Fathom",
+  "name": "fa/thm",
+  "short_name": "fa/thm",
   "description": "Personal transaction ledger — ask questions, get charts.",
   "start_url": "/",
   "display": "standalone",
