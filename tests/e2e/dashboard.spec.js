@@ -214,6 +214,61 @@ test("clicking a line chart point filters the table to that point, same as click
   expect(outline).toBe("none");
 });
 
+const TOP_TRANSACTIONS_ROWS = [
+  { Date: "2026-04-01", Payee: "Chase Mortgage", Category: "Home:Mortgage", Amount: -5700 },
+  { Date: "2026-04-05", Payee: "Chipotle", Category: "Dining & Drinks:Restaurants", Amount: -12 },
+  { Date: "2026-04-10", Payee: "Chipotle", Category: "Dining & Drinks:Restaurants", Amount: -25 },
+  { Date: "2026-04-15", Payee: "Panda Express", Category: "Dining & Drinks:Restaurants", Amount: -2.42 },
+];
+
+const TOP_TRANSACTIONS_SPEC = {
+  isLedgerQuery: true,
+  categories: null,
+  categoryContains: null,
+  payeeContains: null,
+  dateStart: "2026-04-01",
+  dateEnd: "2026-04-30",
+  type: "expense",
+  amountMin: null,
+  amountMax: null,
+  limit: 10,
+  chartType: "bar",
+  groupBy: "transaction",
+  title: "Top expenses in April 2026",
+};
+
+test("'top N expenses' ranks individual transactions by size, and the list below matches the chart's order (regression: this used to render a payee-total chart with an unrelated, unlimited, date-sorted list underneath)", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: TOP_TRANSACTIONS_ROWS }));
+  await page.route("**/api/query", (route) =>
+    route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(TOP_TRANSACTIONS_SPEC) }] } })
+  );
+
+  await page.goto("/ask");
+  await page.getByRole("textbox").fill("top expenses in April 2026");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.getByText("Top expenses in April 2026", { exact: true })).toBeVisible();
+
+  // Two separate Chipotle transactions must render as two separate bars,
+  // not merged into one summed "Chipotle" total the way payee grouping
+  // would -- four rows in, four bars out.
+  const bars = page.locator(".recharts-bar-rectangle");
+  await expect(bars).toHaveCount(4);
+
+  // The list below the chart must show exactly those four transactions,
+  // ranked by amount (largest first) -- not a date-sorted browse of every
+  // matching transaction, and not deduplicated by payee.
+  const rows = page.locator(".tx-row");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText("Chase Mortgage");
+  await expect(rows.nth(1)).toContainText("Chipotle");
+  await expect(rows.nth(1)).toContainText("-$25.00");
+  await expect(rows.nth(2)).toContainText("Chipotle");
+  await expect(rows.nth(2)).toContainText("-$12.00");
+  await expect(rows.nth(3)).toContainText("Panda Express");
+});
+
 test("lists a balance chip per linked account on the home screen", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
