@@ -46,6 +46,17 @@ export default async function handler(req, res) {
           account_subtypes: [DepositoryAccountSubtype.Checking, DepositoryAccountSubtype.Savings],
         },
       },
+      // Without this, Plaid's initial historical sync for a new Item
+      // defaults to just 90 days -- fine for a first link, but it means a
+      // relink after a longer disconnect gap (see resync_after_date in
+      // api/plaid-exchange.js) wouldn't reach far enough back to actually
+      // backfill the gap, only to avoid duplicating whatever narrow window
+      // it does cover. 730 is Plaid's max (institution-dependent; some
+      // banks provide less regardless). Fixed per-Item once Transactions
+      // is added -- can't be changed later without a full relink.
+      transactions: {
+        days_requested: 730,
+      },
     });
 
     res.status(200).json({ link_token: response.data.link_token });

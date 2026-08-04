@@ -215,15 +215,20 @@ e.g. checking + savings at the same bank).
 > disconnecting (`api/plaid-disconnect.js`) intentionally keeps transaction
 > history but deletes the `plaid_accounts` row itself. Relinking the same
 > real account later always gets a brand-new `account_id`, and Plaid's
-> fresh Item does a full historical resync regardless of how much history
-> already exists in `transactions` — with no `resync_after_date` handling,
-> that resync would duplicate the account's whole history. `api/plaid-exchange.js`
-> recognizes a relink of a previously-seen account via
+> fresh Item resyncs its historical window (up to `days_requested` days
+> back — 730, set in `api/plaid-link-token.js`) regardless of how much
+> history already exists in `transactions` — with no `resync_after_date`
+> handling, that resync would duplicate whatever part of the account's
+> history it covers. `api/plaid-exchange.js` recognizes a relink of a
+> previously-seen account via
 > [`plaid_account_fingerprints`](#plaid_account_fingerprints) (which
 > survives disconnect, unlike this table) and sets this to the latest date
 > already covered; `syncItemTransactions.ts` skips inserting anything
 > dated on or before it. Only possible when Auth numbers were available at
-> link time — see the fingerprints table below.
+> link time — see the fingerprints table below. Note this only backfills a
+> disconnect gap up to `days_requested` (730 days) long; a longer gap
+> still leaves a real hole, since Plaid itself doesn't resync further back
+> than that.
 
 Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
 [`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20260804000000_plaid_account_fingerprints.sql) (`resync_after_date`).
