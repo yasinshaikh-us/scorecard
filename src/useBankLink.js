@@ -31,11 +31,14 @@ export function useBankLink(accessToken, onLinked) {
           },
           body: JSON.stringify({ public_token: publicToken }),
         });
-        if (!resp.ok) throw new Error("exchange failed");
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => null);
+          throw new Error(data?.error || "exchange failed");
+        }
         setStatus("idle");
         onLinked?.();
-      } catch {
-        setError("Couldn't finish connecting — try again");
+      } catch (e) {
+        setError(e.message && e.message !== "exchange failed" ? e.message : "Couldn't finish connecting — try again");
         setStatus("idle");
       }
     },
