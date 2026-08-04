@@ -88,34 +88,51 @@ export async function syncItemTransactions(itemId: string) {
   // bug through the sync path instead of at link time.
   const candidateAccountIds = [...new Set([...added, ...modified].map((tx: any) => tx.account_id))];
   let trackedAccountIds = new Set<string>();
+  const resyncAfterDateByAccountId = new Map<string, string>();
   if (candidateAccountIds.length > 0) {
     const { data: tracked, error: trackedError } = await db
       .from("plaid_accounts")
-      .select("account_id")
+      .select("account_id, resync_after_date")
       .in("account_id", candidateAccountIds);
     if (trackedError) throw trackedError;
-    trackedAccountIds = new Set((tracked || []).map((a) => a.account_id));
+    for (const a of tracked || []) {
+      trackedAccountIds.add(a.account_id);
+      if (a.resync_after_date) resyncAfterDateByAccountId.set(a.account_id, a.resync_after_date);
+    }
   }
 
-  const upserts = [...added, ...modified].filter((tx: any) => trackedAccountIds.has(tx.account_id)).map((tx) => {
-    const rawPayee = payeeFor(tx);
-    const rawCategory = categoryFor(tx);
-    const { category, payee } = applyCategoryRules(rawPayee, rawCategory, (rules || []) as CategoryRule[]);
+  // A relinked account (recognized via plaid_account_fingerprints in
+  // api/plaid-exchange.js as one this user had before, under a now-
+  // disconnected account_id) carries a resync_after_date: the latest date
+  // we already have this real account's history through. Plaid's fresh
+  // Item does a full historical resync on first sync regardless -- this
+  // skips re-inserting the part of that resync we already have, so a
+  // disconnect-then-relink doesn't duplicate the account's whole history.
+  const upserts = [...added, ...modified]
+    .filter((tx: any) => trackedAccountIds.has(tx.account_id))
+    .filter((tx: any) => {
+      const boundary = resyncAfterDateByAccountId.get(tx.account_id);
+      return !boundary || tx.date > boundary;
+    })
+    .map((tx) => {
+      const rawPayee = payeeFor(tx);
+      const rawCategory = categoryFor(tx);
+      const { category, payee } = applyCategoryRules(rawPayee, rawCategory, (rules || []) as CategoryRule[]);
 
-    return {
-      plaid_transaction_id: tx.transaction_id,
-      plaid_account_id: tx.account_id,
-      user_id: item.user_id,
-      date: tx.date,
-      raw_payee: rawPayee,
-      raw_category: rawCategory,
-      payee,
-      category,
-      amount: -tx.amount,
-      source: "plaid",
-      is_transfer: isTransferFor(tx),
-    };
-  });
+      return {
+        plaid_transaction_id: tx.transaction_id,
+        plaid_account_id: tx.account_id,
+        user_id: item.user_id,
+        date: tx.date,
+        raw_payee: rawPayee,
+        raw_category: rawCategory,
+        payee,
+        category,
+        amount: -tx.amount,
+        source: "plaid",
+        is_transfer: isTransferFor(tx),
+      };
+    });
 
   if (upserts.length > 0) {
     const { error: upsertError } = await db

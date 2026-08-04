@@ -23,6 +23,7 @@ If you change the schema, please update this file in the same PR.
   - [`plaid_accounts`](#plaid_accounts)
   - [`plaid_account_balances`](#plaid_account_balances)
   - [`plaid_auth_numbers`](#plaid_auth_numbers)
+  - [`plaid_account_fingerprints`](#plaid_account_fingerprints)
 - [Functions](#functions)
 - [Scheduled jobs](#scheduled-jobs)
 
@@ -48,6 +49,7 @@ erDiagram
     plaid_accounts ||--o| plaid_account_balances : account_id
     plaid_accounts ||--o| plaid_auth_numbers : account_id
     plaid_accounts |o..o{ transactions : "plaid_account_id (soft ref, not FK)"
+    auth_users ||--o{ plaid_account_fingerprints : user_id
 ```
 
 `auth.users` is Supabase's own managed table (the `auth` schema, not
@@ -193,6 +195,7 @@ e.g. checking + savings at the same bank).
 | `type` | `text` | yes | | e.g. `depository`. |
 | `subtype` | `text` | yes | | e.g. `checking`, `savings`. |
 | `created_at` | `timestamptz` | no | `now()` | |
+| `resync_after_date` | `date` | yes | | See callout below. Set only when this account is a relink of one the user disconnected before. |
 
 **Constraints:** PK `id`; unique `account_id`; FK `item_id → plaid_items(id)` (cascade delete); FK `user_id → auth.users(id)` (cascade delete).
 **RLS:** `auth.uid() = user_id`, `SELECT` only. Writes are service-role only.
@@ -208,7 +211,22 @@ e.g. checking + savings at the same bank).
 > `partitionDuplicateAccounts` in that file, and its tests in
 > [`api/plaid-exchange.test.js`](api/plaid-exchange.test.js).
 
-Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql).
+> **`resync_after_date` — disconnect-then-relink of the same account:**
+> disconnecting (`api/plaid-disconnect.js`) intentionally keeps transaction
+> history but deletes the `plaid_accounts` row itself. Relinking the same
+> real account later always gets a brand-new `account_id`, and Plaid's
+> fresh Item does a full historical resync regardless of how much history
+> already exists in `transactions` — with no `resync_after_date` handling,
+> that resync would duplicate the account's whole history. `api/plaid-exchange.js`
+> recognizes a relink of a previously-seen account via
+> [`plaid_account_fingerprints`](#plaid_account_fingerprints) (which
+> survives disconnect, unlike this table) and sets this to the latest date
+> already covered; `syncItemTransactions.ts` skips inserting anything
+> dated on or before it. Only possible when Auth numbers were available at
+> link time — see the fingerprints table below.
+
+Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
+[`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20260804000000_plaid_account_fingerprints.sql) (`resync_after_date`).
 
 ### `plaid_account_balances`
 
@@ -251,6 +269,40 @@ most-sensitive table here.
 Not populated for every account — Auth isn't available for every institution; `api/plaid-exchange.js` treats it as best-effort and doesn't fail a link if it's missing. These numbers double as the primary signal for cross-Item duplicate-account detection (see `plaid_accounts` above).
 
 Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql).
+
+### `plaid_account_fingerprints`
+
+An append-only, indefinitely-retained record of every real bank account
+this user has ever linked — the one thing that survives a full disconnect
+(unlike `plaid_accounts`/`plaid_auth_numbers`, which are cascade-deleted),
+so a later relink of the same real account can be recognized.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key. |
+| `user_id` | `uuid` | no | | FK → `auth.users.id`, cascades on delete. |
+| `fingerprint` | `text` | no | | `sha256(account_number:routing_number)`, hex. **One-way** — see callout below. |
+| `account_id` | `text` | no | | The `plaid_accounts.account_id` this fingerprint was recorded under. **Not a foreign key** — that row may already be deleted by the time this is read (that's the point: it's a historical record, not a live reference). |
+| `institution_id` | `text` | yes | | |
+| `created_at` | `timestamptz` | no | `now()` | |
+
+**Constraints:** PK `id`; FK `user_id → auth.users(id)` (cascade delete). No constraint on `account_id` (deliberately not a live reference — see above).
+**Indexes:** `(user_id, fingerprint)`.
+**RLS:** enabled, **zero policies** for any client role — service-role only, same treatment as `plaid_items`/`plaid_auth_numbers`.
+
+> **Why a hash, not the real numbers:** this table is meant to be kept
+> indefinitely — including long after the account it describes has been
+> disconnected — so, unlike `plaid_auth_numbers`, it must never hold
+> anything reversible to a real account/routing number. `fingerprintFor()`
+> in [`api/plaid-exchange.js`](api/plaid-exchange.js) computes a SHA-256
+> hash of `account_number:routing_number` instead; see its tests in
+> [`api/plaid-exchange.test.js`](api/plaid-exchange.test.js). One row is
+> written per successfully linked account (only when Auth numbers were
+> available for it) — never updated or deleted, so a given real account
+> can have multiple rows here across however many times it's been
+> linked/disconnected/relinked over time.
+
+Origin: [`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20260804000000_plaid_account_fingerprints.sql).
 
 ## Functions
 

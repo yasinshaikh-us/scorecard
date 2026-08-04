@@ -1,5 +1,30 @@
 import { describe, it, expect } from "vitest";
-import { partitionDuplicateAccounts } from "./plaid-exchange.js";
+import { partitionDuplicateAccounts, fingerprintFor } from "./plaid-exchange.js";
+
+// Regression coverage for the disconnect-then-relink duplicate-transaction
+// bug: a relinked account needs a stable way to recognize "I've seen this
+// real account before" even after plaid_auth_numbers is deleted on
+// disconnect (see supabase/migrations/20260804000000_plaid_account_fingerprints.sql).
+describe("fingerprintFor", () => {
+  it("is deterministic for the same account/routing number pair", () => {
+    expect(fingerprintFor("1234567890", "021000021")).toBe(fingerprintFor("1234567890", "021000021"));
+  });
+
+  it("differs for a different account number", () => {
+    expect(fingerprintFor("1234567890", "021000021")).not.toBe(fingerprintFor("1234567899", "021000021"));
+  });
+
+  it("differs for a different routing number", () => {
+    expect(fingerprintFor("1234567890", "021000021")).not.toBe(fingerprintFor("1234567890", "121000358"));
+  });
+
+  it("is not the raw account/routing numbers (one-way, since this table is retained indefinitely)", () => {
+    const fp = fingerprintFor("1234567890", "021000021");
+    expect(fp).not.toContain("1234567890");
+    expect(fp).not.toContain("021000021");
+    expect(fp).toMatch(/^[0-9a-f]{64}$/); // sha256 hex digest
+  });
+});
 
 // Regression coverage for the duplicate-bank-connection bug: relinking an
 // already-connected institution must only skip the specific accounts that
