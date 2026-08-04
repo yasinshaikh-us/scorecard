@@ -37,10 +37,18 @@ export async function syncItemTransactions(itemId: string) {
     .from("plaid_items")
     .select("id, user_id, access_token, cursor")
     .eq("item_id", itemId)
-    .single();
+    .maybeSingle();
 
-  if (itemError || !item) {
-    throw new Error(`No plaid_items row for item_id=${itemId}: ${itemError?.message || "not found"}`);
+  if (itemError) {
+    throw new Error(`Failed to look up plaid_items row for item_id=${itemId}: ${itemError.message}`);
+  }
+  if (!item) {
+    // A disconnected/revoked Item can still have webhooks in flight at
+    // Plaid -- there's nothing to sync for it anymore, and treating this
+    // as an error would make Plaid keep retrying a webhook that can never
+    // succeed. No-op instead of throwing.
+    console.warn(`Ignoring webhook for unknown item_id=${itemId} (likely already disconnected)`);
+    return { added: 0, modified: 0, removed: 0, skipped: true };
   }
 
   let cursor = item.cursor;
@@ -71,7 +79,25 @@ export async function syncItemTransactions(itemId: string) {
     .order("created_at", { ascending: true });
   if (rulesError) throw rulesError;
 
-  const upserts = [...added, ...modified].map((tx) => {
+  // Plaid's sync stream covers every account under this Item, including
+  // any plaid-exchange deliberately didn't record as a plaid_accounts row
+  // because it was recognized as a duplicate of an already-linked
+  // real-world account (see api/plaid-exchange.js). Without this filter,
+  // that account's transactions would still get upserted here under a
+  // fresh plaid_transaction_id -- recreating the same duplicate-ledger
+  // bug through the sync path instead of at link time.
+  const candidateAccountIds = [...new Set([...added, ...modified].map((tx: any) => tx.account_id))];
+  let trackedAccountIds = new Set<string>();
+  if (candidateAccountIds.length > 0) {
+    const { data: tracked, error: trackedError } = await db
+      .from("plaid_accounts")
+      .select("account_id")
+      .in("account_id", candidateAccountIds);
+    if (trackedError) throw trackedError;
+    trackedAccountIds = new Set((tracked || []).map((a) => a.account_id));
+  }
+
+  const upserts = [...added, ...modified].filter((tx: any) => trackedAccountIds.has(tx.account_id)).map((tx) => {
     const rawPayee = payeeFor(tx);
     const rawCategory = categoryFor(tx);
     const { category, payee } = applyCategoryRules(rawPayee, rawCategory, (rules || []) as CategoryRule[]);
