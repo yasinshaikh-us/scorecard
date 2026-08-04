@@ -17,9 +17,21 @@
 // linking a second, genuinely different account at a bank you're already
 // connected to (e.g. adding a savings account after checking) works fine
 // -- only accounts that actually match an existing one get skipped.
+import { createHash } from "node:crypto";
 import { CountryCode } from "plaid";
 import { plaidClient, requireUser } from "./_plaid.js";
 import { supabaseAdmin } from "./_supabaseAdmin.js";
+
+// One-way fingerprint of a real account/routing number pair. Used to
+// recognize "this relinked account is the same real account I had before"
+// even after a full disconnect deletes plaid_auth_numbers -- see
+// supabase/migrations/20260804000000_plaid_account_fingerprints.sql.
+// Deliberately not reversible: the fingerprints table is retained
+// indefinitely (unlike plaid_auth_numbers), so it must never hold
+// anything that could be turned back into a real account/routing number.
+export function fingerprintFor(accountNumber, routingNumber) {
+  return createHash("sha256").update(`${accountNumber}:${routingNumber}`).digest("hex");
+}
 
 async function fetchAuthNumbers(client, accessToken, itemId) {
   // Best-effort: not every institution/account supports Auth. Returns a
@@ -139,6 +151,44 @@ export default async function handler(req, res) {
     });
     const duplicateCount = duplicateAccounts.length;
 
+    // For each genuinely new account, check whether its fingerprint
+    // matches one this user has linked before (at any point, including
+    // accounts since fully disconnected -- plaid_account_fingerprints
+    // survives that, unlike plaid_accounts/plaid_auth_numbers). If so,
+    // find the latest date we already have Plaid-sourced transaction
+    // history through for it, so the sync path can skip re-inserting
+    // that history when Plaid's fresh Item does its full resync. Only
+    // possible for accounts with Auth numbers available.
+    const resyncAfterDateByAccountId = {};
+    for (const account of newAccounts) {
+      const auth = newAuthByAccountId[account.account_id];
+      if (!auth) continue;
+      const fingerprint = fingerprintFor(auth.account_number, auth.routing_number);
+
+      const { data: priorFingerprints, error: fingerprintLookupError } = await db
+        .from("plaid_account_fingerprints")
+        .select("account_id")
+        .eq("user_id", user.id)
+        .eq("fingerprint", fingerprint);
+      if (fingerprintLookupError) throw fingerprintLookupError;
+
+      const priorAccountIds = (priorFingerprints || []).map((f) => f.account_id);
+      if (priorAccountIds.length === 0) continue;
+
+      const { data: priorTx, error: priorTxError } = await db
+        .from("transactions")
+        .select("date")
+        .eq("source", "plaid")
+        .in("plaid_account_id", priorAccountIds)
+        .order("date", { ascending: false })
+        .limit(1);
+      if (priorTxError) throw priorTxError;
+
+      if (priorTx && priorTx.length > 0) {
+        resyncAfterDateByAccountId[account.account_id] = priorTx[0].date;
+      }
+    }
+
     if (newAccounts.length === 0) {
       // Every account in this Item is one the user already has connected
       // -- there's nothing new to keep, so revoke it at Plaid rather than
@@ -179,6 +229,7 @@ export default async function handler(req, res) {
           mask: a.mask,
           type: a.type,
           subtype: a.subtype,
+          resync_after_date: resyncAfterDateByAccountId[a.account_id] || null,
         }))
       );
       if (accountsInsertError) throw accountsInsertError;
@@ -195,6 +246,22 @@ export default async function handler(req, res) {
       if (authRows.length > 0) {
         const { error: authInsertError } = await db.from("plaid_auth_numbers").insert(authRows);
         if (authInsertError) throw authInsertError;
+      }
+
+      // Record this account's fingerprint so a future relink -- even
+      // after a full disconnect -- can recognize it. Only possible for
+      // accounts Auth numbers were available for.
+      const fingerprintRows = newAccounts
+        .filter((a) => newAuthByAccountId[a.account_id])
+        .map((a) => ({
+          user_id: user.id,
+          fingerprint: fingerprintFor(newAuthByAccountId[a.account_id].account_number, newAuthByAccountId[a.account_id].routing_number),
+          account_id: a.account_id,
+          institution_id: institutionId,
+        }));
+      if (fingerprintRows.length > 0) {
+        const { error: fingerprintInsertError } = await db.from("plaid_account_fingerprints").insert(fingerprintRows);
+        if (fingerprintInsertError) throw fingerprintInsertError;
       }
     } catch (writeErr) {
       // Partial failure -- don't leave a zombie plaid_items row (a live,
