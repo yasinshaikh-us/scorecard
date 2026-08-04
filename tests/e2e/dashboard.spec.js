@@ -237,9 +237,14 @@ test("lists a balance chip per linked account on the home screen", async ({ page
   await expect(page.getByText("$2,543.21")).toBeVisible();
   await expect(page.getByText("Ally Savings ••5678")).toBeVisible();
   await expect(page.getByText("$18,000.50")).toBeVisible();
+
+  // The only way to link a bank after the first-login gate is this
+  // button -- it must stay available even once accounts are linked, so
+  // a second/third bank can be added too.
+  await expect(page.getByRole("button", { name: "+ Add bank" })).toBeVisible();
 });
 
-test("shows no balances section for a manual-only ledger (no linked accounts)", async ({ page }) => {
+test("shows an empty state (not a balance chip) for a manual-only ledger, with an Add bank button to link one", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockAccountBalances(page, [], []);
@@ -250,6 +255,8 @@ test("shows no balances section for a manual-only ledger (no linked accounts)", 
   await expect(page.getByText("Quick Questions")).toBeVisible();
   await expect(page.getByText("Account Balances")).toHaveCount(0);
   await expect(page.getByText("Balance", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("No linked accounts yet")).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ Add bank" })).toBeVisible();
 });
 
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {

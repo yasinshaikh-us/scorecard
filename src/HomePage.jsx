@@ -20,7 +20,7 @@ const RECENT_COUNT = 5;
 // already-cleaned array the Ask page's QueryCard reads from dataStore.js,
 // just also handed down as real React state so this component re-renders
 // when it changes.
-export default function HomePage({ transactions, dataStatus, onAskShortcut }) {
+export default function HomePage({ transactions, dataStatus, onAskShortcut, accessToken, onBankLinked }) {
   const recent = useMemo(() => {
     return transactions.slice().sort((a, b) => b.Date.localeCompare(a.Date)).slice(0, RECENT_COUNT);
   }, [transactions]);
@@ -29,7 +29,7 @@ export default function HomePage({ transactions, dataStatus, onAskShortcut }) {
 
   return (
     <>
-      <AccountBalances />
+      <AccountBalances accessToken={accessToken} onLinked={onBankLinked} />
 
       <div style={styles.card}>
         <div style={styles.balancesLabel}>Quick Questions</div>

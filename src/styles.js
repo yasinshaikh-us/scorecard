@@ -90,6 +90,26 @@ export const styles = {
     fontSize: 19,
     fontWeight: 600,
   },
+  balancesEmpty: {
+    color: "var(--text-faint)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+  },
+  // Same small-secondary-action look as ruleReapplyBtn -- re-opens the
+  // Plaid Link flow to connect a bank at any time, not just first login,
+  // and works whether or not any banks are already linked (adding a
+  // second/third one, or the first one if the user originally skipped).
+  addBankBtn: {
+    alignSelf: "flex-start",
+    background: "none",
+    border: "1px solid var(--border)",
+    borderRadius: 7,
+    padding: "6px 12px",
+    color: "var(--text-muted)",
+    fontFamily: "var(--font-body)",
+    fontSize: 12,
+    cursor: "pointer",
+  },
   inputWrap: {
     display: "flex",
     alignItems: "center",
