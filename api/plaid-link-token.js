@@ -3,7 +3,7 @@
 // launch the Link flow. Requires PLAID_CLIENT_ID / PLAID_SECRET / PLAID_ENV
 // (see api/_plaid.js) to be set in Vercel's Environment Variables.
 
-import { CountryCode, Products } from "plaid";
+import { CountryCode, Products, DepositoryAccountSubtype } from "plaid";
 import { plaidClient, requireUser } from "./_plaid.js";
 
 // Plaid's standard Transactions/Item webhooks aren't configured in the
@@ -32,6 +32,20 @@ export default async function handler(req, res) {
       country_codes: [CountryCode.Us],
       language: "en",
       webhook: WEBHOOK_URL,
+      // Transactions + Auth only support depository accounts (checking/
+      // savings) -- without this, Plaid still lets a user select a
+      // mortgage or brokerage account in Link's own account picker, and
+      // it just silently produces nothing useful once selected. Omitting
+      // the credit/loan/investment/other keys entirely (rather than
+      // listing them empty) excludes those product types from Link
+      // outright, so an unsupported account is never offered as an
+      // option in the first place. If mortgage (Liabilities) or brokerage
+      // (Investments) support is ever added, this needs to grow with it.
+      account_filters: {
+        depository: {
+          account_subtypes: [DepositoryAccountSubtype.Checking, DepositoryAccountSubtype.Savings],
+        },
+      },
     });
 
     res.status(200).json({ link_token: response.data.link_token });
