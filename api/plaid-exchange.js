@@ -41,6 +41,34 @@ export default async function handler(req, res) {
       institutionName = institution.data.institution.name;
     }
 
+    // Plaid scopes account_id per Item, so relinking a bank you've
+    // already connected doesn't get deduped upstream -- it silently
+    // produces a second Item with new account_ids for the same
+    // real-world accounts (duplicate balances/transactions). Block it
+    // here instead, and revoke the Item we just created rather than
+    // leaving an unused duplicate connected at Plaid.
+    if (institutionId) {
+      const { data: existing } = await db
+        .from("plaid_items")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("institution_id", institutionId)
+        .eq("status", "active")
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        try {
+          await client.itemRemove({ access_token: accessToken });
+        } catch (removeErr) {
+          console.error("Failed to revoke duplicate item", itemId, removeErr);
+        }
+        res.status(409).json({
+          error: `${institutionName || "This bank"} is already connected. Disconnect it first if you need to relink it.`,
+        });
+        return;
+      }
+    }
+
     const { data: plaidItem, error: itemInsertError } = await db
       .from("plaid_items")
       .insert({
