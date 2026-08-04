@@ -316,6 +316,31 @@ export const styles = {
     fontFamily: "var(--font-body)",
     padding: "16px 0",
   },
+  // Matches ruleDeleteBtn's always-visible (not hover-gated) icon-button
+  // language -- edit is as core an action on a row as delete is on a rule.
+  txEditBtn: {
+    background: "none",
+    border: "none",
+    color: "var(--text-faint)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4,
+    borderRadius: 6,
+    flexShrink: 0,
+  },
+  txEditRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  txEditActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 6,
+  },
   tag: {
     fontSize: 11,
     padding: "2px 8px",

@@ -27,7 +27,7 @@ export async function fetchAllRows(url, anonKey, accessToken) {
 
   while (true) {
     const resp = await fetch(
-      `${url}/rest/v1/transactions?select=date,payee,category,amount,plaid_account_id,is_transfer&order=date.asc`,
+      `${url}/rest/v1/transactions?select=id,date,payee,category,amount,plaid_account_id,is_transfer&order=date.asc`,
       {
         headers: {
           apikey: anonKey,
@@ -97,11 +97,15 @@ export function accountLabelFor(row, labels) {
   return labels[row.plaid_account_id] || "Linked account";
 }
 
-// Shared by this handler and api/query.js, so the {Date, Payee, Category,
-// Amount, Account, IsTransfer} shape served to the client and the shape
-// the NL query system prompt is built from can't drift apart.
+// Shared by this handler and api/query.js, so the {Id, Date, Payee,
+// Category, Amount, Account, IsTransfer} shape served to the client and
+// the shape the NL query system prompt is built from can't drift apart.
+// Id is the transactions.id primary key -- needed so the client can edit
+// a specific row directly (see src/TransactionRow.jsx) rather than only
+// through category_rules.
 export function toClientRows(rawRows, labels) {
   return rawRows.map((r) => ({
+    Id: r.id,
     Date: r.date,
     Payee: r.payee,
     Category: r.category,

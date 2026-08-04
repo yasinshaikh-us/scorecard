@@ -135,6 +135,7 @@ function AuthedApp({ accessToken, onSignOut }) {
         ::placeholder { color: var(--text-faint); }
         button:disabled { opacity: 0.3; cursor: default; }
         .tx-row:hover { background: var(--surface-recessed); }
+        .tx-edit-btn:hover { color: var(--accent); background: var(--surface-recessed); }
         .recharts-wrapper *:focus:not(:focus-visible) { outline: none; }
       `}</style>
 
@@ -206,6 +207,7 @@ function AuthedApp({ accessToken, onSignOut }) {
           onGoToAsk={() => navigate("ask")}
           accessToken={accessToken}
           onBankLinked={refreshTransactions}
+          onTransactionEdited={refreshTransactions}
         />
       ) : (
         <AskPage
@@ -217,6 +219,7 @@ function AuthedApp({ accessToken, onSignOut }) {
           dataStatus={dataStatus}
           cards={cards}
           onRemoveCard={(id) => setCards((prev) => prev.filter((c) => c.id !== id))}
+          onTransactionEdited={refreshTransactions}
         />
       )}
     </div>

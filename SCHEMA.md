@@ -109,6 +109,7 @@ The ledger itself — one row per transaction, manual or bank-synced.
 | `is_transfer` | `boolean` | no | `false` | True for Plaid's `TRANSFER_IN`/`TRANSFER_OUT` categories — money moving between the user's own linked accounts, excluded from spend/income totals by default. |
 | `raw_payee` | `text` | yes | | Original, untouched payee (Plaid's or the pre-existing manual value) — never modified by the category-rules engine, so rules can always re-match against the true source value regardless of how many times they've been re-applied. |
 | `raw_category` | `text` | yes | | Same idea, for category. |
+| `manually_edited` | `boolean` | no | `false` | True once payee/category was set directly via the row editor (`src/TransactionRow.jsx`) rather than by a rule. `apply_category_rules()` skips these rows entirely, and the Plaid sync path (`syncItemTransactions.ts`) stops upserting new data into them — both so a direct edit isn't silently reverted by an unrelated rule change or a later Plaid update to the same transaction. |
 
 **Constraints:** PK `id`; unique `plaid_transaction_id`; FK `user_id → auth.users(id)`; check `source in ('manual','plaid')`.
 **Indexes:** `date`, `category`, `plaid_account_id`, `(user_id, date desc)`.
@@ -127,7 +128,9 @@ Origin: [`20260730231500_add_user_id_and_rls_to_transactions.sql`](supabase/migr
 [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
 [`20260803000000_add_is_transfer_to_transactions.sql`](supabase/migrations/20260803000000_add_is_transfer_to_transactions.sql),
 [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql)
-(`raw_payee`/`raw_category`).
+(`raw_payee`/`raw_category`),
+[`20260804010000_add_manually_edited_to_transactions.sql`](supabase/migrations/20260804010000_add_manually_edited_to_transactions.sql)
+(`manually_edited`).
 
 ### `category_rules`
 
@@ -313,7 +316,7 @@ Origin: [`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20
 
 | Function | Security | Returns | Purpose |
 |---|---|---|---|
-| `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked from `CategoryRulesPanel.jsx`'s "Reapply now" button. |
+| `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Skips any row with `manually_edited = true` entirely (reset step and every rule pass), so a direct row edit isn't reverted by an unrelated rule change. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked from `CategoryRulesPanel.jsx`'s "Reapply now" button. |
 | `clean_payee(text)` | `INVOKER` | `text` | Strips statement-descriptor junk (masked account suffixes, reference codes, phone numbers, ACH ID labels, trailing dates/state codes) from a raw payee string. Mirrored in TypeScript as `cleanPayee()` in [`supabase/functions/_shared/categoryRules.ts`](supabase/functions/_shared/categoryRules.ts) for the live sync path — the SQL version exists for retroactive bulk reprocessing. The two are kept manually in sync (one runs in Postgres, one in Deno); if you change the cleaning logic, update both. |
 
 Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql),

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { styles } from "./styles.js";
-import { iconForCategory } from "./categoryIcons.js";
-import { topCategory, fmtDate, fmtMoney, daysBefore } from "./logic.js";
+import TransactionRow from "./TransactionRow.jsx";
+import { daysBefore } from "./logic.js";
 import AccountBalances from "./AccountBalances.jsx";
 
 const RECENT_DAYS = 7;
@@ -11,7 +11,7 @@ const RECENT_DAYS = 7;
 // already-cleaned array the Ask page's QueryCard reads from dataStore.js,
 // just also handed down as real React state so this component re-renders
 // when it changes.
-export default function HomePage({ transactions, dataStatus, onGoToAsk, accessToken, onBankLinked }) {
+export default function HomePage({ transactions, dataStatus, onGoToAsk, accessToken, onBankLinked, onTransactionEdited }) {
   const recent = useMemo(() => {
     if (transactions.length === 0) return [];
     // Anchored to the ledger's own latest date, not the real "now" -- see
@@ -43,29 +43,9 @@ export default function HomePage({ transactions, dataStatus, onGoToAsk, accessTo
           </a>
         </div>
         <div style={styles.recentWrap}>
-          {recent.map((d, i) => {
-            const Icon = iconForCategory(topCategory(d.Category));
-            return (
-              <div key={i} style={styles.txRow}>
-                <div style={styles.txRowTop}>
-                  <div style={styles.txPayee}>{d.Payee}</div>
-                  <div style={styles.txRight}>
-                    <span
-                      title={d.Category}
-                      aria-label={d.Category}
-                      style={{ ...styles.categoryIconBadge, background: "var(--surface-recessed)", color: "var(--text-muted)" }}
-                    >
-                      <Icon size={14} />
-                    </span>
-                    <span style={{ ...styles.txAmount, color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
-                      {fmtMoney(d.Amount)}
-                    </span>
-                  </div>
-                </div>
-                <div style={styles.txDate}>{fmtDate(d.Date)}</div>
-              </div>
-            );
-          })}
+          {recent.map((d, i) => (
+            <TransactionRow key={d.Id ?? i} row={d} onEdited={onTransactionEdited} />
+          ))}
           {recent.length === 0 && (
             <div style={styles.txEmpty}>
               {!ready ? "Loading…" : transactions.length === 0 ? "No transactions yet" : "Nothing in the last week"}

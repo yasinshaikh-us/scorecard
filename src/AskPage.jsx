@@ -20,38 +20,52 @@ const SUGGESTIONS = [
   "How much did I spend on travel this year?",
 ];
 
-export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick, loading, dataStatus, cards, onRemoveCard }) {
+// 5 lanes spaced exactly one button-width (18%, see .ask-suggestion's
+// max-width) apart, so two suggestions never share the same horizontal
+// reading space even if their float cycles happen to line up vertically.
+const SUGGESTION_LANES = [2, 22, 42, 62, 82];
+
+export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick, loading, dataStatus, cards, onRemoveCard, onTransactionEdited }) {
   return (
     <>
       <style>{`
         .ask-suggestion {
           position: absolute;
-          max-width: 78%;
+          max-width: 18%;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
           background: none;
           border: none;
           padding: 4px 0;
-          color: var(--text-faint);
+          color: var(--text-muted);
           font-family: var(--font-body);
           font-size: 14px;
           font-style: italic;
-          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+          /* A background-colored halo (not a real text-stroke, which isn't
+             reliably supported) rather than a black drop-shadow -- a dark
+             shadow disappears against an already-dark background, so this
+             keeps the same contrast trick working in both themes. */
+          text-shadow: 0 0 5px var(--bg), 0 0 9px var(--bg), 0 0 9px var(--bg);
           cursor: pointer;
           animation-name: ask-suggestion-float;
           animation-timing-function: linear;
           animation-iteration-count: infinite;
         }
-        .ask-suggestion:hover { color: var(--text-muted); }
+        .ask-suggestion:hover { color: var(--text); }
         @keyframes ask-suggestion-float {
           0% { bottom: -8%; opacity: 0; }
-          12% { opacity: 0.6; }
-          82% { opacity: 0.45; }
+          12% { opacity: 0.85; }
+          82% { opacity: 0.65; }
           100% { bottom: 104%; opacity: 0; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .ask-suggestion { animation: none; opacity: 0.5; bottom: 50%; }
+          /* Each button's own --rm-bottom (set inline below) keeps the 10
+             suggestions spread out statically -- a single fixed bottom
+             for all of them would stack every same-lane pair exactly on
+             top of each other once the animation that normally separates
+             them in time is turned off. */
+          .ask-suggestion { animation: none; opacity: 0.7; bottom: var(--rm-bottom, 50%); }
         }
       `}</style>
 
@@ -77,7 +91,16 @@ export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick
             <button
               key={s}
               className="ask-suggestion"
-              style={{ left: `${(i * 29) % 68 + 3}%`, animationDelay: `${i * -2.1}s`, animationDuration: `${17 + (i % 4) * 3}s` }}
+              // 5 lanes, each as wide as the button's own max-width (18%)
+              // and spaced exactly that far apart -- two suggestions can
+              // never overlap into the same reading space, only ever pass
+              // near a neighboring lane's edge.
+              style={{
+                left: `${SUGGESTION_LANES[i % SUGGESTION_LANES.length]}%`,
+                animationDelay: `${i * -4.3}s`,
+                animationDuration: `${17 + (i % 4) * 3}s`,
+                "--rm-bottom": `${8 + i * 9}%`,
+              }}
               disabled={dataStatus !== "ready"}
               onClick={() => onSuggestionClick(s)}
             >
@@ -95,7 +118,7 @@ export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick
               <div style={{ color: "var(--text-faint)", fontFamily: "var(--font-body)", fontSize: 13, padding: "8px 0" }}>thinking…</div>
             </div>
           ) : (
-            <QueryCard key={c.id} {...c} onRemove={() => onRemoveCard(c.id)} />
+            <QueryCard key={c.id} {...c} onRemove={() => onRemoveCard(c.id)} onTransactionEdited={onTransactionEdited} />
           )
         )}
       </div>

@@ -6,18 +6,23 @@ export const topCategory = (cat) => (cat || "Uncategorized").split(":")[0];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Filters out rows missing a required field and coerces types into a
-// clean {Date, Payee, Category, Amount, Account, IsTransfer} shape. The
-// one place this happens, shared by every consumer of raw transaction
+// clean {Id, Date, Payee, Category, Amount, Account, IsTransfer} shape.
+// The one place this happens, shared by every consumer of raw transaction
 // rows (the client's own fetch handler in App.jsx, and api/query.js's
 // separate server-side re-fetch for building its system prompt) so they
 // can't independently drift out of sync -- a row with a missing/null
 // Category was previously silently dropped on the client but crashed
 // api/query.js's computeDataMeta call, since only the client applied
 // this filter.
+//
+// Id passes through as-is (not required/validated) -- api/query.js's
+// system-prompt rows never carry one, and older cached client state
+// might not either, so it's optional rather than a required field.
 export function cleanRows(rows) {
   return rows
     .filter((r) => r.Date && r.Payee && r.Category && r.Amount !== undefined && r.Amount !== null && !isNaN(r.Amount))
     .map((r) => ({
+      Id: r.Id,
       Date: String(r.Date).trim(),
       Payee: String(r.Payee).trim(),
       Category: String(r.Category).trim(),

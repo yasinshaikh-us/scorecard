@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell, LineChart, Line,
 } from "recharts";
 import { styles, tooltipStyle } from "./styles.js";
-import { iconForCategory } from "./categoryIcons.js";
+import TransactionRow from "./TransactionRow.jsx";
 import { RAW_DATA, CATS } from "./dataStore.js";
 import {
   topCategory, fmtDate, fmtGroupKey, fmtMoney,
@@ -35,7 +35,7 @@ function RowDetailPopover({ x, y, row }) {
   );
 }
 
-export default function QueryCard({ id, question, spec, error, offTopic, onRemove }) {
+export default function QueryCard({ id, question, spec, error, offTopic, onRemove, onTransactionEdited }) {
   const [selectedKey, setSelectedKey] = useState(null);
   const [hoverInfo, setHoverInfo] = useState(null);
 
@@ -194,36 +194,17 @@ export default function QueryCard({ id, question, spec, error, offTopic, onRemov
       )}
 
       <div style={styles.listWrap}>
-        {sortedRows.map((d, i) => {
-          const Icon = iconForCategory(topCategory(d.Category));
-          return (
-            <div
-              key={i}
-              className="tx-row"
-              style={styles.txRow}
-              onMouseEnter={(e) => setHoverInfo({ row: d, x: e.clientX, y: e.clientY })}
-              onMouseMove={(e) => setHoverInfo((h) => (h && h.row === d ? { ...h, x: e.clientX, y: e.clientY } : h))}
-              onMouseLeave={() => setHoverInfo((h) => (h && h.row === d ? null : h))}
-            >
-              <div style={styles.txRowTop}>
-                <div style={styles.txPayee}>{d.Payee}</div>
-                <div style={styles.txRight}>
-                  <span
-                    title={d.Category}
-                    aria-label={d.Category}
-                    style={{ ...styles.categoryIconBadge, background: catColor(d.Category) + "26", color: catColor(d.Category) }}
-                  >
-                    <Icon size={14} />
-                  </span>
-                  <span style={{ ...styles.txAmount, color: d.Amount < 0 ? "var(--danger)" : "var(--accent)" }}>
-                    {fmtMoney(d.Amount)}
-                  </span>
-                </div>
-              </div>
-              <div style={styles.txDate}>{fmtDate(d.Date)}</div>
-            </div>
-          );
-        })}
+        {sortedRows.map((d, i) => (
+          <TransactionRow
+            key={d.Id ?? i}
+            row={d}
+            categoryBadgeStyle={{ background: catColor(d.Category) + "26", color: catColor(d.Category) }}
+            onEdited={onTransactionEdited}
+            onMouseEnter={(e) => setHoverInfo({ row: d, x: e.clientX, y: e.clientY })}
+            onMouseMove={(e) => setHoverInfo((h) => (h && h.row === d ? { ...h, x: e.clientX, y: e.clientY } : h))}
+            onMouseLeave={() => setHoverInfo((h) => (h && h.row === d ? null : h))}
+          />
+        ))}
         {sortedRows.length === 0 && <div style={styles.txEmpty}>No matching transactions</div>}
       </div>
       {hoverInfo && <RowDetailPopover {...hoverInfo} />}
