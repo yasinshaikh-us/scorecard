@@ -35,9 +35,9 @@ async function signInFake(page) {
 // question — both mocked at the network layer so this test needs no real
 // credentials.
 const FIXTURE_ROWS = [
-  { Date: "2026-01-05", Payee: "Chase Mortgage", Category: "Home:Mortgage", Amount: -5712.04 },
-  { Date: "2026-01-10", Payee: "Chipotle", Category: "Dining & Drinks:Restaurants", Amount: -21.95 },
-  { Date: "2026-01-15", Payee: "QFC Foods", Category: "Groceries", Amount: -45.5 },
+  { Id: 1, Date: "2026-01-05", Payee: "Chase Mortgage", Category: "Home:Mortgage", Amount: -5712.04 },
+  { Id: 2, Date: "2026-01-10", Payee: "Chipotle", Category: "Dining & Drinks:Restaurants", Amount: -21.95 },
+  { Id: 3, Date: "2026-01-15", Payee: "QFC Foods", Category: "Groceries", Amount: -45.5 },
 ];
 
 const FIXTURE_SPEC = {
@@ -483,4 +483,64 @@ test("deleting a rule requires confirmation (defaulting to Cancel) instead of de
   await page.getByRole("button", { name: "Delete rule" }).click();
   await page.getByRole("button", { name: "Delete" }).click();
   expect(deleteCalled).toBe(true);
+});
+
+test("the Rules panel's 'set category to' field is a restricted dropdown, not free text", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockNoLinkedAccounts(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/rest/v1/category_rules*", (route) => route.fulfill({ json: [] }));
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "Rules" }).click();
+
+  const categorySelect = page.locator("select").nth(1); // 0: match-field select, 1: set-category select
+  await expect(categorySelect).toBeVisible();
+  const optionLabels = await categorySelect.locator("option").allTextContents();
+  expect(optionLabels).toEqual([
+    "(no change)", "Income", "Mortgage", "Investments", "Rent", "Alimony", "Taxes", "Miscellaneous",
+    "Dining", "Shopping", "Utilities", "Groceries", "Transport", "Education", "Health",
+    "Cash", "Travel", "Software", "Entertainment", "Fees",
+  ]);
+});
+
+test("editing a transaction row directly updates its payee and category, persists via Supabase, and shows immediately", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/api/query", (route) =>
+    route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(FIXTURE_SPEC) }] } })
+  );
+
+  let updateBody = null;
+  let updateFilter = null;
+  await page.route("**/rest/v1/transactions*", (route) => {
+    if (route.request().method() === "PATCH") {
+      updateBody = route.request().postDataJSON();
+      updateFilter = new URL(route.request().url()).search;
+      route.fulfill({ status: 204, body: "" });
+      return;
+    }
+    route.continue();
+  });
+
+  await page.goto("/ask");
+  await page.getByRole("textbox").fill("How much did I spend on groceries?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.getByText("QFC Foods")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit transaction" }).click();
+  await page.getByRole("textbox").last().fill("QFC Grocery");
+  await page.locator("select").last().selectOption("Shopping");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  // Persisted via a direct, RLS-scoped Supabase update, not a rule.
+  expect(updateFilter).toBe("?id=eq.3");
+  expect(updateBody).toEqual({ payee: "QFC Grocery", category: "Shopping", manually_edited: true });
+
+  // Reflected immediately, no refetch/reload needed.
+  await expect(page.getByText("QFC Grocery")).toBeVisible();
+  await expect(page.getByText("QFC Foods")).toHaveCount(0);
+  await expect(page.getByTitle("Shopping", { exact: true })).toBeVisible();
 });

@@ -101,6 +101,23 @@ export async function syncItemTransactions(itemId: string) {
     }
   }
 
+  // A transaction the user has directly edited (payee/category set by
+  // hand rather than by a rule -- see manually_edited on public.transactions)
+  // must not get silently clobbered the next time Plaid reports this same
+  // transaction as "modified" (e.g. a pending -> posted transition).
+  // Once a row is manually edited, sync stops touching it entirely.
+  const candidateTransactionIds = [...added, ...modified].map((tx: any) => tx.transaction_id);
+  const manuallyEditedIds = new Set<string>();
+  if (candidateTransactionIds.length > 0) {
+    const { data: edited, error: editedError } = await db
+      .from("transactions")
+      .select("plaid_transaction_id")
+      .in("plaid_transaction_id", candidateTransactionIds)
+      .eq("manually_edited", true);
+    if (editedError) throw editedError;
+    for (const e of edited || []) manuallyEditedIds.add(e.plaid_transaction_id);
+  }
+
   // A relinked account (recognized via plaid_account_fingerprints in
   // api/plaid-exchange.js as one this user had before, under a now-
   // disconnected account_id) carries a resync_after_date: the latest date
@@ -110,6 +127,7 @@ export async function syncItemTransactions(itemId: string) {
   // disconnect-then-relink doesn't duplicate the account's whole history.
   const upserts = [...added, ...modified]
     .filter((tx: any) => trackedAccountIds.has(tx.account_id))
+    .filter((tx: any) => !manuallyEditedIds.has(tx.transaction_id))
     .filter((tx: any) => {
       const boundary = resyncAfterDateByAccountId.get(tx.account_id);
       return !boundary || tx.date > boundary;

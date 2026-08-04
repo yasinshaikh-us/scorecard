@@ -34,3 +34,8 @@ export const CATEGORY_ICONS = {
 export function iconForCategory(category) {
   return CATEGORY_ICONS[category] || HelpCircle;
 }
+
+// The closed set itself, for anywhere the UI needs to offer/validate one
+// of these 19 values directly (e.g. a category picker) rather than just
+// look up an icon for whatever string a row already has.
+export const CATEGORIES = Object.keys(CATEGORY_ICONS);

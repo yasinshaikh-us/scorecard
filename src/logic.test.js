@@ -100,6 +100,13 @@ describe("cleanRows", () => {
     expect(out[0].IsTransfer).toBe(true);
   });
 
+  it("passes Id through unchanged when present, and leaves it undefined when absent", () => {
+    const withId = cleanRows([{ Id: 42, Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5 }]);
+    expect(withId[0].Id).toBe(42);
+    const withoutId = cleanRows([row("2026-01-01", "Chipotle", "Dining", -12.5)]);
+    expect(withoutId[0].Id).toBeUndefined();
+  });
+
   it("keeps a zero Amount (falsy, but valid)", () => {
     const out = cleanRows([row("2026-01-01", "Free Sample", "Groceries", 0)]);
     expect(out).toHaveLength(1);

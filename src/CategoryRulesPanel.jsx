@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { getSupabaseClient } from "./supabaseClient.js";
 import { styles } from "./styles.js";
+import { CATEGORIES } from "./categoryIcons.js";
 
 const EMPTY_FORM = { matchField: "payee", matchValue: "", setCategory: "", setPayee: "" };
 
@@ -197,12 +198,16 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
           </div>
           <div style={styles.ruleFormLine}>
             set category to
-            <input
-              style={styles.formInput}
-              placeholder="(optional)"
+            <select
+              style={styles.formSelect}
               value={form.setCategory}
               onChange={(e) => setForm({ ...form, setCategory: e.target.value })}
-            />
+            >
+              <option value="">(no change)</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
             and payee to
             <input
               style={styles.formInput}

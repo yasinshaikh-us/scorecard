@@ -25,7 +25,7 @@ function fakeSupabaseFetch(total, { failStatus, accounts = [] } = {}) {
     const to = Number(toStr);
     const rows = [];
     for (let i = from; i <= to && i < total; i++) {
-      rows.push({ date: "2024-01-01", payee: `Payee${i}`, category: "Groceries", amount: "-1.50" });
+      rows.push({ id: i, date: "2024-01-01", payee: `Payee${i}`, category: "Groceries", amount: "-1.50" });
     }
     return { ok: true, json: async () => rows };
   });
@@ -131,8 +131,8 @@ describe("handler", () => {
     await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual([
-      { Date: "2024-01-01", Payee: "Payee0", Category: "Groceries", Amount: -1.5, Account: "Manual entry", IsTransfer: false },
-      { Date: "2024-01-01", Payee: "Payee1", Category: "Groceries", Amount: -1.5, Account: "Manual entry", IsTransfer: false },
+      { Id: 0, Date: "2024-01-01", Payee: "Payee0", Category: "Groceries", Amount: -1.5, Account: "Manual entry", IsTransfer: false },
+      { Id: 1, Date: "2024-01-01", Payee: "Payee1", Category: "Groceries", Amount: -1.5, Account: "Manual entry", IsTransfer: false },
     ]);
   });
 
@@ -197,14 +197,14 @@ describe("toClientRows", () => {
   it("maps raw rows to the client shape, resolving Account and coercing IsTransfer", () => {
     const out = toClientRows(
       [
-        { date: "2024-01-01", payee: "Store", category: "Groceries", amount: "-1.5", plaid_account_id: "acc_1", is_transfer: false },
-        { date: "2024-01-02", payee: "Transfer", category: "Transfer", amount: "-500", plaid_account_id: "acc_1", is_transfer: true },
+        { id: 1, date: "2024-01-01", payee: "Store", category: "Groceries", amount: "-1.5", plaid_account_id: "acc_1", is_transfer: false },
+        { id: 2, date: "2024-01-02", payee: "Transfer", category: "Transfer", amount: "-500", plaid_account_id: "acc_1", is_transfer: true },
       ],
       { acc_1: "Chase Checking ••1234" }
     );
     expect(out).toEqual([
-      { Date: "2024-01-01", Payee: "Store", Category: "Groceries", Amount: -1.5, Account: "Chase Checking ••1234", IsTransfer: false },
-      { Date: "2024-01-02", Payee: "Transfer", Category: "Transfer", Amount: -500, Account: "Chase Checking ••1234", IsTransfer: true },
+      { Id: 1, Date: "2024-01-01", Payee: "Store", Category: "Groceries", Amount: -1.5, Account: "Chase Checking ••1234", IsTransfer: false },
+      { Id: 2, Date: "2024-01-02", Payee: "Transfer", Category: "Transfer", Amount: -500, Account: "Chase Checking ••1234", IsTransfer: true },
     ]);
   });
 });
