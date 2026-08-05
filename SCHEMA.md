@@ -3,7 +3,7 @@
 Reference for every table, constraint, and RLS policy in the `public`
 schema of this app's Supabase Postgres database. This reflects the **live**
 schema (introspected directly from the database, not hand-transcribed from
-migration files), current as of 2026-08-04.
+migration files), current as of 2026-08-05.
 
 The source of truth for schema *changes* is `supabase/migrations/` — this
 file is a snapshot for orientation, not a substitute for reading a specific
@@ -24,6 +24,7 @@ If you change the schema, please update this file in the same PR.
   - [`plaid_account_balances`](#plaid_account_balances)
   - [`plaid_auth_numbers`](#plaid_auth_numbers)
   - [`plaid_account_fingerprints`](#plaid_account_fingerprints)
+  - [`plaid_disconnected_accounts`](#plaid_disconnected_accounts)
 - [Functions](#functions)
 - [Scheduled jobs](#scheduled-jobs)
 
@@ -34,10 +35,10 @@ Two logical groups of tables:
 - **The ledger**: `transactions` + `category_rules`. This is what the app's
   Ask/Home pages actually query and display.
 - **The Plaid bank-sync layer**: `plaid_items`, `plaid_accounts`,
-  `plaid_account_balances`, `plaid_auth_numbers`. These hold live bank
-  connections and feed `transactions` (via server-side sync), but are never
-  queried directly by the NL-query system — they're plumbing, not
-  ledger data.
+  `plaid_account_balances`, `plaid_auth_numbers`, `plaid_account_fingerprints`,
+  `plaid_disconnected_accounts`. These hold live bank connections and feed
+  `transactions` (via server-side sync), but are never queried directly by
+  the NL-query system — they're plumbing, not ledger data.
 
 ```mermaid
 erDiagram
@@ -50,6 +51,7 @@ erDiagram
     plaid_accounts ||--o| plaid_auth_numbers : account_id
     plaid_accounts |o..o{ transactions : "plaid_account_id (soft ref, not FK)"
     auth_users ||--o{ plaid_account_fingerprints : user_id
+    auth_users ||--o{ plaid_disconnected_accounts : user_id
 ```
 
 `auth.users` is Supabase's own managed table (the `auth` schema, not
@@ -72,10 +74,12 @@ patterns are used, depending on sensitivity:
    key — so it's Postgres itself, not application code, that restricts
    each request to its own rows.
 
-2. **Secret-holding tables** (`plaid_items`, `plaid_auth_numbers`): RLS
-   enabled with **no policies at all** for `anon`/`authenticated` — only
-   the service-role key (used exclusively in trusted server code: Vercel
-   functions, Edge Functions) can touch them. `plaid_items` has one
+2. **Secret-holding or internal-only tables** (`plaid_items`,
+   `plaid_auth_numbers`, `plaid_account_fingerprints`,
+   `plaid_disconnected_accounts`): RLS enabled with **no policies at all**
+   for `anon`/`authenticated` — only the service-role key (used
+   exclusively in trusted server code: Vercel functions, Edge Functions)
+   can touch them. `plaid_items` has one
    narrow exception — a column-level `GRANT` exposing just
    `id, institution_name, status, created_at` to `authenticated`, paired
    with a normal `auth.uid() = user_id` SELECT policy, so the client can
@@ -237,7 +241,11 @@ e.g. checking + savings at the same bank).
 > possible when Auth numbers were available at link time — see the
 > fingerprints table below. Note this only backfills a disconnect gap up
 > to `days_requested` (730 days) long; a longer gap still leaves a real
-> hole, since Plaid itself doesn't resync further back than that.
+> hole, since Plaid itself doesn't resync further back than that. None of
+> this matters past 90 days disconnected anyway — see
+> [`plaid_disconnected_accounts`](#plaid_disconnected_accounts): the
+> account's transaction history (and its fingerprint) gets purged before a
+> relink that late could ever use this boundary.
 
 Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
 [`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20260804000000_plaid_account_fingerprints.sql) (`resync_after_date`).
@@ -304,38 +312,69 @@ so a later relink of the same real account can be recognized.
 **Indexes:** `(user_id, fingerprint)`.
 **RLS:** enabled, **zero policies** for any client role — service-role only, same treatment as `plaid_items`/`plaid_auth_numbers`.
 
-> **Why a hash, not the real numbers:** this table is meant to be kept
-> indefinitely — including long after the account it describes has been
-> disconnected — so, unlike `plaid_auth_numbers`, it must never hold
-> anything reversible to a real account/routing number. `fingerprintFor()`
-> in [`api/plaid-exchange.js`](api/plaid-exchange.js) computes a SHA-256
-> hash of `account_number:routing_number` instead; see its tests in
+> **Why a hash, not the real numbers:** unlike `plaid_auth_numbers`, this
+> table survives disconnect — including long after the account it
+> describes has been disconnected, up to the 90-day purge described below
+> — so it must never hold anything reversible to a real account/routing
+> number. `fingerprintFor()` in
+> [`api/plaid-exchange.js`](api/plaid-exchange.js) computes a SHA-256 hash
+> of `account_number:routing_number` instead; see its tests in
 > [`api/plaid-exchange.test.js`](api/plaid-exchange.test.js). One row is
 > written per successfully linked account (only when Auth numbers were
-> available for it) — never updated or deleted, so a given real account
-> can have multiple rows here across however many times it's been
-> linked/disconnected/relinked over time.
+> available for it) — never updated, so a given real account can have
+> multiple rows here across however many times it's been
+> linked/disconnected/relinked over time. A row *is* deleted, though, the
+> same moment its account's transaction history is purged — see
+> [`plaid_disconnected_accounts`](#plaid_disconnected_accounts).
 
 Origin: [`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20260804000000_plaid_account_fingerprints.sql).
+
+### `plaid_disconnected_accounts`
+
+Tracks when each disconnected account_id stopped being linked, purely so
+the 90-day retention job below knows how long it's been gone — that
+information doesn't survive anywhere else once `plaid_accounts` is
+cascade-deleted at disconnect time.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `id` | `uuid` | no | `gen_random_uuid()` | Primary key. |
+| `user_id` | `uuid` | no | | FK → `auth.users.id`, cascades on delete. |
+| `account_id` | `text` | no | | **Unique.** The `plaid_accounts.account_id` that was just disconnected. Not a foreign key — the row it names is already gone by the time this is written (cascade order, same reasoning as `plaid_account_fingerprints`). |
+| `fingerprint` | `text` | yes | | Copied from `plaid_account_fingerprints` for this `account_id` at disconnect time, if one exists. Lets the purge job tell "genuinely gone 90+ days" apart from "relinked under a new account_id in the meantime" — `account_id` alone can't, since Plaid never reuses one. |
+| `disconnected_at` | `timestamptz` | no | `now()` | |
+
+**Constraints:** PK `id`; unique `account_id`; FK `user_id → auth.users(id)` (cascade delete).
+**Indexes:** `(disconnected_at)`.
+**RLS:** enabled, **zero policies** for any client role — service-role only, same treatment as `plaid_items`/`plaid_auth_numbers`. Purely internal bookkeeping; no client ever reads or writes this directly.
+
+Written by `api/plaid-disconnect.js`, one row per account, right before the `plaid_items` delete cascades `plaid_accounts` away. Consumed and deleted by `purge_stale_disconnected_transactions()` (see [Functions](#functions)) — rows here are transient, not meant to accumulate.
+
+Origin: [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql).
 
 ## Functions
 
 | Function | Security | Returns | Purpose |
 |---|---|---|---|
-| `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Also recomputes `is_transfer` for every `source='plaid'` row: true only when Plaid classified it `TRANSFER_IN`/`TRANSFER_OUT` **and** the user has 2+ linked `plaid_accounts` — with fewer than 2, there's no second tracked account for a "transfer" to double-count against, so it's treated as real spend/income instead (this is what previously made mortgage/alimony/etc. payments vanish from every total once Plaid classified them as transfers). Skips any row with `manually_edited = true` entirely (reset step, every rule pass, and the `is_transfer` recompute), so a direct row edit isn't reverted by an unrelated rule change. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked from `CategoryRulesPanel.jsx`'s "Reapply now" button. |
+| `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Also recomputes `is_transfer` for every `source='plaid'` row: true only when Plaid classified it `TRANSFER_IN`/`TRANSFER_OUT` **and** the user has 2+ linked `plaid_accounts` — with fewer than 2, there's no second tracked account for a "transfer" to double-count against, so it's treated as real spend/income instead (this is what previously made mortgage/alimony/etc. payments vanish from every total once Plaid classified them as transfers). Skips any row with `manually_edited = true` entirely (reset step, every rule pass, and the `is_transfer` recompute), so a direct row edit isn't reverted by an unrelated rule change. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked automatically by `CategoryRulesPanel.jsx` after every rule add/toggle/delete — there's no manual "reapply" step for the user. |
 | `clean_payee(text)` | `INVOKER` | `text` | Strips statement-descriptor junk (masked account suffixes, reference codes, phone numbers, ACH ID labels, trailing dates/state codes) from a raw payee string. Mirrored in TypeScript as `cleanPayee()` in [`supabase/functions/_shared/categoryRules.ts`](supabase/functions/_shared/categoryRules.ts) for the live sync path — the SQL version exists for retroactive bulk reprocessing. The two are kept manually in sync (one runs in Postgres, one in Deno); if you change the cleaning logic, update both. |
+| `purge_stale_disconnected_transactions()` | `DEFINER` | `integer` (accounts purged) | Deletes `transactions` (and the matching `plaid_account_fingerprints` row) for every `plaid_disconnected_accounts` entry disconnected more than 90 days ago and never relinked since (checked via `fingerprint` against currently-active `plaid_accounts`) — relinked accounts are left untouched, just cleared from the tracking table. `SECURITY DEFINER` because it has to operate across every user's data with no session to scope `auth.uid()` to; `EXECUTE` is revoked from `anon`/`authenticated` so only the cron job below (or a superuser) can invoke it. |
 
 Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql),
 [`20260803030000_scrub_payee_junk.sql`](supabase/migrations/20260803030000_scrub_payee_junk.sql),
 [`20260803040000_closed_category_set.sql`](supabase/migrations/20260803040000_closed_category_set.sql),
 [`20260803050000_scrub_transfer_and_reference_junk.sql`](supabase/migrations/20260803050000_scrub_transfer_and_reference_junk.sql),
 [`20260804010000_add_manually_edited_to_transactions.sql`](supabase/migrations/20260804010000_add_manually_edited_to_transactions.sql),
-[`20260805000000_fix_transfer_flag_and_mortgage_rule.sql`](supabase/migrations/20260805000000_fix_transfer_flag_and_mortgage_rule.sql).
+[`20260805000000_fix_transfer_flag_and_mortgage_rule.sql`](supabase/migrations/20260805000000_fix_transfer_flag_and_mortgage_rule.sql),
+[`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql),
+[`20260805020000_lock_down_purge_function.sql`](supabase/migrations/20260805020000_lock_down_purge_function.sql) (`purge_stale_disconnected_transactions()`).
 
 ## Scheduled jobs
 
 | Job | Schedule | What it does |
 |---|---|---|
 | `plaid-balance-refresh` | Hourly (`pg_cron` + `pg_net`) | Calls the `plaid-balance-refresh` Edge Function for every `active` `plaid_items` row, refreshing `plaid_account_balances`. Plaid's Balance product has no webhook, so this polling job is the only way stale balances (accounts that haven't transacted recently) stay current. Authenticated via a service-role key stored in Supabase Vault (`plaid_balance_refresh_service_key`) — never hardcoded in a migration file. |
+| `purge-stale-disconnected-transactions` | Daily, 3am UTC (`pg_cron`) | Calls `purge_stale_disconnected_transactions()` directly (no HTTP hop — pure DB operation, no external API involved) to enforce the 90-day disconnected-account retention policy. |
 
-Origin: [`20260802000100_schedule_plaid_balance_refresh.sql`](supabase/migrations/20260802000100_schedule_plaid_balance_refresh.sql).
+Origin: [`20260802000100_schedule_plaid_balance_refresh.sql`](supabase/migrations/20260802000100_schedule_plaid_balance_refresh.sql),
+[`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql).
