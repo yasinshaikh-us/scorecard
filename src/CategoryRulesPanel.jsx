@@ -125,11 +125,7 @@ export default function CategoryRulesPanel({ onClose, onApplied }) {
           <button onClick={onClose} style={styles.closeBtn}>&times;</button>
         </div>
 
-        <div style={styles.ruleDescription}>Rules apply to new and existing transactions.</div>
-
-        <button style={styles.ruleReapplyBtn} onClick={reapply}>
-          Reapply now
-        </button>
+        <div style={styles.ruleDescription}>Rules apply automatically to new and existing transactions.</div>
 
         {rules === null && <div style={styles.ruleEmpty}>Loading…</div>}
 
