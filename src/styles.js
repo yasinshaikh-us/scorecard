@@ -84,13 +84,36 @@ export const styles = {
     minWidth: 140,
     flex: "1 1 140px",
   },
+  balanceChipTopRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
+  },
   balanceChipLabel: {
+    flex: 1,
+    minWidth: 0,
     color: "var(--text-muted)",
     fontSize: 11,
     fontFamily: "var(--font-body)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+  },
+  // Matches ruleDeleteBtn's always-visible icon-button language; hover
+  // color comes from the .balance-disconnect-btn rule injected in
+  // AccountBalances.jsx, same pattern as CategoryRulesPanel's delete button.
+  balanceChipDisconnectBtn: {
+    background: "none",
+    border: "none",
+    color: "var(--text-faint)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 2,
+    borderRadius: 6,
+    flexShrink: 0,
   },
   balanceChipAmount: {
     fontFamily: "var(--font-mono)",
@@ -161,6 +184,25 @@ export const styles = {
     fontWeight: 600,
     fontSize: 13,
     cursor: "pointer",
+  },
+  // Second, escalated step of the disconnect-a-bank confirmation --
+  // visually distinct (danger-colored border) from the first step's
+  // neutral addBankConfirm shell, so the increase in stakes is legible
+  // at a glance, not just in the copy.
+  disconnectConfirmFinal: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    background: "var(--surface-recessed)",
+    border: "1px solid var(--danger)",
+    borderRadius: 10,
+    padding: 12,
+  },
+  disconnectConfirmFinalText: {
+    color: "var(--text)",
+    fontSize: 13,
+    fontFamily: "var(--font-body)",
+    lineHeight: 1.5,
   },
   inputWrap: {
     display: "flex",
