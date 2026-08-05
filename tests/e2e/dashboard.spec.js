@@ -287,7 +287,7 @@ test("lists a balance chip per linked account on the home screen", async ({ page
 
   await page.goto("/");
 
-  await expect(page.getByText("Banks", { exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Banks" })).toBeVisible();
   await expect(page.getByText("Chase Checking ••1234")).toBeVisible();
   await expect(page.getByText("$2,543.21")).toBeVisible();
   await expect(page.getByText("Ally Savings ••5678")).toBeVisible();
@@ -308,7 +308,7 @@ test("shows an empty state (not a balance chip) for a manual-only ledger, with a
   await page.goto("/");
 
   await expect(page.getByText("Recent Activity")).toBeVisible();
-  await expect(page.getByText("Banks", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("img", { name: "Banks" })).toBeVisible();
   await expect(page.getByText("No linked accounts yet")).toBeVisible();
   await expect(page.getByRole("button", { name: "Add bank" })).toBeVisible();
 });

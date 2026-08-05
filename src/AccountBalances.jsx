@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Landmark } from "lucide-react";
 import { styles } from "./styles.js";
 import { getSupabaseClient } from "./supabaseClient.js";
 import { fmtMoney } from "./logic.js";
@@ -67,25 +68,37 @@ export default function AccountBalances({ accessToken, onLinked }) {
 
   return (
     <div style={styles.balancesCard}>
+      <div style={styles.balancesHeaderRow}>
+        <Landmark size={16} style={styles.balancesIcon} role="img" aria-label="Banks" />
+        {!showConfirm && (
+          <button
+            onClick={() => setShowConfirm(true)}
+            disabled={connecting}
+            style={styles.addBankBtn}
+            title="Add bank"
+            aria-label="Add bank"
+          >
+            {connecting ? "Connecting…" : "+"}
+          </button>
+        )}
+      </div>
+
       {balances.length > 0 ? (
-        <>
-          <div style={styles.balancesLabel}>Banks</div>
-          <div style={styles.balancesRow}>
-            {balances.map((b) => (
-              <div key={b.id} style={styles.balanceChip}>
-                <div style={styles.balanceChipLabel}>{b.label}</div>
-                <div style={{ ...styles.balanceChipAmount, color: b.amount < 0 ? "var(--danger)" : "var(--text)" }}>
-                  {fmtMoney(b.amount)}
-                </div>
+        <div style={styles.balancesRow}>
+          {balances.map((b) => (
+            <div key={b.id} style={styles.balanceChip}>
+              <div style={styles.balanceChipLabel}>{b.label}</div>
+              <div style={{ ...styles.balanceChipAmount, color: b.amount < 0 ? "var(--danger)" : "var(--text)" }}>
+                {fmtMoney(b.amount)}
               </div>
-            ))}
-          </div>
-        </>
+            </div>
+          ))}
+        </div>
       ) : (
         <div style={styles.balancesEmpty}>No linked accounts yet</div>
       )}
 
-      {showConfirm ? (
+      {showConfirm && (
         // Plaid Link's own account_filters already restricts selection to
         // depository accounts (see api/plaid-link-token.js) -- this banner
         // is what tells the user that *before* they're in Plaid's UI
@@ -105,16 +118,6 @@ export default function AccountBalances({ accessToken, onLinked }) {
             </button>
           </div>
         </div>
-      ) : (
-        <button
-          onClick={() => setShowConfirm(true)}
-          disabled={connecting}
-          style={styles.addBankBtn}
-          title="Add bank"
-          aria-label="Add bank"
-        >
-          {connecting ? "Connecting…" : "+"}
-        </button>
       )}
       {error && <div style={styles.ruleError}>{error}</div>}
     </div>
