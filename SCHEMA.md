@@ -227,11 +227,17 @@ e.g. checking + savings at the same bank).
 > [`plaid_account_fingerprints`](#plaid_account_fingerprints) (which
 > survives disconnect, unlike this table) and sets this to the latest date
 > already covered; `syncItemTransactions.ts` skips inserting anything
-> dated on or before it. Only possible when Auth numbers were available at
-> link time — see the fingerprints table below. Note this only backfills a
-> disconnect gap up to `days_requested` (730 days) long; a longer gap
-> still leaves a real hole, since Plaid itself doesn't resync further back
-> than that.
+> dated strictly before it. The boundary date itself is re-fetched too
+> (Plaid's `date` has no time component, so a transaction that posted
+> later the same calendar day — after the user had already disconnected —
+> would otherwise share a date with an already-synced row and be silently
+> lost); transactions on that one ambiguous day are cross-checked against
+> the existing ledger by date + amount instead, so already-covered ones
+> are dropped as duplicates while genuinely new ones are kept. Only
+> possible when Auth numbers were available at link time — see the
+> fingerprints table below. Note this only backfills a disconnect gap up
+> to `days_requested` (730 days) long; a longer gap still leaves a real
+> hole, since Plaid itself doesn't resync further back than that.
 
 Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
 [`20260804000000_plaid_account_fingerprints.sql`](supabase/migrations/20260804000000_plaid_account_fingerprints.sql) (`resync_after_date`).
