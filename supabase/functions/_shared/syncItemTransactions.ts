@@ -20,13 +20,19 @@ function payeeFor(tx: any) {
 }
 
 // Plaid's personal_finance_category.primary is TRANSFER_IN / TRANSFER_OUT
-// for money moving between the user's own linked accounts (as opposed to
-// real spending or income). Flagging these lets the query layer exclude
-// them from spend/income totals by default -- see the is_transfer column
-// migration for why that matters once a user has more than one account.
-function isTransferFor(tx: any) {
+// for any transaction that looks like money moving to/from another
+// account -- that's as true of a mortgage payment, an alimony payment, or
+// a brokerage funding transfer as it is of moving money between two
+// accounts this app actually tracks. Excluding these from spend/income
+// totals only makes sense to avoid double-counting a transfer between two
+// *tracked* accounts (see apply_category_rules() and its migration for
+// the full rationale) -- with fewer than 2 linked accounts there's no
+// second tracked account for the money to land in, so nothing here can
+// actually be double-counted, and it must count as real spend/income
+// instead of silently disappearing.
+function isTransferFor(tx: any, linkedAccountCount: number) {
   const primary = tx.personal_finance_category?.primary;
-  return primary === "TRANSFER_IN" || primary === "TRANSFER_OUT";
+  return (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") && linkedAccountCount >= 2;
 }
 
 export async function syncItemTransactions(itemId: string) {
@@ -78,6 +84,12 @@ export async function syncItemTransactions(itemId: string) {
     .order("priority", { ascending: true })
     .order("created_at", { ascending: true });
   if (rulesError) throw rulesError;
+
+  const { count: linkedAccountCount, error: accountCountError } = await db
+    .from("plaid_accounts")
+    .select("account_id", { count: "exact", head: true })
+    .eq("user_id", item.user_id);
+  if (accountCountError) throw accountCountError;
 
   // Plaid's sync stream covers every account under this Item, including
   // any plaid-exchange deliberately didn't record as a plaid_accounts row
@@ -148,7 +160,7 @@ export async function syncItemTransactions(itemId: string) {
         category,
         amount: -tx.amount,
         source: "plaid",
-        is_transfer: isTransferFor(tx),
+        is_transfer: isTransferFor(tx, linkedAccountCount || 0),
       };
     });
 
