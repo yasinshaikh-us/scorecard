@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { styles } from "./styles.js";
 import QueryCard from "./QueryCard.jsx";
 
@@ -20,18 +21,36 @@ const SUGGESTIONS = [
   "How much did I spend on travel this year?",
 ];
 
-// 5 lanes spaced exactly one button-width (18%, see .ask-suggestion's
-// max-width) apart, so two suggestions never share the same horizontal
-// reading space even if their float cycles happen to line up vertically.
-const SUGGESTION_LANES = [2, 22, 42, 62, 82];
+// 5 narrow lanes read fine on a desktop-width screen, but on a phone
+// (see bug report: everything truncated down to "How mu…") that same 18%
+// lane is only ~60-70px -- barely a few characters. Below the breakpoint,
+// use fewer, wider lanes instead of shrinking the text further.
+const NARROW_QUERY = "(max-width: 640px)";
+const LANES = {
+  wide: { positions: [2, 22, 42, 62, 82], maxWidth: "18%" },
+  narrow: { positions: [3, 51], maxWidth: "46%" },
+};
+
+function useIsNarrow() {
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(NARROW_QUERY).matches
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(NARROW_QUERY);
+    const onChange = (e) => setIsNarrow(e.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isNarrow;
+}
 
 export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick, loading, dataStatus, cards, onRemoveCard, onTransactionEdited }) {
+  const { positions, maxWidth } = LANES[useIsNarrow() ? "narrow" : "wide"];
   return (
     <>
       <style>{`
         .ask-suggestion {
           position: absolute;
-          max-width: 18%;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -91,14 +110,22 @@ export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick
             <button
               key={s}
               className="ask-suggestion"
-              // 5 lanes, each as wide as the button's own max-width (18%)
-              // and spaced exactly that far apart -- two suggestions can
-              // never overlap into the same reading space, only ever pass
-              // near a neighboring lane's edge.
+              // Each lane is exactly as wide as the button's own max-width
+              // and spaced that far apart -- two suggestions can never
+              // overlap into the same reading space, only ever pass near a
+              // neighboring lane's edge.
               style={{
-                left: `${SUGGESTION_LANES[i % SUGGESTION_LANES.length]}%`,
+                left: `${positions[i % positions.length]}%`,
+                maxWidth,
                 animationDelay: `${i * -4.3}s`,
-                animationDuration: `${17 + (i % 4) * 3}s`,
+                // Every item gets a distinct duration (not a small cycling
+                // set) -- two items sharing a lane with durations that are
+                // near-exact multiples of each other stay phase-locked at
+                // the same height forever instead of drifting apart, which
+                // reads as a cluster of overlapping lines rather than an
+                // ambient drift. Distinct, non-rational-multiple durations
+                // keep every pair's relative phase constantly changing.
+                animationDuration: `${17 + i * 1.7}s`,
                 "--rm-bottom": `${8 + i * 9}%`,
               }}
               disabled={dataStatus !== "ready"}
