@@ -100,13 +100,15 @@ export const styles = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  // Matches ruleDeleteBtn's always-visible icon-button language; hover
-  // color comes from the .balance-disconnect-btn rule injected in
+  // Always red (var(--danger), theme-adaptive in both light and dark --
+  // see theme.css), not just on hover -- this is a destructive action and
+  // should read that way at rest, not need a hover to reveal it. Hover
+  // background comes from the .balance-disconnect-btn rule injected in
   // AccountBalances.jsx, same pattern as CategoryRulesPanel's delete button.
   balanceChipDisconnectBtn: {
     background: "none",
     border: "none",
-    color: "var(--text-faint)",
+    color: "var(--danger)",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
