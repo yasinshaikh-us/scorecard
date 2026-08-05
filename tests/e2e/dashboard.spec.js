@@ -336,6 +336,98 @@ test("clicking the add-bank button shows the checking/savings-only banner, and C
   expect(linkTokenRequested).toBe(false);
 });
 
+test("disconnecting a bank requires two escalating confirmation steps, and Cancel at either step aborts without calling the API", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  await mockAccountBalances(
+    page,
+    [{ account_id: "acc_checking", item_id: "item-1", name: "Chase Checking", mask: "1234" }],
+    [{ account_id: "acc_checking", current: 2543.21, available: 2500 }]
+  );
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  let disconnectCalled = false;
+  await page.route("**/api/plaid-disconnect", (route) => {
+    disconnectCalled = true;
+    route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Disconnect Chase Checking ••1234" }).click();
+
+  // Step 1: neutral wording, mentions the 90-day retention policy.
+  await expect(page.getByText(/Disconnect Chase Checking ••1234\?/)).toBeVisible();
+  await expect(page.getByText(/kept for 90 days/)).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText(/Disconnect Chase Checking ••1234\?/)).toHaveCount(0);
+  expect(disconnectCalled).toBe(false);
+
+  // Re-open and advance to step 2: escalated wording, distinct styling.
+  await page.getByRole("button", { name: "Disconnect Chase Checking ••1234" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Are you absolutely sure?")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Yes, disconnect Chase Checking ••1234" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Are you absolutely sure?")).toHaveCount(0);
+  expect(disconnectCalled).toBe(false);
+  // Chip is untouched -- nothing was ever sent to the API.
+  await expect(page.getByText("Chase Checking ••1234")).toBeVisible();
+});
+
+test("confirming both disconnect steps calls the API with the account's item id, removes the chip, and warns about sibling accounts on the same connection", async ({ page }) => {
+  await signInFake(page);
+  await mockAlreadyLinked(page);
+  // Reports both accounts until disconnected=true, then reports neither --
+  // simulating the real app.plaid_accounts row actually being gone after
+  // api/plaid-disconnect.js's cascade delete, once the account list is
+  // refetched (AccountBalances.jsx's refreshKey bump after a successful call).
+  let disconnected = false;
+  await page.route("**/rest/v1/plaid_accounts*", (route) =>
+    route.fulfill({
+      json: disconnected
+        ? []
+        : [
+            { account_id: "acc_checking", item_id: "item-1", name: "Chase Checking", mask: "1234" },
+            { account_id: "acc_savings", item_id: "item-1", name: "Chase Savings", mask: "5678" },
+          ],
+    })
+  );
+  await page.route("**/rest/v1/plaid_account_balances*", (route) =>
+    route.fulfill({
+      json: disconnected
+        ? []
+        : [
+            { account_id: "acc_checking", current: 2543.21, available: 2500 },
+            { account_id: "acc_savings", current: 18000.5, available: 18000.5 },
+          ],
+    })
+  );
+  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  let disconnectBody = null;
+  await page.route("**/api/plaid-disconnect", (route) => {
+    disconnectBody = route.request().postDataJSON();
+    disconnected = true;
+    route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Disconnect Chase Checking ••1234" }).click();
+
+  // Both accounts share item_id "item-1" -- the checking account's own
+  // disconnect flow must call out that its sibling savings account goes
+  // with it, since Plaid revokes a whole Item, not one account within it.
+  await expect(page.getByText(/This will also disconnect Chase Savings ••5678/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Yes, disconnect Chase Checking ••1234" }).click();
+
+  expect(disconnectBody).toEqual({ id: "item-1" });
+  // After a successful disconnect, both accounts (which the mock now
+  // reports as gone) should no longer be listed.
+  await expect(page.getByText("Chase Checking ••1234")).toHaveCount(0);
+  await expect(page.getByText("No linked accounts yet")).toBeVisible();
+});
+
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
