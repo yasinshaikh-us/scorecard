@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import handler, { fetchAllRows, fetchAccountLabels, accountLabelFor, toClientRows } from "./transactions.js";
+import handler, { fetchAllRows, fetchAccountLabels, fetchLedgerMeta, accountLabelFor, toClientRows } from "./transactions.js";
 
 const SUPABASE_URL = "https://project.supabase.co";
 const ANON_KEY = "test-anon-key";
@@ -178,6 +178,70 @@ describe("fetchAccountLabels", () => {
     }));
     const labels = await fetchAccountLabels(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(labels).toEqual({ acc_1: "Chase Checking ••6789" });
+  });
+});
+
+describe("fetchLedgerMeta", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it("posts to the ledger_meta RPC with the caller's own token and maps the response", async () => {
+    global.fetch = vi.fn(async (url, opts) => {
+      expect(url).toBe(`${SUPABASE_URL}/rest/v1/rpc/ledger_meta`);
+      expect(opts.method).toBe("POST");
+      expect(opts.headers.apikey).toBe(ANON_KEY);
+      expect(opts.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+      return {
+        ok: true,
+        json: async () => [
+          {
+            categories: ["Groceries", "Home"],
+            subcategories: ["Groceries:Food", "Home:Rent"],
+            min_date: "2024-01-01",
+            max_date: "2024-06-01",
+            distinct_account_ids: ["acc_1"],
+            has_manual: true,
+          },
+        ],
+      };
+    });
+    const meta = await fetchLedgerMeta(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
+    expect(meta).toEqual({
+      categories: ["Groceries", "Home"],
+      subcategories: ["Groceries:Food", "Home:Rent"],
+      minDate: "2024-01-01",
+      maxDate: "2024-06-01",
+      accountIds: ["acc_1"],
+      hasManual: true,
+    });
+  });
+
+  it("defaults every field for an empty ledger (no rows for this user)", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        { categories: [], subcategories: [], min_date: null, max_date: null, distinct_account_ids: [], has_manual: false },
+      ],
+    }));
+    const meta = await fetchLedgerMeta(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
+    expect(meta).toEqual({
+      categories: [],
+      subcategories: [],
+      minDate: "",
+      maxDate: "",
+      accountIds: [],
+      hasManual: false,
+    });
+  });
+
+  it("throws with the upstream status/body on failure", async () => {
+    global.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ message: "boom" }) }));
+    await expect(fetchLedgerMeta(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN)).rejects.toMatchObject({
+      status: 503,
+      body: { message: "boom" },
+    });
   });
 });
 

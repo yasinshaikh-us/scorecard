@@ -29,6 +29,34 @@ function reqWith(overrides) {
   };
 }
 
+// Default ledger_meta() RPC response shape -- see
+// supabase/migrations/20260806030000_add_ledger_meta_function.sql.
+const DEFAULT_META = {
+  categories: ["Groceries"],
+  subcategories: ["Groceries:Food"],
+  min_date: "2024-01-01",
+  max_date: "2024-01-01",
+  distinct_account_ids: ["acc_1"],
+  has_manual: false,
+};
+
+function mockFetch({ meta = DEFAULT_META, accounts = [{ account_id: "acc_1", name: "Chase Checking", mask: "1234" }], onAnthropic } = {}) {
+  return vi.fn(async (url, opts) => {
+    if (String(url).includes("/plaid_accounts")) {
+      expect(opts.headers.apikey).toBe(ANON_KEY);
+      return { ok: true, json: async () => accounts };
+    }
+    if (String(url).includes("/rpc/ledger_meta")) {
+      expect(opts.headers.apikey).toBe(ANON_KEY);
+      expect(opts.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+      return { ok: true, json: async () => [meta] };
+    }
+    expect(url).toBe("https://api.anthropic.com/v1/messages");
+    if (onAnthropic) onAnthropic(opts);
+    return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"foo":"bar"}' }] }) };
+  });
+}
+
 describe("handler", () => {
   const realFetch = global.fetch;
   const realEnv = { ...process.env };
@@ -85,31 +113,17 @@ describe("handler", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("ignores a client-supplied system/messages and builds the system prompt itself from the caller's own transactions", async () => {
-    global.fetch = vi.fn(async (url, opts) => {
-      if (String(url).includes("/plaid_accounts")) {
-        expect(opts.headers.apikey).toBe(ANON_KEY);
-        return { ok: true, json: async () => [{ account_id: "acc_1", name: "Chase Checking", mask: "1234" }] };
-      }
-      if (String(url).includes("supabase.co")) {
-        expect(opts.headers.apikey).toBe(ANON_KEY);
-        expect(opts.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
-        return {
-          ok: true,
-          json: async () => [
-            { date: "2024-01-01", payee: "Store", category: "Groceries:Food", amount: "-12.50", plaid_account_id: "acc_1", is_transfer: false },
-          ],
-        };
-      }
-      expect(url).toBe("https://api.anthropic.com/v1/messages");
-      expect(opts.headers["x-api-key"]).toBe("test-key");
-      const sentBody = JSON.parse(opts.body);
-      expect(sentBody.model).toBe("claude-sonnet-5");
-      expect(sentBody.messages).toEqual([{ role: "user", content: "how much did I spend on groceries?" }]);
-      expect(sentBody.system).toContain("Groceries");
-      expect(sentBody.system).toContain("Chase Checking ••1234");
-      expect(sentBody.system).not.toContain("attacker-controlled system prompt");
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"foo":"bar"}' }] }) };
+  it("ignores a client-supplied system/messages and builds the system prompt itself from ledger_meta(), not a full-row fetch", async () => {
+    global.fetch = mockFetch({
+      onAnthropic: (opts) => {
+        expect(opts.headers["x-api-key"]).toBe("test-key");
+        const sentBody = JSON.parse(opts.body);
+        expect(sentBody.model).toBe("claude-sonnet-5");
+        expect(sentBody.messages).toEqual([{ role: "user", content: "how much did I spend on groceries?" }]);
+        expect(sentBody.system).toContain("Groceries");
+        expect(sentBody.system).toContain("Chase Checking ••1234");
+        expect(sentBody.system).not.toContain("attacker-controlled system prompt");
+      },
     });
     const res = fakeRes();
     await handler(
@@ -124,39 +138,60 @@ describe("handler", () => {
     );
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ content: [{ type: "text", text: '{"foo":"bar"}' }] });
+    // Exactly two Supabase calls (ledger_meta RPC + plaid_accounts) --
+    // no paginated full-row fetch of `transactions`.
+    expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
-  it("doesn't crash when a transaction has a null category (regression: computeDataMeta requires a real Category string on every row)", async () => {
-    global.fetch = vi.fn(async (url, opts) => {
-      if (String(url).includes("/plaid_accounts")) {
-        return { ok: true, json: async () => [] };
-      }
-      if (String(url).includes("supabase.co")) {
-        return {
-          ok: true,
-          json: async () => [
-            { date: "2024-01-01", payee: "Store", category: "Groceries:Food", amount: "-12.50" },
-            // An uncategorized transaction -- the client's own
-            // /api/transactions consumer silently drops rows like this
-            // one; this endpoint must too, not crash on it.
-            { date: "2024-01-02", payee: "Mystery", category: null, amount: "-5.00" },
-          ],
-        };
-      }
-      const sentBody = JSON.parse(opts.body);
-      expect(sentBody.system).toContain("Groceries");
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: "text", text: '{"foo":"bar"}' }] }) };
+  it("includes 'Manual entry' in Accounts when ledger_meta() reports has_manual, even with linked accounts present", async () => {
+    global.fetch = mockFetch({
+      meta: { ...DEFAULT_META, has_manual: true },
+      onAnthropic: (opts) => {
+        const sentBody = JSON.parse(opts.body);
+        expect(sentBody.system).toContain("Manual entry");
+        expect(sentBody.system).toContain("Chase Checking ••1234");
+      },
     });
     const res = fakeRes();
-    await handler(reqWith({ body: { question: "how much did I spend on groceries?" } }), res);
+    await handler(reqWith({}), res);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ content: [{ type: "text", text: '{"foo":"bar"}' }] });
+  });
+
+  it("falls back to 'none linked' Accounts copy when ledger_meta() reports no accounts at all", async () => {
+    global.fetch = mockFetch({
+      meta: { categories: [], subcategories: [], min_date: null, max_date: null, distinct_account_ids: [], has_manual: false },
+      accounts: [],
+      onAnthropic: (opts) => {
+        const sentBody = JSON.parse(opts.body);
+        expect(sentBody.system).toContain("none linked — every entry is a manual entry");
+      },
+    });
+    const res = fakeRes();
+    await handler(reqWith({}), res);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("falls back to 'Linked account' for a distinct_account_id not present in plaid_accounts (data race between the two fetches)", async () => {
+    global.fetch = mockFetch({
+      meta: { ...DEFAULT_META, distinct_account_ids: ["acc_unknown"] },
+      accounts: [],
+      onAnthropic: (opts) => {
+        const sentBody = JSON.parse(opts.body);
+        expect(sentBody.system).toContain("Linked account");
+      },
+    });
+    const res = fakeRes();
+    await handler(reqWith({}), res);
+    expect(res.statusCode).toBe(200);
   });
 
   it("passes through the upstream status and error body on Anthropic failure", async () => {
     global.fetch = vi.fn(async (url) => {
-      if (String(url).includes("supabase.co")) {
+      if (String(url).includes("/plaid_accounts")) {
         return { ok: true, json: async () => [] };
+      }
+      if (String(url).includes("/rpc/ledger_meta")) {
+        return { ok: true, json: async () => [DEFAULT_META] };
       }
       return {
         ok: false,
@@ -170,12 +205,17 @@ describe("handler", () => {
     expect(res.body).toEqual({ error: { type: "error", error: { message: "rate limited" } } });
   });
 
-  it("passes through the upstream status and error body on Supabase failure", async () => {
-    global.fetch = vi.fn(async () => ({
-      ok: false,
-      status: 503,
-      json: async () => ({ message: "boom" }),
-    }));
+  it("passes through the upstream status and error body on a ledger_meta() failure", async () => {
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes("/plaid_accounts")) {
+        return { ok: true, json: async () => [] };
+      }
+      return {
+        ok: false,
+        status: 503,
+        json: async () => ({ message: "boom" }),
+      };
+    });
     const res = fakeRes();
     await handler(reqWith({}), res);
     expect(res.statusCode).toBe(503);

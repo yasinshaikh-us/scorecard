@@ -3,7 +3,7 @@
 Reference for every table, constraint, and RLS policy in the `public`
 schema of this app's Supabase Postgres database. This reflects the **live**
 schema (introspected directly from the database, not hand-transcribed from
-migration files), current as of 2026-08-05.
+migration files), current as of 2026-08-06.
 
 The source of truth for schema *changes* is `supabase/migrations/` — this
 file is a snapshot for orientation, not a substitute for reading a specific
@@ -68,11 +68,17 @@ patterns are used, depending on sensitivity:
 
 1. **Normal per-user tables** (`transactions`, `category_rules`,
    `plaid_accounts`, `plaid_account_balances`): an RLS policy scoped to
-   `auth.uid() = user_id`. Server code that reads these on a user's behalf
-   (`api/transactions.js`, `api/query.js`) forwards the *caller's own*
-   Supabase access token to PostgREST rather than using a service-role
-   key — so it's Postgres itself, not application code, that restricts
-   each request to its own rows.
+   `(select auth.uid()) = user_id`. Server code that reads these on a
+   user's behalf (`api/transactions.js`, `api/query.js`) forwards the
+   *caller's own* Supabase access token to PostgREST rather than using a
+   service-role key — so it's Postgres itself, not application code,
+   that restricts each request to its own rows. The `select`-wrapped
+   form (rather than a bare `auth.uid() = user_id`) lets Postgres
+   evaluate `auth.uid()` once per query instead of once per row scanned
+   — see
+   [`20260806000000_fix_rls_auth_uid_initplan.sql`](supabase/migrations/20260806000000_fix_rls_auth_uid_initplan.sql),
+   a fix for a perf lint Supabase's own advisor flags
+   (`auth_rls_initplan`).
 
 2. **Secret-holding or internal-only tables** (`plaid_items`,
    `plaid_auth_numbers`, `plaid_account_fingerprints`,
@@ -82,7 +88,7 @@ patterns are used, depending on sensitivity:
    can touch them. `plaid_items` has one
    narrow exception — a column-level `GRANT` exposing just
    `id, institution_name, status, created_at` to `authenticated`, paired
-   with a normal `auth.uid() = user_id` SELECT policy, so the client can
+   with a normal `(select auth.uid()) = user_id` SELECT policy, so the client can
    show "is a bank linked yet" without ever being able to read
    `access_token` or `cursor`. See
    [`20260802010000_lock_down_plaid_items_columns.sql`](supabase/migrations/20260802010000_lock_down_plaid_items_columns.sql)
@@ -116,8 +122,9 @@ The ledger itself — one row per transaction, manual or bank-synced.
 | `manually_edited` | `boolean` | no | `false` | True once payee/category was set directly via the row editor (`src/TransactionRow.jsx`) rather than by a rule. `apply_category_rules()` skips these rows entirely, and the Plaid sync path (`syncItemTransactions.ts`) stops upserting new data into them — both so a direct edit isn't silently reverted by an unrelated rule change or a later Plaid update to the same transaction. |
 
 **Constraints:** PK `id`; unique `plaid_transaction_id`; FK `user_id → auth.users(id)`; check `source in ('manual','plaid')`.
-**Indexes:** `date`, `category`, `plaid_account_id`, `(user_id, date desc)`.
-**RLS:** `auth.uid() = user_id`, split into a `SELECT` policy and an `UPDATE` policy — deliberately **no** `INSERT`/`DELETE` policy for `authenticated`. The app's only write path is a targeted `UPDATE` by row `id` (`TransactionRow.jsx`'s payee/category edit); there's no add- or delete-transaction feature in the client, so those verbs were pure unused headroom — a leaked access token or a stray API call could otherwise wipe a user's entire ledger in one unscoped `DELETE`. `service_role` (the Plaid sync path, `apply_category_rules()`) is unaffected either way — it bypasses RLS entirely.
+**Indexes:** `plaid_account_id`, `(user_id, date desc)`, `(user_id, category, date desc)`. The standalone `date` and `category` indexes this table originally had were dropped — every real query against this table is user-scoped (via RLS or an explicit `user_id =` filter), so a bare table-wide index on either column was never actually selective for the app's access pattern and just cost write overhead on every Plaid-synced insert. See
+[`20260806020000_replace_transactions_date_category_indexes.sql`](supabase/migrations/20260806020000_replace_transactions_date_category_indexes.sql).
+**RLS:** `(select auth.uid()) = user_id`, split into a `SELECT` policy and an `UPDATE` policy — deliberately **no** `INSERT`/`DELETE` policy for `authenticated`. The app's only write path is a targeted `UPDATE` by row `id` (`TransactionRow.jsx`'s payee/category edit); there's no add- or delete-transaction feature in the client, so those verbs were pure unused headroom — a leaked access token or a stray API call could otherwise wipe a user's entire ledger in one unscoped `DELETE`. `service_role` (the Plaid sync path, `apply_category_rules()`) is unaffected either way — it bypasses RLS entirely.
 
 > **Why `plaid_account_id` has no FK:** Plaid's sync APIs return data for
 > *every* account under a bank connection (Item), including any account
@@ -133,6 +140,8 @@ Origin: [`20260730231500_add_user_id_and_rls_to_transactions.sql`](supabase/migr
 [`20260803000000_add_is_transfer_to_transactions.sql`](supabase/migrations/20260803000000_add_is_transfer_to_transactions.sql),
 [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql)
 (`raw_payee`/`raw_category`),
+[`20260806000000_fix_rls_auth_uid_initplan.sql`](supabase/migrations/20260806000000_fix_rls_auth_uid_initplan.sql),
+[`20260806020000_replace_transactions_date_category_indexes.sql`](supabase/migrations/20260806020000_replace_transactions_date_category_indexes.sql),
 [`20260804010000_add_manually_edited_to_transactions.sql`](supabase/migrations/20260804010000_add_manually_edited_to_transactions.sql)
 (`manually_edited`),
 [`20260805030000_narrow_transactions_rls.sql`](supabase/migrations/20260805030000_narrow_transactions_rls.sql)
@@ -159,9 +168,12 @@ going forward, in the live Plaid sync path.
 | `updated_at` | `timestamptz` | no | `now()` | |
 
 **Constraints:** PK `id`; FK `user_id → auth.users(id)` (cascade delete); check `match_field in ('payee','category')`.
-**RLS:** `auth.uid() = user_id`, `for all`.
+**Indexes:** `(user_id, priority)` — covers both the RLS filter and `CategoryRulesPanel.jsx`'s `order("priority")`.
+**RLS:** `(select auth.uid()) = user_id`, `for all`.
 
-Origin: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql).
+Origin: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql),
+[`20260806000000_fix_rls_auth_uid_initplan.sql`](supabase/migrations/20260806000000_fix_rls_auth_uid_initplan.sql),
+[`20260806010000_add_missing_user_id_indexes.sql`](supabase/migrations/20260806010000_add_missing_user_id_indexes.sql).
 
 ### `plaid_items`
 
@@ -182,11 +194,14 @@ the live access token — the most sensitive row in this schema.
 | `updated_at` | `timestamptz` | no | `now()` | |
 
 **Constraints:** PK `id`; unique `item_id`; FK `user_id → auth.users(id)` (cascade delete); check `status` enum.
-**RLS:** one `SELECT` policy, `auth.uid() = user_id` — combined with a column-level `GRANT` restricting `authenticated` to `id, institution_name, status, created_at` only (see [Security model](#security-model)). No `anon` access at all. No `INSERT`/`UPDATE`/`DELETE` policy for any client role — every write goes through service-role code (`api/plaid-exchange.js`, `api/plaid-disconnect.js`, the `plaid-webhook` Edge Function).
+**Indexes:** `user_id`.
+**RLS:** one `SELECT` policy, `(select auth.uid()) = user_id` — combined with a column-level `GRANT` restricting `authenticated` to `id, institution_name, status, created_at` only (see [Security model](#security-model)). No `anon` access at all. No `INSERT`/`UPDATE`/`DELETE` policy for any client role — every write goes through service-role code (`api/plaid-exchange.js`, `api/plaid-disconnect.js`, the `plaid-webhook` Edge Function).
 
 Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
 [`20260802000200_plaid_items_status_read_policy.sql`](supabase/migrations/20260802000200_plaid_items_status_read_policy.sql),
-[`20260802010000_lock_down_plaid_items_columns.sql`](supabase/migrations/20260802010000_lock_down_plaid_items_columns.sql).
+[`20260802010000_lock_down_plaid_items_columns.sql`](supabase/migrations/20260802010000_lock_down_plaid_items_columns.sql),
+[`20260806000000_fix_rls_auth_uid_initplan.sql`](supabase/migrations/20260806000000_fix_rls_auth_uid_initplan.sql),
+[`20260806010000_add_missing_user_id_indexes.sql`](supabase/migrations/20260806010000_add_missing_user_id_indexes.sql).
 
 ### `plaid_accounts`
 
@@ -207,7 +222,8 @@ e.g. checking + savings at the same bank).
 | `resync_after_date` | `date` | yes | | See callout below. Set only when this account is a relink of one the user disconnected before. |
 
 **Constraints:** PK `id`; unique `account_id`; FK `item_id → plaid_items(id)` (cascade delete); FK `user_id → auth.users(id)` (cascade delete).
-**RLS:** `auth.uid() = user_id`, `SELECT` only. Writes are service-role only.
+**Indexes:** `user_id`, `item_id`.
+**RLS:** `(select auth.uid()) = user_id`, `SELECT` only. Writes are service-role only.
 
 > **Why a row here doesn't necessarily mean "a real distinct account":**
 > Plaid mints a brand-new `account_id` every time a bank is linked, even
@@ -267,11 +283,14 @@ account, always overwritten with the newest value.
 | `as_of` | `timestamptz` | no | `now()` | When this balance was last fetched from Plaid. |
 
 **Constraints:** PK `account_id`; FK `account_id → plaid_accounts(account_id)` (cascade delete); FK `user_id → auth.users(id)` (cascade delete).
-**RLS:** `auth.uid() = user_id`, `SELECT` only. Writes are service-role only (`refreshAccountBalances.ts`, shared by the hourly cron and every transaction-sync webhook).
+**Indexes:** `user_id`.
+**RLS:** `(select auth.uid()) = user_id`, `SELECT` only. Writes are service-role only (`refreshAccountBalances.ts`, shared by the hourly cron and every transaction-sync webhook).
 
 Refreshed hourly (see [Scheduled jobs](#scheduled-jobs)) and opportunistically on every transaction webhook, since Plaid's Balance product has no webhook of its own.
 
-Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql).
+Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
+[`20260806000000_fix_rls_auth_uid_initplan.sql`](supabase/migrations/20260806000000_fix_rls_auth_uid_initplan.sql),
+[`20260806010000_add_missing_user_id_indexes.sql`](supabase/migrations/20260806010000_add_missing_user_id_indexes.sql).
 
 ### `plaid_auth_numbers`
 
@@ -288,11 +307,13 @@ most-sensitive table here.
 | `created_at` | `timestamptz` | no | `now()` | |
 
 **Constraints:** PK `account_id`; FK `account_id → plaid_accounts(account_id)` (cascade delete); FK `user_id → auth.users(id)` (cascade delete).
+**Indexes:** `user_id`.
 **RLS:** enabled, **zero policies** for any client role — not even the owning user can read this table directly. Service-role only. If the UI ever needs to show a masked routing number, that must go through a dedicated server endpoint that masks it, never a direct table select.
 
 Not populated for every account — Auth isn't available for every institution; `api/plaid-exchange.js` treats it as best-effort and doesn't fail a link if it's missing. These numbers double as the primary signal for cross-Item duplicate-account detection (see `plaid_accounts` above).
 
-Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql).
+Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
+[`20260806010000_add_missing_user_id_indexes.sql`](supabase/migrations/20260806010000_add_missing_user_id_indexes.sql).
 
 ### `plaid_account_fingerprints`
 
@@ -347,12 +368,13 @@ cascade-deleted at disconnect time.
 | `disconnected_at` | `timestamptz` | no | `now()` | |
 
 **Constraints:** PK `id`; unique `account_id`; FK `user_id → auth.users(id)` (cascade delete).
-**Indexes:** `(disconnected_at)`.
+**Indexes:** `(disconnected_at)`, `user_id`.
 **RLS:** enabled, **zero policies** for any client role — service-role only, same treatment as `plaid_items`/`plaid_auth_numbers`. Purely internal bookkeeping; no client ever reads or writes this directly.
 
 Written by `api/plaid-disconnect.js`, one row per account, right before the `plaid_items` delete cascades `plaid_accounts` away. Consumed and deleted by `purge_stale_disconnected_transactions()` (see [Functions](#functions)) — rows here are transient, not meant to accumulate.
 
-Origin: [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql).
+Origin: [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql),
+[`20260806010000_add_missing_user_id_indexes.sql`](supabase/migrations/20260806010000_add_missing_user_id_indexes.sql).
 
 ## Functions
 
@@ -361,6 +383,7 @@ Origin: [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/mi
 | `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Also recomputes `is_transfer` for every `source='plaid'` row: true only when Plaid classified it `TRANSFER_IN`/`TRANSFER_OUT` **and** the user has 2+ linked `plaid_accounts` — with fewer than 2, there's no second tracked account for a "transfer" to double-count against, so it's treated as real spend/income instead (this is what previously made mortgage/alimony/etc. payments vanish from every total once Plaid classified them as transfers). Skips any row with `manually_edited = true` entirely (reset step, every rule pass, and the `is_transfer` recompute), so a direct row edit isn't reverted by an unrelated rule change. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked automatically by `CategoryRulesPanel.jsx` after every rule add/toggle/delete — there's no manual "reapply" step for the user. |
 | `clean_payee(text)` | `INVOKER` | `text` | Strips statement-descriptor junk (masked account suffixes, reference codes, phone numbers, ACH ID labels, trailing dates/state codes) from a raw payee string. Mirrored in TypeScript as `cleanPayee()` in [`supabase/functions/_shared/categoryRules.ts`](supabase/functions/_shared/categoryRules.ts) for the live sync path — the SQL version exists for retroactive bulk reprocessing. The two are kept manually in sync (one runs in Postgres, one in Deno); if you change the cleaning logic, update both. |
 | `purge_stale_disconnected_transactions()` | `DEFINER` | `integer` (accounts purged) | Deletes `transactions` (and the matching `plaid_account_fingerprints` row) for every `plaid_disconnected_accounts` entry disconnected more than 90 days ago and never relinked since (checked via `fingerprint` against currently-active `plaid_accounts`) — relinked accounts are left untouched, just cleared from the tracking table. `SECURITY DEFINER` because it has to operate across every user's data with no session to scope `auth.uid()` to; `EXECUTE` is revoked from `anon`/`authenticated` so only the cron job below (or a superuser) can invoke it. |
+| `ledger_meta()` | `INVOKER` | one row: `categories text[], subcategories text[], min_date date, max_date date, distinct_account_ids text[], has_manual boolean` | Computes the handful of scalars `api/query.js` needs to build its NL-query system prompt (the valid top-level/`Top:Sub` category values, the data's date range, and which accounts appear in the ledger) directly in the database, off the `(user_id, category, date desc)` index — replacing what used to be a full paginated download of every transaction row just to derive five values in JS. Always scoped to `auth.uid()` internally — takes no parameters, same pattern as `apply_category_rules()`. See `fetchLedgerMeta()` in [`api/transactions.js`](api/transactions.js). |
 
 Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql),
 [`20260803030000_scrub_payee_junk.sql`](supabase/migrations/20260803030000_scrub_payee_junk.sql),
@@ -369,7 +392,8 @@ Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations
 [`20260804010000_add_manually_edited_to_transactions.sql`](supabase/migrations/20260804010000_add_manually_edited_to_transactions.sql),
 [`20260805000000_fix_transfer_flag_and_mortgage_rule.sql`](supabase/migrations/20260805000000_fix_transfer_flag_and_mortgage_rule.sql),
 [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql),
-[`20260805020000_lock_down_purge_function.sql`](supabase/migrations/20260805020000_lock_down_purge_function.sql) (`purge_stale_disconnected_transactions()`).
+[`20260805020000_lock_down_purge_function.sql`](supabase/migrations/20260805020000_lock_down_purge_function.sql) (`purge_stale_disconnected_transactions()`),
+[`20260806030000_add_ledger_meta_function.sql`](supabase/migrations/20260806030000_add_ledger_meta_function.sql) (`ledger_meta()`).
 
 ## Scheduled jobs
 

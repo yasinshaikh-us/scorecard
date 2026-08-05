@@ -87,6 +87,49 @@ export async function fetchAccountLabels(url, anonKey, accessToken) {
   return labels;
 }
 
+// Calls the ledger_meta() Postgres RPC (see
+// supabase/migrations/20260806030000_add_ledger_meta_function.sql)
+// instead of downloading every column of every row just to compute a
+// handful of scalars. Used by api/query.js to build its NL-query system
+// prompt without paying for a full-ledger fetch on every question asked.
+// SECURITY INVOKER and scoped to auth.uid() internally (no parameters),
+// same RLS-respecting pattern as every other request in this file --
+// the caller's own access token goes on Authorization, never a
+// service-role key.
+export async function fetchLedgerMeta(url, anonKey, accessToken) {
+  const resp = await fetch(`${url}/rest/v1/rpc/ledger_meta`, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+
+  const rows = await resp.json();
+
+  if (!resp.ok) {
+    const err = new Error("Supabase request failed");
+    err.status = resp.status;
+    err.body = rows;
+    throw err;
+  }
+
+  // ledger_meta() is defined as RETURNS TABLE but always produces
+  // exactly one row (a bare aggregate query, not a set) -- PostgREST
+  // still wraps it as a one-element array.
+  const row = rows[0] || {};
+  return {
+    categories: row.categories || [],
+    subcategories: row.subcategories || [],
+    minDate: row.min_date || "",
+    maxDate: row.max_date || "",
+    accountIds: row.distinct_account_ids || [],
+    hasManual: !!row.has_manual,
+  };
+}
+
 // A row with no plaid_account_id was entered manually, never linked to a
 // bank account. A row with a plaid_account_id that isn't in `labels` is a
 // data race, not an error to fail the request over (e.g. the account was

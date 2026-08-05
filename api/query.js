@@ -13,8 +13,7 @@
 // RLS-scoped way api/transactions.js does) means the prompt's shape is
 // fixed regardless of what the client sends.
 
-import { fetchAllRows, fetchAccountLabels, toClientRows } from "./transactions.js";
-import { computeDataMeta, cleanRows } from "../src/logic.js";
+import { fetchLedgerMeta, fetchAccountLabels } from "./transactions.js";
 
 function buildSystemPrompt(CATS, SUBCATS, ACCOUNTS, MIN_DATE, MAX_DATE) {
   return `You translate a question about a personal bank-transaction ledger into a strict JSON filter/chart spec. Never compute totals yourself.
@@ -106,19 +105,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [rawRows, labels] = await Promise.all([
-      fetchAllRows(url, anonKey, accessToken),
+    const [meta, labels] = await Promise.all([
+      fetchLedgerMeta(url, anonKey, accessToken),
       fetchAccountLabels(url, anonKey, accessToken),
     ]);
-    // Same cleaning the client applies to its own /api/transactions
-    // fetch (src/logic.js :: cleanRows) — a row with a missing/null
-    // field (e.g. an uncategorized transaction) is silently dropped
-    // rather than reaching computeDataMeta, which requires every row to
-    // have a real Category string.
-    const rows = cleanRows(toClientRows(rawRows, labels));
-    const { CATS, SUBCATS, MIN_DATE, MAX_DATE } = computeDataMeta(rows);
-    const ACCOUNTS = [...new Set(rows.map((r) => r.Account))].sort();
-    const system = buildSystemPrompt(CATS, SUBCATS, ACCOUNTS, MIN_DATE, MAX_DATE);
+    // Reproduces the same ACCOUNTS list a full-row fetch used to
+    // produce (every account actually referenced by a transaction, via
+    // its resolved name+mask label or the "Linked account" fallback for
+    // an orphaned id, plus "Manual entry" iff at least one row has no
+    // plaid_account_id) from meta's small distinct-id list instead of
+    // every row.
+    const accountLabels = meta.accountIds.map((id) => labels[id] || "Linked account");
+    if (meta.hasManual) accountLabels.push("Manual entry");
+    const ACCOUNTS = [...new Set(accountLabels)].sort();
+    const system = buildSystemPrompt(meta.categories, meta.subcategories, ACCOUNTS, meta.minDate, meta.maxDate);
 
     const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
