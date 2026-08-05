@@ -121,7 +121,11 @@ export default function AccountBalances({ accessToken, onLinked }) {
 
   return (
     <div style={styles.balancesCard}>
-      <style>{`.balance-disconnect-btn:hover { color: var(--danger); background: var(--surface-recessed); }`}</style>
+      {/* Icon is already red at rest (balanceChipDisconnectBtn); hover just
+          adds a background -- var(--surface), not var(--surface-recessed),
+          since the chip itself is already --surface-recessed and would
+          make that background invisible. */}
+      <style>{`.balance-disconnect-btn:hover { background: var(--surface); }`}</style>
       <div style={styles.balancesHeaderRow}>
         <Landmark size={16} style={styles.balancesIcon} role="img" aria-label="Banks" />
         {!showConfirm && !disconnect && (
@@ -150,7 +154,7 @@ export default function AccountBalances({ accessToken, onLinked }) {
                   title="Disconnect bank"
                   aria-label={`Disconnect ${b.label}`}
                 >
-                  <Unlink size={13} />
+                  <Unlink size={15} />
                 </button>
               </div>
               <div style={{ ...styles.balanceChipAmount, color: b.amount < 0 ? "var(--danger)" : "var(--text)" }}>
