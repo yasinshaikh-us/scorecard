@@ -137,12 +137,54 @@ export async function syncItemTransactions(itemId: string) {
   // Item does a full historical resync on first sync regardless -- this
   // skips re-inserting the part of that resync we already have, so a
   // disconnect-then-relink doesn't duplicate the account's whole history.
+  //
+  // The boundary date itself is included (>=, not >) rather than skipped
+  // outright: Plaid's `date` has no time component, so a transaction that
+  // posted later the same calendar day as our last-synced transaction --
+  // but *after* the user disconnected -- shares that date and would
+  // otherwise be silently dropped forever, never resynced. Since that one
+  // day mixes transactions we already have with ones we don't, it can't
+  // be resolved by date alone -- see the boundary-date dedup below.
+  const boundaryDates = [...new Set(resyncAfterDateByAccountId.values())];
+  const existingOnBoundaryDate = new Map<string, number>(); // `${date}|${amount}` -> remaining count
+  if (boundaryDates.length > 0) {
+    const { data: existing, error: existingError } = await db
+      .from("transactions")
+      .select("date, amount")
+      .eq("user_id", item.user_id)
+      .eq("source", "plaid")
+      .in("date", boundaryDates);
+    if (existingError) throw existingError;
+    for (const row of existing || []) {
+      const key = `${row.date}|${Number(row.amount).toFixed(2)}`;
+      existingOnBoundaryDate.set(key, (existingOnBoundaryDate.get(key) || 0) + 1);
+    }
+  }
+
   const upserts = [...added, ...modified]
     .filter((tx: any) => trackedAccountIds.has(tx.account_id))
     .filter((tx: any) => !manuallyEditedIds.has(tx.transaction_id))
     .filter((tx: any) => {
       const boundary = resyncAfterDateByAccountId.get(tx.account_id);
-      return !boundary || tx.date > boundary;
+      return !boundary || tx.date >= boundary;
+    })
+    .filter((tx: any) => {
+      // Only the boundary date itself is ambiguous (see comment above) --
+      // anything strictly after it is guaranteed new, since the boundary
+      // is defined as the latest date we already had. Match by date +
+      // amount (mirrors supabase/plaid_duplicate_reconciliation.sql's
+      // approach for the same kind of manual/Plaid overlap), consuming
+      // one already-synced match per incoming transaction so two genuine
+      // same-day, same-amount transactions aren't collapsed into one.
+      const boundary = resyncAfterDateByAccountId.get(tx.account_id);
+      if (!boundary || tx.date !== boundary) return true;
+      const key = `${tx.date}|${(-tx.amount).toFixed(2)}`;
+      const remaining = existingOnBoundaryDate.get(key) || 0;
+      if (remaining > 0) {
+        existingOnBoundaryDate.set(key, remaining - 1);
+        return false;
+      }
+      return true;
     })
     .map((tx) => {
       const rawPayee = payeeFor(tx);
