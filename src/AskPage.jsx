@@ -22,13 +22,17 @@ const SUGGESTIONS = [
 ];
 
 // 5 narrow lanes read fine on a desktop-width screen, but on a phone
-// (see bug report: everything truncated down to "How mu…") that same 18%
-// lane is only ~60-70px -- barely a few characters. Below the breakpoint,
-// use fewer, wider lanes instead of shrinking the text further.
+// (see bug report screenshots) even a 46%-wide single line still chops
+// off most of these 30-45 character questions before the ellipsis. Below
+// the breakpoint, let the text wrap onto two lines instead of truncating
+// -- there's no room on a phone to fit a whole question on one line
+// without shrinking the font past readable. Keeping 2 lanes (rather than
+// dropping to 1 full-width lane) still gives horizontal separation, so
+// suggestions don't all stack in the same reading column at once.
 const NARROW_QUERY = "(max-width: 640px)";
 const LANES = {
-  wide: { positions: [2, 22, 42, 62, 82], maxWidth: "18%" },
-  narrow: { positions: [3, 51], maxWidth: "46%" },
+  wide: { positions: [2, 22, 42, 62, 82], maxWidth: "18%", wrap: false },
+  narrow: { positions: [3, 51], maxWidth: "44%", wrap: true },
 };
 
 function useIsNarrow() {
@@ -45,7 +49,7 @@ function useIsNarrow() {
 }
 
 export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick, loading, dataStatus, cards, onRemoveCard, onTransactionEdited }) {
-  const { positions, maxWidth } = LANES[useIsNarrow() ? "narrow" : "wide"];
+  const { positions, maxWidth, wrap } = LANES[useIsNarrow() ? "narrow" : "wide"];
   return (
     <>
       <style>{`
@@ -117,6 +121,8 @@ export default function AskPage({ input, onInputChange, onAsk, onSuggestionClick
               style={{
                 left: `${positions[i % positions.length]}%`,
                 maxWidth,
+                whiteSpace: wrap ? "normal" : "nowrap",
+                textOverflow: wrap ? "clip" : "ellipsis",
                 animationDelay: `${i * -4.3}s`,
                 // Every item gets a distinct duration (not a small cycling
                 // set) -- two items sharing a lane with durations that are
