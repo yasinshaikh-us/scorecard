@@ -117,7 +117,7 @@ The ledger itself — one row per transaction, manual or bank-synced.
 
 **Constraints:** PK `id`; unique `plaid_transaction_id`; FK `user_id → auth.users(id)`; check `source in ('manual','plaid')`.
 **Indexes:** `date`, `category`, `plaid_account_id`, `(user_id, date desc)`.
-**RLS:** `auth.uid() = user_id`, `for all` (read/write).
+**RLS:** `auth.uid() = user_id`, split into a `SELECT` policy and an `UPDATE` policy — deliberately **no** `INSERT`/`DELETE` policy for `authenticated`. The app's only write path is a targeted `UPDATE` by row `id` (`TransactionRow.jsx`'s payee/category edit); there's no add- or delete-transaction feature in the client, so those verbs were pure unused headroom — a leaked access token or a stray API call could otherwise wipe a user's entire ledger in one unscoped `DELETE`. `service_role` (the Plaid sync path, `apply_category_rules()`) is unaffected either way — it bypasses RLS entirely.
 
 > **Why `plaid_account_id` has no FK:** Plaid's sync APIs return data for
 > *every* account under a bank connection (Item), including any account
@@ -134,7 +134,9 @@ Origin: [`20260730231500_add_user_id_and_rls_to_transactions.sql`](supabase/migr
 [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql)
 (`raw_payee`/`raw_category`),
 [`20260804010000_add_manually_edited_to_transactions.sql`](supabase/migrations/20260804010000_add_manually_edited_to_transactions.sql)
-(`manually_edited`).
+(`manually_edited`),
+[`20260805030000_narrow_transactions_rls.sql`](supabase/migrations/20260805030000_narrow_transactions_rls.sql)
+(split `ALL` policy into `SELECT`/`UPDATE`, dropping unused `INSERT`/`DELETE`).
 
 ### `category_rules`
 
