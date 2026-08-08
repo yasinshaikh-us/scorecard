@@ -84,8 +84,8 @@ patterns are used, depending on sensitivity:
    `plaid_auth_numbers`, `plaid_account_fingerprints`,
    `plaid_disconnected_accounts`): RLS enabled with **no policies at all**
    for `anon`/`authenticated` — only the service-role key (used
-   exclusively in trusted server code: Vercel functions, Edge Functions)
-   can touch them. `plaid_items` has one
+   exclusively in trusted server code: Supabase Edge Functions) can touch
+   them. `plaid_items` has one
    narrow exception — a column-level `GRANT` exposing just
    `id, institution_name, status, created_at` to `authenticated`, paired
    with a normal `(select auth.uid()) = user_id` SELECT policy, so the client can
@@ -95,9 +95,10 @@ patterns are used, depending on sensitivity:
    — an earlier version of this grant was briefly broader than intended
    (caught and fixed before any real access token was ever stored).
 
-Every `/api/*` route is additionally gated by `middleware.js`, which
-rejects any request without a currently-valid Supabase session before it
-reaches a handler.
+Every client-facing Edge Function is additionally gated by `verify_jwt`
+(enabled by default), which rejects any request without a currently-valid
+Supabase JWT before it reaches the function's own code — see
+`supabase/functions/_shared/requireUser.ts`.
 
 ## Tables
 

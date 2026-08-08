@@ -2,11 +2,15 @@ name: Synthetic Monitor
 
 # Black-box monitoring against the real deployed app — separate from ci.yml,
 # which only ever runs mocked, credential-free checks as a pre-merge gate.
-# Layer 1 (tests/synthetic/canary.spec.js) needs no secrets and runs hourly.
-# Layers 2/3 (tests/synthetic/auth-queries.spec.js, db-crosscheck.spec.js)
-# sign in as a dedicated monitoring Supabase user and make real Anthropic
-# calls plus real (RLS-isolated) writes to production — manual-dispatch
-# only for now, not on the cron, to keep cost and blast radius bounded.
+# Layer 1 (tests/synthetic/canary.spec.js) needs no secrets and runs hourly
+# -- it does need MONITOR_SUPABASE_URL (the project URL Edge Functions live
+# under), but that's a plain `vars` entry, not a secret: the same
+# non-sensitive value already shipped to the browser bundle as
+# VITE_SUPABASE_URL. Layers 2/3 (tests/synthetic/auth-queries.spec.js,
+# db-crosscheck.spec.js) sign in as a dedicated monitoring Supabase user
+# and make real Anthropic calls plus real (RLS-isolated) writes to
+# production — manual-dispatch only for now, not on the cron, to keep cost
+# and blast radius bounded.
 
 on:
   schedule:
@@ -23,6 +27,7 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.62.0-jammy
     env:
       SYNTHETIC_BASE_URL: ${{ vars.SYNTHETIC_BASE_URL }}
+      MONITOR_SUPABASE_URL: ${{ vars.MONITOR_SUPABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - run: npm ci

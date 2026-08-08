@@ -1,44 +1,25 @@
-// Vercel serverless function.
+// Edge Function, replaces the old Vercel api/plaid-exchange.js.
 // Exchanges a Plaid Link public_token for a permanent access_token, then
 // stores the item/accounts/auth-numbers server-side via the service-role
 // key. The access_token and account/routing numbers never round-trip
 // back to the client — only a non-sensitive summary does.
 //
-// Duplicate handling: Plaid mints a fresh account_id (and item_id) every
-// time a bank is linked, even if it's the exact same real-world account
-// the user already connected -- so nothing upstream stops a relink from
-// creating a second copy. Account/routing numbers (from the Auth product)
-// are the one identifier that stays stable for a real account across
-// separate Items, so that's the primary signal used below to recognize
-// "you already have this account." When Auth isn't available for an
-// institution, this falls back to institution + mask + type/subtype,
-// which is weaker (a coincidental collision is possible) but still far
-// safer than not deduping at all. Dedup is per-account, not per-item, so
-// linking a second, genuinely different account at a bank you're already
-// connected to (e.g. adding a savings account after checking) works fine
-// -- only accounts that actually match an existing one get skipped.
-import { createHash } from "node:crypto";
-import { CountryCode } from "plaid";
-import { plaidClient, requireUser } from "./_plaid.js";
-import { supabaseAdmin } from "./_supabaseAdmin.js";
+// See ../_shared/plaidExchangeLogic.ts for the duplicate-account
+// detection this delegates to (and its tests).
 
-// One-way fingerprint of a real account/routing number pair. Used to
-// recognize "this relinked account is the same real account I had before"
-// even after a full disconnect deletes plaid_auth_numbers -- see
-// supabase/migrations/20260804000000_plaid_account_fingerprints.sql.
-// Deliberately not reversible: the fingerprints table is retained
-// indefinitely (unlike plaid_auth_numbers), so it must never hold
-// anything that could be turned back into a real account/routing number.
-export function fingerprintFor(accountNumber, routingNumber) {
-  return createHash("sha256").update(`${accountNumber}:${routingNumber}`).digest("hex");
-}
+import { CountryCode } from "npm:plaid@45";
+import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { requireUser, HttpError } from "../_shared/requireUser.ts";
+import { plaidClient } from "../_shared/plaid.ts";
+import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { fingerprintFor, partitionDuplicateAccounts } from "../_shared/plaidExchangeLogic.ts";
 
-async function fetchAuthNumbers(client, accessToken, itemId) {
+async function fetchAuthNumbers(client: any, accessToken: string, itemId: string) {
   // Best-effort: not every institution/account supports Auth. Returns a
   // map of account_id -> { account_number, routing_number }.
   try {
     const authResp = await client.authGet({ access_token: accessToken });
-    const byAccountId = {};
+    const byAccountId: Record<string, any> = {};
     for (const n of authResp.data.numbers.ach || []) {
       byAccountId[n.account_id] = { account_number: n.account, routing_number: n.routing, wire_routing_number: n.wire_routing || null };
     }
@@ -49,43 +30,24 @@ async function fetchAuthNumbers(client, accessToken, itemId) {
   }
 }
 
-// Pure decision logic, split out so it's unit-testable without mocking
-// the Plaid SDK or Supabase. `existingAccounts` is this user's currently
-// active plaid_accounts rows (each with its item's institution_id
-// attached); `existingAuthByAccountId` is their known account/routing
-// numbers, keyed by account_id. `newAuthByAccountId` is the same for the
-// Item just being linked.
-export function partitionDuplicateAccounts({ accounts, institutionId, newAuthByAccountId, existingAccounts, existingAuthByAccountId }) {
-  const existingNumberPairs = new Set(
-    Object.values(existingAuthByAccountId).map((n) => `${n.account_number}|${n.routing_number}`)
-  );
-  const existingFallbackKeys = new Set(
-    existingAccounts.map((a) => `${a.plaid_items.institution_id}|${a.mask}|${a.type}|${a.subtype}`)
-  );
+Deno.serve(async (req) => {
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
 
-  function isDuplicate(account) {
-    const auth = newAuthByAccountId[account.account_id];
-    if (auth) {
-      return existingNumberPairs.has(`${auth.account_number}|${auth.routing_number}`);
-    }
-    return existingFallbackKeys.has(`${institutionId}|${account.mask}|${account.type}|${account.subtype}`);
-  }
-
-  const newAccounts = accounts.filter((a) => !isDuplicate(a));
-  const duplicateAccounts = accounts.filter((a) => isDuplicate(a));
-  return { newAccounts, duplicateAccounts };
-}
-
-export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
   }
 
-  const publicToken = req.body?.public_token;
+  const body = await req.json().catch(() => ({}));
+  const publicToken = body?.public_token;
   if (!publicToken) {
-    res.status(400).json({ error: "public_token is required" });
-    return;
+    return new Response(JSON.stringify({ error: "public_token is required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
   }
 
   try {
@@ -122,8 +84,8 @@ export default async function handler(req, res) {
     const newAuthByAccountId = await fetchAuthNumbers(client, accessToken, itemId);
 
     // The user's currently-connected accounts to dedup against. Scoped to
-    // active items only, so an account that was properly disconnected
-    // (see api/plaid-disconnect.js) can always be relinked.
+    // active items only, so an account that was properly disconnected can
+    // always be relinked.
     const { data: existingAccounts, error: existingError } = await db
       .from("plaid_accounts")
       .select("account_id, mask, type, subtype, plaid_items!inner(institution_id, status)")
@@ -131,8 +93,8 @@ export default async function handler(req, res) {
       .eq("plaid_items.status", "active");
     if (existingError) throw existingError;
 
-    const existingAccountIds = (existingAccounts || []).map((a) => a.account_id);
-    let existingAuthByAccountId = {};
+    const existingAccountIds = (existingAccounts || []).map((a: any) => a.account_id);
+    let existingAuthByAccountId: Record<string, any> = {};
     if (existingAccountIds.length > 0) {
       const { data: existingAuth, error: existingAuthError } = await db
         .from("plaid_auth_numbers")
@@ -153,13 +115,12 @@ export default async function handler(req, res) {
 
     // For each genuinely new account, check whether its fingerprint
     // matches one this user has linked before (at any point, including
-    // accounts since fully disconnected -- plaid_account_fingerprints
-    // survives that, unlike plaid_accounts/plaid_auth_numbers). If so,
-    // find the latest date we already have Plaid-sourced transaction
-    // history through for it, so the sync path can skip re-inserting
-    // that history when Plaid's fresh Item does its full resync. Only
-    // possible for accounts with Auth numbers available.
-    const resyncAfterDateByAccountId = {};
+    // accounts since fully disconnected). If so, find the latest date we
+    // already have Plaid-sourced transaction history through for it, so
+    // the sync path can skip re-inserting that history when Plaid's fresh
+    // Item does its full resync. Only possible for accounts with Auth
+    // numbers available.
+    const resyncAfterDateByAccountId: Record<string, string> = {};
     for (const account of newAccounts) {
       const auth = newAuthByAccountId[account.account_id];
       if (!auth) continue;
@@ -172,7 +133,7 @@ export default async function handler(req, res) {
         .eq("fingerprint", fingerprint);
       if (fingerprintLookupError) throw fingerprintLookupError;
 
-      const priorAccountIds = (priorFingerprints || []).map((f) => f.account_id);
+      const priorAccountIds = (priorFingerprints || []).map((f: any) => f.account_id);
       if (priorAccountIds.length === 0) continue;
 
       const { data: priorTx, error: priorTxError } = await db
@@ -198,13 +159,15 @@ export default async function handler(req, res) {
       } catch (removeErr) {
         console.error("Failed to revoke duplicate item", itemId, removeErr);
       }
-      res.status(409).json({
-        error: `${institutionName || "This account"} is already connected. Disconnect it first if you need to relink it.`,
-      });
-      return;
+      return new Response(
+        JSON.stringify({
+          error: `${institutionName || "This account"} is already connected. Disconnect it first if you need to relink it.`,
+        }),
+        { status: 409, headers: { ...corsHeaders, "content-type": "application/json" } }
+      );
     }
 
-    let plaidItem;
+    let plaidItem: any;
     try {
       const { data, error: itemInsertError } = await db
         .from("plaid_items")
@@ -221,7 +184,7 @@ export default async function handler(req, res) {
       plaidItem = data;
 
       const { error: accountsInsertError } = await db.from("plaid_accounts").insert(
-        newAccounts.map((a) => ({
+        newAccounts.map((a: any) => ({
           item_id: plaidItem.id,
           user_id: user.id,
           account_id: a.account_id,
@@ -235,8 +198,8 @@ export default async function handler(req, res) {
       if (accountsInsertError) throw accountsInsertError;
 
       const authRows = newAccounts
-        .filter((a) => newAuthByAccountId[a.account_id])
-        .map((a) => ({
+        .filter((a: any) => newAuthByAccountId[a.account_id])
+        .map((a: any) => ({
           account_id: a.account_id,
           user_id: user.id,
           account_number: newAuthByAccountId[a.account_id].account_number,
@@ -252,8 +215,8 @@ export default async function handler(req, res) {
       // after a full disconnect -- can recognize it. Only possible for
       // accounts Auth numbers were available for.
       const fingerprintRows = newAccounts
-        .filter((a) => newAuthByAccountId[a.account_id])
-        .map((a) => ({
+        .filter((a: any) => newAuthByAccountId[a.account_id])
+        .map((a: any) => ({
           user_id: user.id,
           fingerprint: fingerprintFor(newAuthByAccountId[a.account_id].account_number, newAuthByAccountId[a.account_id].routing_number),
           account_id: a.account_id,
@@ -278,13 +241,19 @@ export default async function handler(req, res) {
       throw writeErr;
     }
 
-    res.status(200).json({
-      institution_name: institutionName,
-      accounts: newAccounts.map((a) => ({ name: a.name, mask: a.mask, type: a.type, subtype: a.subtype })),
-      skipped_duplicate_accounts: duplicateCount,
+    return new Response(
+      JSON.stringify({
+        institution_name: institutionName,
+        accounts: newAccounts.map((a: any) => ({ name: a.name, mask: a.mask, type: a.type, subtype: a.subtype })),
+        skipped_duplicate_accounts: duplicateCount,
+      }),
+      { status: 200, headers: { ...corsHeaders, "content-type": "application/json" } }
+    );
+  } catch (err: any) {
+    const status = err instanceof HttpError ? err.status : err.status || err.response?.status || 500;
+    return new Response(JSON.stringify({ error: err.response?.data || String(err.message || err) }), {
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
     });
-  } catch (err) {
-    const status = err.status || err.response?.status || 500;
-    res.status(status).json({ error: err.response?.data || String(err.message || err) });
   }
-}
+});

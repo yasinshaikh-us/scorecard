@@ -1,7 +1,5 @@
-// Vercel serverless function.
-// Runs server-side only — this is where your Anthropic API key actually lives.
-// The browser never sees it. Set ANTHROPIC_API_KEY in your Vercel project's
-// Environment Variables (Project Settings -> Environment Variables), not here.
+// Builds the system prompt for the `query` Edge Function. Pure string
+// building, no I/O -- split out from index.ts so it stays unit-testable.
 //
 // The system prompt is built here, not accepted from the client: an
 // authenticated caller only ever supplies a natural-language `question`.
@@ -10,12 +8,16 @@
 // general-purpose Claude proxy billed to this app's API key, bypassing
 // the "ledger questions only" restriction entirely. Building the prompt
 // server-side (from the caller's own transactions, fetched the same
-// RLS-scoped way api/transactions.js does) means the prompt's shape is
-// fixed regardless of what the client sends.
+// RLS-scoped way `transactions` does) means the prompt's shape is fixed
+// regardless of what the client sends.
 
-import { fetchLedgerMeta, fetchAccountLabels } from "./transactions.js";
-
-function buildSystemPrompt(CATS, SUBCATS, ACCOUNTS, MIN_DATE, MAX_DATE) {
+export function buildSystemPrompt(
+  CATS: string[],
+  SUBCATS: string[],
+  ACCOUNTS: string[],
+  MIN_DATE: string,
+  MAX_DATE: string
+) {
   return `You translate a question about a personal bank-transaction ledger into a strict JSON filter/chart spec. Never compute totals yourself.
 
 This tool answers ONLY questions about analyzing the user's own bank-transaction ledger (spending, income, categories, payees, accounts, dates, amounts) using the schema below. It is not a general-purpose assistant — it cannot answer trivia, write content, run code, or do anything unrelated to analyzing this ledger.
@@ -71,79 +73,4 @@ Rules:
 - Set "limit" to the specific count whenever the question asks for a bounded top/bottom ranking of any kind -- individual transactions, merchants, or categories ("top 10", "5 biggest", "largest 3"). A bare superlative with no explicit number ("biggest expense", "smallest deposit") means limit 1. Leave "limit" null when the question doesn't ask for a specific count -- a sensible default (10) still applies automatically for merchant ("payee") and individual-transaction ("transaction") rankings so those charts never render an unbounded list.
 - title should read naturally, e.g. "Dining spend by week" not "category=Dining".
 - Respond with raw JSON only.`;
-}
-
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: "ANTHROPIC_API_KEY is not set on the server." });
-    return;
-  }
-
-  const url = process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
-    res.status(500).json({ error: "VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not set on the server." });
-    return;
-  }
-
-  const accessToken = (req.headers.authorization || "").match(/^Bearer (.+)$/i)?.[1];
-  if (!accessToken) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-
-  const question = req.body?.question;
-  if (typeof question !== "string" || !question.trim()) {
-    res.status(400).json({ error: "Request must include a non-empty 'question' string." });
-    return;
-  }
-
-  try {
-    const [meta, labels] = await Promise.all([
-      fetchLedgerMeta(url, anonKey, accessToken),
-      fetchAccountLabels(url, anonKey, accessToken),
-    ]);
-    // Reproduces the same ACCOUNTS list a full-row fetch used to
-    // produce (every account actually referenced by a transaction, via
-    // its resolved name+mask label or the "Linked account" fallback for
-    // an orphaned id, plus "Manual entry" iff at least one row has no
-    // plaid_account_id) from meta's small distinct-id list instead of
-    // every row.
-    const accountLabels = meta.accountIds.map((id) => labels[id] || "Linked account");
-    if (meta.hasManual) accountLabels.push("Manual entry");
-    const ACCOUNTS = [...new Set(accountLabels)].sort();
-    const system = buildSystemPrompt(meta.categories, meta.subcategories, ACCOUNTS, meta.minDate, meta.maxDate);
-
-    const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 1500,
-        system,
-        messages: [{ role: "user", content: question }],
-      }),
-    });
-
-    const data = await anthropicResp.json();
-
-    if (!anthropicResp.ok) {
-      res.status(anthropicResp.status).json({ error: data });
-      return;
-    }
-
-    res.status(200).json(data);
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.body || String(err.message || err) });
-  }
 }

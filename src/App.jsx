@@ -8,6 +8,7 @@ import CategoryRulesPanel from "./CategoryRulesPanel.jsx";
 import HomePage from "./HomePage.jsx";
 import AskPage from "./AskPage.jsx";
 import { getSupabaseClient } from "./supabaseClient.js";
+import { functionUrl } from "./functionsClient.js";
 import { loadData } from "./dataStore.js";
 import { cleanRows, parseQueryResponse } from "./logic.js";
 
@@ -77,7 +78,7 @@ function AuthedApp({ accessToken, onSignOut }) {
   }
 
   function refreshTransactions() {
-    return fetch("/api/transactions", {
+    return fetch(functionUrl("transactions"), {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((res) => {
@@ -104,7 +105,7 @@ function AuthedApp({ accessToken, onSignOut }) {
     setCards([{ id, question: q, spec: null, error: null, pending: true }]);
     setInput("");
     try {
-      const resp = await fetch("/api/query", {
+      const resp = await fetch(functionUrl("query"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

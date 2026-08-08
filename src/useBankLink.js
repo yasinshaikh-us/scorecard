@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
+import { functionUrl } from "./functionsClient.js";
 
 // Wraps the Plaid Link flow (fetch a link_token -> open Link -> exchange
 // the public_token) so every place that can trigger a bank connection --
@@ -23,7 +24,7 @@ export function useBankLink(accessToken, onLinked) {
       setStatus("connecting");
       setError(null);
       try {
-        const resp = await fetch("/api/plaid-exchange", {
+        const resp = await fetch(functionUrl("plaid-exchange"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -63,7 +64,7 @@ export function useBankLink(accessToken, onLinked) {
     }
     setStatus("fetching");
     setError(null);
-    fetch("/api/plaid-link-token", {
+    fetch(functionUrl("plaid-link-token"), {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
     })

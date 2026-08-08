@@ -1,4 +1,4 @@
-// Vercel serverless function.
+// Edge Function, replaces the old Vercel api/plaid-disconnect.js.
 // Fully removes a linked bank: revokes the access token at Plaid via
 // /item/remove, then deletes the plaid_items row (cascades to
 // plaid_accounts, plaid_account_balances, plaid_auth_numbers). Previously
@@ -9,19 +9,29 @@
 // stayed disconnected (never relinked) for more than 90 days. See
 // supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql.
 
-import { plaidClient, requireUser } from "./_plaid.js";
-import { supabaseAdmin } from "./_supabaseAdmin.js";
+import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
+import { requireUser, HttpError } from "../_shared/requireUser.ts";
+import { plaidClient } from "../_shared/plaid.ts";
+import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 
-export default async function handler(req, res) {
+Deno.serve(async (req) => {
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
   }
 
-  const itemRowId = req.body?.id;
+  const body = await req.json().catch(() => ({}));
+  const itemRowId = body?.id;
   if (!itemRowId) {
-    res.status(400).json({ error: "id is required" });
-    return;
+    return new Response(JSON.stringify({ error: "id is required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
   }
 
   try {
@@ -36,12 +46,16 @@ export default async function handler(req, res) {
       .single();
 
     if (fetchError || !item) {
-      res.status(404).json({ error: "Not found" });
-      return;
+      return new Response(JSON.stringify({ error: "Not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "content-type": "application/json" },
+      });
     }
     if (item.user_id !== user.id) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "content-type": "application/json" },
+      });
     }
 
     try {
@@ -64,17 +78,17 @@ export default async function handler(req, res) {
     if (accountsFetchError) throw accountsFetchError;
 
     if (accounts && accounts.length > 0) {
-      const accountIds = accounts.map((a) => a.account_id);
+      const accountIds = accounts.map((a: any) => a.account_id);
       const { data: fingerprints, error: fingerprintFetchError } = await db
         .from("plaid_account_fingerprints")
         .select("account_id, fingerprint")
         .in("account_id", accountIds);
       if (fingerprintFetchError) throw fingerprintFetchError;
-      const fingerprintByAccountId = {};
+      const fingerprintByAccountId: Record<string, string> = {};
       for (const f of fingerprints || []) fingerprintByAccountId[f.account_id] = f.fingerprint;
 
       const { error: trackError } = await db.from("plaid_disconnected_accounts").insert(
-        accountIds.map((accountId) => ({
+        accountIds.map((accountId: string) => ({
           user_id: item.user_id,
           account_id: accountId,
           fingerprint: fingerprintByAccountId[accountId] || null,
@@ -86,9 +100,15 @@ export default async function handler(req, res) {
     const { error: deleteError } = await db.from("plaid_items").delete().eq("id", item.id);
     if (deleteError) throw deleteError;
 
-    res.status(200).json({ ok: true });
-  } catch (err) {
-    const status = err.status || err.response?.status || 500;
-    res.status(status).json({ error: err.response?.data || String(err.message || err) });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
+  } catch (err: any) {
+    const status = err instanceof HttpError ? err.status : err.status || err.response?.status || 500;
+    return new Response(JSON.stringify({ error: err.response?.data || String(err.message || err) }), {
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
   }
-}
+});

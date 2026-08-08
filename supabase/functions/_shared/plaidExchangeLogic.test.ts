@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { partitionDuplicateAccounts, fingerprintFor } from "./plaid-exchange.js";
+import { partitionDuplicateAccounts, fingerprintFor } from "./plaidExchangeLogic.ts";
 
 // Regression coverage for the disconnect-then-relink duplicate-transaction
 // bug: a relinked account needs a stable way to recognize "I've seen this
 // real account before" even after plaid_auth_numbers is deleted on
-// disconnect (see supabase/migrations/20260804000000_plaid_account_fingerprints.sql).
+// disconnect.
 describe("fingerprintFor", () => {
   it("is deterministic for the same account/routing number pair", () => {
     expect(fingerprintFor("1234567890", "021000021")).toBe(fingerprintFor("1234567890", "021000021"));
