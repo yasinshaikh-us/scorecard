@@ -91,6 +91,44 @@ npx expo start --dev-client
 Alternatively, `npx expo prebuild` generates the native `ios`/`android`
 projects locally if you'd rather build with Xcode/Android Studio directly.
 
+### Testing on a real iPhone (no Mac needed)
+
+EAS Build runs in Apple's cloud, so building an iOS binary never needs a
+Mac. Installing it on a physical iPhone/iPad does need one thing Apple
+doesn't offer a free alternative to: a paid **Apple Developer Program**
+membership ($99/yr) — without it, the only iOS target you can run at all
+is the Simulator, which itself requires a Mac. There's no way around
+this fee for real-device testing.
+
+Once you have that membership, the fastest path for solo testing is
+EAS's **internal (ad-hoc) distribution** — already what the
+`development`/`preview` profiles in `eas.json` use — rather than
+TestFlight (which additionally needs an App Store Connect app record and
+a submission/processing step, with no real benefit for a single tester):
+
+```bash
+npm install -g eas-cli
+eas login              # your Expo account
+eas device:create      # registers a device's UDID with Apple + EAS
+```
+
+`eas device:create` prints a link — open it in **Safari on the iPhone
+itself** (not on this machine); it installs a small profile that
+captures the device's UDID and registers it, no Xcode required. You'll
+also need to authenticate the EAS CLI against your Apple Developer
+account once (interactive `eas build` prompts for this the first time,
+or run `eas credentials` to set it up ahead of time) — that step needs
+your actual Apple ID/password, so it has to happen on a machine you
+control, not from an automated build.
+
+After the device is registered and Apple credentials are configured,
+trigger the build (either `eas build --profile development --platform
+ios` locally, or `.github/workflows/mobile-build.yml` with `platform:
+ios`) — EAS automatically provisions the build against your registered
+device and, once it finishes, gives you an install link/QR code. Open
+that on the iPhone to install directly — no App Store or TestFlight
+review wait.
+
 ## Auth
 
 Google sign-in works differently here than on the web (`../src/Login.jsx`
