@@ -1,0 +1,39 @@
+{
+  "name": "mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@supabase/supabase-js": "^2.112.2",
+    "aes-js": "^3.1.2",
+    "expo": "~57.0.11",
+    "expo-auth-session": "^57.0.6",
+    "expo-constants": "^57.0.9",
+    "expo-linking": "^57.0.5",
+    "expo-router": "^57.0.11",
+    "expo-secure-store": "^57.0.1",
+    "expo-splash-screen": "^57.0.5",
+    "expo-status-bar": "~57.0.1",
+    "expo-web-browser": "^57.0.2",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-get-random-values": "^2.0.0",
+    "react-native-gifted-charts": "^1.4.77",
+    "react-native-plaid-link-sdk": "^13.0.4",
+    "react-native-safe-area-context": "^5.8.1",
+    "react-native-screens": "^4.27.0",
+    "react-native-svg": "^15.15.5",
+    "react-native-url-polyfill": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}

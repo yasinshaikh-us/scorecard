@@ -16,6 +16,11 @@ function (both the ones the client calls directly and the Plaid
 webhook/cron jobs) live on one platform. Vercel's only remaining job is
 hosting the static SPA build.
 
+A native iOS/Android client is in progress under [`mobile/`](mobile/) — an
+Expo/React Native app talking to this same Supabase backend, meant to
+eventually replace this web app entirely. See
+[`mobile/README.md`](mobile/README.md) for its setup and status.
+
 See [`SCHEMA.md`](SCHEMA.md) for the full database schema — every table,
 column, constraint, and RLS policy, including the Plaid bank-sync tables.
 
