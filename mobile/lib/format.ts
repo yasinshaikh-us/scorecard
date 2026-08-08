@@ -24,3 +24,19 @@ export function fmtMoney(n: number) {
   const sign = n < 0 ? "-" : "";
   return `${sign}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+
+export function fmtMonth(ym: string) {
+  if (typeof ym !== "string" || !ym.includes("-")) return ym == null ? "" : String(ym);
+  const [y, m] = ym.split("-");
+  const mi = parseInt(m, 10) - 1;
+  if (!MONTHS[mi]) return ym;
+  return `${MONTHS[mi]} ${y.slice(-2)}`;
+}
+
+export function isDateKey(groupBy: string) {
+  return groupBy === "day" || groupBy === "week" || groupBy === "month";
+}
+
+export function fmtGroupKey(k: string, groupBy: string) {
+  return groupBy === "month" ? fmtMonth(k) : isDateKey(groupBy) ? fmtDate(k) : k;
+}

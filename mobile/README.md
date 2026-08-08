@@ -8,22 +8,39 @@ the backend setup (Supabase project, Edge Function deploy/secrets).
 
 This is a from-scratch build, not a port: React Native doesn't share DOM
 components with the web app, so nothing under `../src` is reused directly,
-though the same pure logic (`../src/logic.js`'s date/money formatting) is
-duplicated in [`lib/format.ts`](lib/format.ts) rather than imported, kept
-behaviorally identical.
+though the same pure logic (`../src/logic.js`'s date/money formatting and
+filter/group/chart-data logic) is duplicated in
+[`lib/format.ts`](lib/format.ts) and [`lib/logic.ts`](lib/logic.ts) rather
+than imported, kept behaviorally identical.
 
 ## Status
 
-**Phase 1 (this PR): auth + Home screen.** Sign in with Google, see your
-linked-account balances and the last 7 days of transactions. Everything
-else from the web app is still to come:
+**Phase 1: auth + Home screen.** Sign in with Google, see your
+linked-account balances and the last 7 days of transactions.
 
-- [ ] Ask page (natural-language queries + charts)
+**Phase 2 (this PR): Ask page.** Natural-language questions against your
+ledger via the `query` Edge Function, filtered/grouped client-side (same
+logic as the web app) and rendered as a bar/pie/line chart
+(`react-native-gifted-charts`) with tap-to-filter, plus the matching
+transaction list below. Navigation is now a two-tab layout (Home / Ask)
+sharing one transaction fetch via `lib/DataProvider.tsx`. Simplified vs.
+the web version for now:
+
+- Idle-state question suggestions are a static tappable list, not the
+  web's floating/animated ones (no straightforward RN equivalent without
+  pulling in Reanimated).
+- No chart tooltip yet (gifted-charts' pointer/tooltip config is a
+  separate lift) — tapping a bar/slice/point still filters the list
+  below, same as the web version's click-to-filter.
+- No row-detail popover on tap/long-press yet.
+
+Still to come:
+
 - [ ] Plaid Link (connect/disconnect a bank from the app)
 - [ ] Category rules panel, inline transaction editing
 - [ ] App icons/splash, EAS build config, store metadata
 
-**Not yet verified on a real device or simulator** — built and validated
+**Still not verified on a real device or simulator** — built and validated
 via `tsc --noEmit` and `expo export` (Metro bundles clean for both iOS and
 Android targets) in a sandbox with no Xcode/Android Studio available. Run
 it for real (see below) before trusting the UI actually works.
