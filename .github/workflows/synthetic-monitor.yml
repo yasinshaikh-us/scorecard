@@ -8,9 +8,13 @@ name: Synthetic Monitor
 # non-sensitive value already shipped to the browser bundle as
 # VITE_SUPABASE_URL. Layers 2/3 (tests/synthetic/auth-queries.spec.js,
 # db-crosscheck.spec.js) sign in as a dedicated monitoring Supabase user
-# and make real Anthropic calls plus real (RLS-isolated) writes to
-# production — manual-dispatch only for now, not on the cron, to keep cost
-# and blast radius bounded.
+# and make real Anthropic calls plus real writes to production — fixture
+# setup/teardown goes through the service-role key (MONITOR_SUPABASE_SERVICE_
+# ROLE_KEY), since `authenticated` no longer has INSERT/DELETE grants on
+# `transactions` (see tests/synthetic/fixtures/monitor-session.js), scoped
+# explicitly to the monitoring user's own id rather than by RLS. Manual-
+# dispatch only for now, not on the cron, to keep cost and blast radius
+# bounded.
 
 on:
   schedule:
@@ -42,6 +46,7 @@ jobs:
       SYNTHETIC_BASE_URL: ${{ vars.SYNTHETIC_BASE_URL }}
       MONITOR_SUPABASE_URL: ${{ vars.MONITOR_SUPABASE_URL }}
       MONITOR_SUPABASE_ANON_KEY: ${{ vars.MONITOR_SUPABASE_ANON_KEY }}
+      MONITOR_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.MONITOR_SUPABASE_SERVICE_ROLE_KEY }}
       MONITOR_USER_EMAIL: ${{ vars.MONITOR_USER_EMAIL }}
       MONITOR_USER_PASSWORD: ${{ secrets.MONITOR_USER_PASSWORD }}
     steps:
