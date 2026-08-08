@@ -120,6 +120,49 @@ flow some institutions use may need additional native configuration
 entries) that Plaid's own setup docs cover in more depth than this PR
 attempted to verify blind.
 
+## Automated testing (no phone required)
+
+Two tiers, both driven from `.github/workflows/mobile-build.yml`
+(manual-dispatch — EAS build minutes and Maestro Cloud runs aren't free,
+so this doesn't run on every push):
+
+**Build verification** — confirms the app compiles into a real native
+binary, not just that the JS bundles cleanly (`tsc`/`expo export` can't
+catch a broken Gradle config or native-module linking issue).  Needs an
+`EXPO_TOKEN` repo secret: create one at
+`expo.dev` → account settings → **Access Tokens**, add it as a GitHub
+Actions secret named `EXPO_TOKEN`.
+
+**UI flow testing (Maestro Cloud)** — runs `.maestro/*.yaml` flows against
+the fresh build on a real cloud Android device, no phone or emulator
+needed on either end. Needs a `MAESTRO_API_KEY` repo secret (create a
+Maestro account at [maestro.dev](https://maestro.dev), generate an API
+key) — the workflow skips this step cleanly if the secret isn't set.
+**Untested as of this commit** — built from Maestro/EAS's documented
+integration pattern, but there was no Maestro account available to verify
+against, so the first real run may need debugging.
+
+Only [`smoke-login.yaml`](.maestro/smoke-login.yaml) exists so far
+(launches the app, confirms the sign-in screen renders) — that's the only
+flow automatable *without a design decision first*. Home/Ask/Plaid
+Link/Rules/editing all require a signed-in session, and Google's OAuth
+consent screen actively resists automation (this is the same reason the
+web app's own Playwright tests never drive real Google sign-in either —
+see `tests/e2e/dashboard.spec.js`'s and
+`tests/synthetic/fixtures/monitor-session.js`'s comments). The web
+project's tests get around this by injecting a real session directly into
+`localStorage`/into the page before load. The mobile equivalent would be
+a build-time-gated deep link (e.g. `fathom://test-login?...`, compiled in
+*only* for `development`/`preview` profiles, never `production`) that
+lets a Maestro flow inject a real session non-interactively — a
+legitimate, common pattern, but it's a deliberate auth-bypass mechanism
+in a codebase handling real bank data, so it hasn't been added without
+an explicit go-ahead. Plaid Link itself is more automation-friendly than
+Google's OAuth (Plaid's sandbox environment ships fixed test credentials,
+`user_good`/`pass_good`, specifically for this), so once past the
+sign-in wall, driving a real sandbox Plaid Link flow with Maestro should
+work reasonably well.
+
 ## Before shipping to a store
 
 - `app.json`'s `ios.bundleIdentifier` / `android.package` are placeholders

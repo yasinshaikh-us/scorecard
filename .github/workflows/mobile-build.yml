@@ -1,0 +1,82 @@
+name: Mobile Build
+
+# Verifies the mobile app actually compiles into a real native binary --
+# `tsc`/`expo export` only prove the JS bundles cleanly, not that the
+# native Android/iOS project (Gradle config, native module linking --
+# react-native-plaid-link-sdk in particular) is sound. EAS builds run in
+# Expo's cloud, so this needs no Xcode/Android Studio here, only an
+# EXPO_TOKEN secret (see mobile/README.md for how to create one).
+#
+# If a MAESTRO_API_KEY secret is also set, this additionally runs the
+# .maestro/ flows against the fresh build on a real cloud device (Maestro
+# Cloud) -- real UI-interaction testing without a human tapping through
+# it by hand. That step is skipped cleanly if the secret isn't set yet.
+#
+# Manual-dispatch only -- EAS build minutes and Maestro Cloud runs aren't
+# unlimited on free tiers, and there's no reason to burn either on every
+# push while the app is under active development.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platform to build for (Maestro Cloud step only runs for android)"
+        required: true
+        default: "android"
+        type: choice
+        options: ["android", "ios", "all"]
+      profile:
+        description: "eas.json build profile -- use 'preview' (not 'development') for the Maestro Cloud step, since that needs a standalone build with the JS bundled in, not one that expects a live Metro server"
+        required: true
+        default: "preview"
+        type: choice
+        options: ["development", "preview", "production"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      MAESTRO_API_KEY: ${{ secrets.MAESTRO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS build
+        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --wait
+
+      # Everything below only runs once MAESTRO_API_KEY is set (Tier 2) --
+      # untested against a real Maestro Cloud account as of this commit,
+      # since none was available to verify against. First real run may
+      # need debugging.
+      - name: Get build artifact URL
+        if: env.MAESTRO_API_KEY != '' && inputs.platform == 'android'
+        id: artifact
+        run: |
+          URL=$(eas build:list --platform android --profile ${{ inputs.profile }} --status finished --limit 1 --non-interactive --json | jq -r '.[0].artifacts.buildUrl')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifact
+        if: env.MAESTRO_API_KEY != '' && inputs.platform == 'android'
+        run: curl -L -o app-build.apk "${{ steps.artifact.outputs.url }}"
+
+      - name: Install Maestro CLI
+        if: env.MAESTRO_API_KEY != '' && inputs.platform == 'android'
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+
+      - name: Run Maestro Cloud flows
+        if: env.MAESTRO_API_KEY != '' && inputs.platform == 'android'
+        run: |
+          export PATH="$PATH:$HOME/.maestro/bin"
+          maestro cloud --app-file=app-build.apk --flows=.maestro/ -e APP_ID=com.fathom.app --api-key="$MAESTRO_API_KEY"
