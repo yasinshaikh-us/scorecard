@@ -15,11 +15,13 @@ export default function QueryCard({
   transactions,
   CATS,
   onRemove,
+  onTransactionEdited,
 }: {
   card: Card;
   transactions: Transaction[];
   CATS: string[];
   onRemove: () => void;
+  onTransactionEdited?: () => void;
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
@@ -112,7 +114,7 @@ export default function QueryCard({
 
       <View>
         {sortedRows.map((d, i) => (
-          <TransactionRow key={d.Id ?? i} row={d} CATS={CATS} />
+          <TransactionRow key={d.Id ?? i} row={d} CATS={CATS} onEdited={onTransactionEdited} />
         ))}
         {sortedRows.length === 0 && <Text style={styles.empty}>No matching transactions</Text>}
       </View>

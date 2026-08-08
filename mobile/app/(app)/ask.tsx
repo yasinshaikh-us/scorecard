@@ -40,7 +40,7 @@ type Card = { id: number; question: string; pending?: boolean } & Partial<QueryR
 // sees the actual ledger data for this call, only the question.
 export default function Ask() {
   const { session, signOut } = useAuth();
-  const { transactions, dataStatus, CATS } = useData();
+  const { transactions, dataStatus, CATS, refresh } = useData();
 
   const [input, setInput] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
@@ -126,6 +126,7 @@ export default function Ask() {
             transactions={transactions}
             CATS={CATS}
             onRemove={() => setCards((prev) => prev.filter((x) => x.id !== c.id))}
+            onTransactionEdited={refresh}
           />
         ))}
       </ScrollView>

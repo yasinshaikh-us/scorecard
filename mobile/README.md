@@ -15,30 +15,43 @@ than imported, kept behaviorally identical.
 
 ## Status
 
-**Phase 1: auth + Home screen.** Sign in with Google, see your
-linked-account balances and the last 7 days of transactions.
+Functionally at parity with the web app's core flows:
 
-**Phase 2 (this PR): Ask page.** Natural-language questions against your
-ledger via the `query` Edge Function, filtered/grouped client-side (same
-logic as the web app) and rendered as a bar/pie/line chart
-(`react-native-gifted-charts`) with tap-to-filter, plus the matching
-transaction list below. Navigation is now a two-tab layout (Home / Ask)
-sharing one transaction fetch via `lib/DataProvider.tsx`. Simplified vs.
-the web version for now:
+- **Auth**: Google sign-in, encrypted session storage.
+- **Home**: account balances, last-7-days transaction list.
+- **Ask**: natural-language questions → chart (bar/pie/line, tap-to-filter)
+  → matching transaction list, via the `query` Edge Function.
+- **Plaid Link**: connect a bank (first-login gate + "+ Add bank" on Home)
+  and disconnect one (two-step confirmation), via `react-native-plaid-link-sdk`.
+- **Category rules**: same "if payee/category contains X, set Y" engine as
+  the web app, opened from Home's "Rules" button.
+- **Inline transaction editing**: tap a row to edit payee/category, same
+  `manually_edited` flag as the web version so rules/Plaid sync don't
+  clobber it.
 
-- Idle-state question suggestions are a static tappable list, not the
-  web's floating/animated ones (no straightforward RN equivalent without
+Simplified vs. the web version, tracked here rather than silently dropped:
+
+- Idle-state Ask suggestions are a static tappable list, not the web's
+  floating/animated ones (no straightforward RN equivalent without
   pulling in Reanimated).
 - No chart tooltip yet (gifted-charts' pointer/tooltip config is a
-  separate lift) — tapping a bar/slice/point still filters the list
-  below, same as the web version's click-to-filter.
-- No row-detail popover on tap/long-press yet.
+  separate lift) — tapping a bar/slice/point still filters the list below.
+- No row-detail popover on tap/long-press (web's hover-triggered one has
+  no direct touch equivalent).
+- Category/match-field pickers are a plain bottom-sheet list
+  (`components/PickerModal.tsx`), not styled beyond that.
+- App icons: `assets/icon.png` / `splash-icon.png` / `favicon.png` are the
+  real web app icon (copied from `../public/icon-512.png`); Android's
+  *adaptive* icon layers (`android-icon-foreground/background/monochrome.png`)
+  are still the Expo template placeholders — those need padding/safe-zone
+  work with real image-editing tools (this environment has neither
+  Pillow nor ImageMagick) before they'll look right, since Android masks
+  the foreground layer into various shapes.
 
 Still to come:
 
-- [ ] Plaid Link (connect/disconnect a bank from the app)
-- [ ] Category rules panel, inline transaction editing
-- [ ] App icons/splash, EAS build config, store metadata
+- [ ] App Store / Play Store metadata (screenshots, descriptions, privacy details)
+- [ ] Proper Android adaptive icon assets
 
 **Still not verified on a real device or simulator** — built and validated
 via `tsc --noEmit` and `expo export` (Metro bundles clean for both iOS and
@@ -57,13 +70,24 @@ cp .env.example .env
 
 ## Run
 
+**`react-native-plaid-link-sdk` is a native module — Expo Go can no longer
+run this app.** Any screen is fine in Expo Go until you touch Plaid Link
+(sign-in, Home minus "+ Add bank", Ask, Rules, inline editing all still
+work there), but `createPlaidLinkSession` will throw "native module not
+found" the moment it's called. To actually test the whole app, build a
+custom dev client instead:
+
 ```bash
-npx expo start
+# Cloud build (no Xcode/Android Studio needed) -- requires a free Expo
+# account and `npm install -g eas-cli` / `eas login` first:
+eas build --profile development --platform ios     # or android
+
+# Install the resulting build on your device/simulator, then:
+npx expo start --dev-client
 ```
 
-Scan the QR code with the Expo Go app (iOS/Android), or press `i` / `a` to
-launch an iOS Simulator / Android Emulator if you have Xcode / Android
-Studio installed locally.
+Alternatively, `npx expo prebuild` generates the native `ios`/`android`
+projects locally if you'd rather build with Xcode/Android Studio directly.
 
 ## Auth
 
@@ -78,10 +102,31 @@ session itself is encrypted and stored via `expo-secure-store` +
 caps individual values around 2KB, too small for a full session, so only
 the AES key lives there).
 
+## Plaid Link
+
+`lib/useBankLink.ts` is the native equivalent of `../src/useBankLink.js`.
+`react-native-plaid-link-sdk` v13's API is session-based
+(`createPlaidLinkSession({...}).open()`) rather than the web SDK's
+token-prop/hook pattern, but the three steps are the same: fetch a
+`link_token` from the `plaid-link-token` Edge Function, open Plaid's
+native Link UI, exchange the `public_token` it returns via
+`plaid-exchange`. The device never sees a real Plaid access token.
+
+Not yet verified against a real Plaid Link session (needs the dev-client
+build above, plus real `PLAID_CLIENT_ID`/`PLAID_SECRET` Edge Function
+secrets already set per the root README) — the OAuth-redirect-within-Link
+flow some institutions use may need additional native configuration
+(custom URL scheme registration in Plaid's dashboard, possibly Info.plist
+entries) that Plaid's own setup docs cover in more depth than this PR
+attempted to verify blind.
+
 ## Before shipping to a store
 
-`app.json`'s `ios.bundleIdentifier` / `android.package` are placeholders
-(`com.fathom.app`) — change these to your own before running an EAS build,
-and you'll need an Apple Developer Program account (iOS) and Google Play
-Console account (Android) to actually submit. Neither is required to run
-the app locally via Expo Go.
+- `app.json`'s `ios.bundleIdentifier` / `android.package` are placeholders
+  (`com.fathom.app`) — change these to your own before running an EAS build.
+- You'll need an Apple Developer Program account (iOS, $99/yr) and Google
+  Play Console account (Android, $25 one-time) to actually submit.
+- Proper Android adaptive icon assets (see Status above).
+- `eas.json` has `development`/`preview`/`production` build profiles
+  scaffolded; none have been run from this sandbox (no EAS account
+  configured here).
