@@ -21,19 +21,19 @@ test.describe("direct Supabase cross-check", () => {
     if (session) await deleteAllTransactions(session);
   });
 
-  test("/api/transactions returns the exact date stored in Supabase", async ({ request }) => {
+  test("the transactions Edge Function returns the exact date stored in Supabase", async ({ request }) => {
     const knownDate = "2026-02-14"; // fixed, arbitrary — exercises exact date-string passthrough
     await insertTransactions(session, [
       { date: knownDate, payee: "SYNTHETIC-MONITOR-CROSSCHECK", category: "Groceries", amount: -1 },
     ]);
 
-    const resp = await request.get("/api/transactions", {
+    const resp = await request.get(`${process.env.MONITOR_SUPABASE_URL}/functions/v1/transactions`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     expect(resp.status()).toBe(200);
     const rows = await resp.json();
     const row = rows.find((r) => r.Payee === "SYNTHETIC-MONITOR-CROSSCHECK");
-    expect(row, "fixture row should be present in /api/transactions").toBeTruthy();
+    expect(row, "fixture row should be present in the transactions Edge Function response").toBeTruthy();
     expect(row.Date).toBe(knownDate);
   });
 });

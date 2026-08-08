@@ -5,8 +5,8 @@ export default defineConfig({
   plugins: [react()],
   test: {
     // Node environment is enough — nothing here renders React components,
-    // and middleware.js needs the real Node Request/Response/crypto, not
-    // jsdom's polyfills.
+    // and the Edge Function tests (supabase/functions/_shared/*.test.ts)
+    // need the real Node fetch/crypto, not jsdom's polyfills.
     environment: "node",
     exclude: ["**/node_modules/**", "**/dist/**", "**/tests/e2e/**", "**/tests/synthetic/**"],
   },

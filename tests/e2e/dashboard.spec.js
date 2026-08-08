@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// Auth is Google OAuth via Supabase (see middleware.js, src/Login.jsx);
+// Auth is Google OAuth via Supabase (see src/Login.jsx);
 // a real "Continue with Google" flow can't be driven headlessly here, so
 // instead of signing in for real, each authenticated test seeds a
 // locally-fabricated (unsigned, never sent anywhere) session directly
@@ -29,11 +29,11 @@ async function signInFake(page) {
   }, FAKE_ACCESS_TOKEN);
 }
 
-// Fixture data standing in for what /api/transactions (Supabase) would
-// return, and a canned filter spec standing in for what /api/query
-// (Anthropic) would return for a "how much did I spend on groceries?"
-// question — both mocked at the network layer so this test needs no real
-// credentials.
+// Fixture data standing in for what the `transactions` Edge Function
+// (Supabase) would return, and a canned filter spec standing in for what
+// the `query` Edge Function (Anthropic) would return for a "how much did
+// I spend on groceries?" question — both mocked at the network layer so
+// this test needs no real credentials.
 const FIXTURE_ROWS = [
   { Id: 1, Date: "2026-01-05", Payee: "Chase Mortgage", Category: "Home:Mortgage", Amount: -5712.04 },
   { Id: 2, Date: "2026-01-10", Payee: "Chipotle", Category: "Dining & Drinks:Restaurants", Amount: -21.95 },
@@ -81,8 +81,8 @@ function mockAccountBalances(page, accounts, balances) {
 test("asking a question renders only the matching transactions and a chart", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({
       json: { content: [{ type: "text", text: JSON.stringify(FIXTURE_SPEC) }] },
     })
@@ -131,8 +131,8 @@ const WEEKLY_SPEC = {
 test("clicking through multiple chart bars filters the table to each bar in turn, with no leftover focus outline (regression: Recharts' entrance animation used to leave bars in a transient state where an early click could hit the wrong bar or none at all)", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: WEEKLY_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: WEEKLY_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(WEEKLY_SPEC) }] } })
   );
 
@@ -189,8 +189,8 @@ const MONTHLY_SPEC = {
 test("clicking a line chart point filters the table to that point, same as clicking a bar (regression: the line chart had no click handler at all, so it never filtered)", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: MONTHLY_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: MONTHLY_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(MONTHLY_SPEC) }] } })
   );
 
@@ -240,8 +240,8 @@ const TOP_TRANSACTIONS_SPEC = {
 test("'top N expenses' ranks individual transactions by size, and the list below matches the chart's order (regression: this used to render a payee-total chart with an unrelated, unlimited, date-sorted list underneath)", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: TOP_TRANSACTIONS_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: TOP_TRANSACTIONS_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(TOP_TRANSACTIONS_SPEC) }] } })
   );
 
@@ -283,7 +283,7 @@ test("lists a balance chip per linked account on the home screen", async ({ page
       { account_id: "acc_savings", current: 18000.5, available: 18000.5 },
     ]
   );
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
 
   await page.goto("/");
 
@@ -303,7 +303,7 @@ test("shows an empty state (not a balance chip) for a manual-only ledger, with a
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockAccountBalances(page, [], []);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
 
   await page.goto("/");
 
@@ -317,9 +317,9 @@ test("clicking the add-bank button shows the checking/savings-only banner, and C
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockAccountBalances(page, [], []);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   let linkTokenRequested = false;
-  await page.route("**/api/plaid-link-token", (route) => {
+  await page.route("**/functions/v1/plaid-link-token", (route) => {
     linkTokenRequested = true;
     route.fulfill({ json: { link_token: "unused" } });
   });
@@ -344,9 +344,9 @@ test("disconnecting a bank requires two escalating confirmation steps, and Cance
     [{ account_id: "acc_checking", item_id: "item-1", name: "Chase Checking", mask: "1234" }],
     [{ account_id: "acc_checking", current: 2543.21, available: 2500 }]
   );
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   let disconnectCalled = false;
-  await page.route("**/api/plaid-disconnect", (route) => {
+  await page.route("**/functions/v1/plaid-disconnect", (route) => {
     disconnectCalled = true;
     route.fulfill({ json: { ok: true } });
   });
@@ -402,9 +402,9 @@ test("confirming both disconnect steps calls the API with the account's item id,
           ],
     })
   );
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   let disconnectBody = null;
-  await page.route("**/api/plaid-disconnect", (route) => {
+  await page.route("**/functions/v1/plaid-disconnect", (route) => {
     disconnectBody = route.request().postDataJSON();
     disconnected = true;
     route.fulfill({ json: { ok: true } });
@@ -431,8 +431,8 @@ test("confirming both disconnect steps calls the API with the account's item id,
 test("an off-topic question is rejected instead of silently showing all transactions", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({
       json: { content: [{ type: "text", text: JSON.stringify({ isLedgerQuery: false }) }] },
     })
@@ -461,7 +461,7 @@ test("navigating from Home to Ask and back with the browser Back button works, a
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
 
   await page.goto("/");
   await expect(page.getByText("Recent Activity")).toBeVisible();
@@ -486,7 +486,7 @@ test("clicking the Ask link on Recent Activity navigates to the Ask page", async
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
 
   await page.goto("/");
   await page.getByRole("link", { name: "Ask a question" }).click();
@@ -499,8 +499,8 @@ test("the Ask page shows floating query suggestions before any question is asked
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(FIXTURE_SPEC) }] } })
   );
 
@@ -526,7 +526,7 @@ test("Rules is reachable from Home, and closing it (X or Back) returns to the pa
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   await page.route("**/rest/v1/category_rules*", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/");
@@ -542,7 +542,7 @@ test("deleting a rule requires confirmation (defaulting to Cancel) instead of de
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
 
   let deleteCalled = false;
   await page.route("**/rest/v1/category_rules*", (route) => {
@@ -581,7 +581,7 @@ test("the Rules panel's 'set category to' field is a restricted dropdown, not fr
   await signInFake(page);
   await mockAlreadyLinked(page);
   await mockNoLinkedAccounts(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
   await page.route("**/rest/v1/category_rules*", (route) => route.fulfill({ json: [] }));
 
   await page.goto("/");
@@ -600,8 +600,8 @@ test("the Rules panel's 'set category to' field is a restricted dropdown, not fr
 test("editing a transaction row directly updates its payee and category, persists via Supabase, and shows immediately", async ({ page }) => {
   await signInFake(page);
   await mockAlreadyLinked(page);
-  await page.route("**/api/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
-  await page.route("**/api/query", (route) =>
+  await page.route("**/functions/v1/transactions", (route) => route.fulfill({ json: FIXTURE_ROWS }));
+  await page.route("**/functions/v1/query", (route) =>
     route.fulfill({ json: { content: [{ type: "text", text: JSON.stringify(FIXTURE_SPEC) }] } })
   );
 

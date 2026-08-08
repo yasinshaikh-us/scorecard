@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Landmark, Unlink } from "lucide-react";
 import { styles } from "./styles.js";
 import { getSupabaseClient } from "./supabaseClient.js";
+import { functionUrl } from "./functionsClient.js";
 import { fmtMoney } from "./logic.js";
 import { useBankLink } from "./useBankLink.js";
 
@@ -102,7 +103,7 @@ export default function AccountBalances({ accessToken, onLinked }) {
   async function confirmDisconnect() {
     setDisconnect((d) => (d ? { ...d, submitting: true, error: null } : d));
     try {
-      const resp = await fetch("/api/plaid-disconnect", {
+      const resp = await fetch(functionUrl("plaid-disconnect"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify({ id: disconnect.itemId }),

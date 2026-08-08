@@ -2,8 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 // One thin end-to-end smoke test (tier 3 of the test suite) — everything
 // else is Vitest unit tests. Runs against a built+previewed copy of the app
-// with /api/transactions and /api/query mocked at the network layer, so it
-// needs no real Anthropic/Supabase credentials.
+// with the transactions/query Edge Functions mocked at the network layer,
+// so it needs no real Anthropic/Supabase credentials.
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,

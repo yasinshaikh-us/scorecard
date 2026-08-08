@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import handler, { fetchAllRows, fetchAccountLabels, fetchLedgerMeta, accountLabelFor, toClientRows } from "./transactions.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { fetchAllRows, fetchAccountLabels, fetchLedgerMeta, accountLabelFor, toClientRows } from "./transactionsData.ts";
 
 const SUPABASE_URL = "https://project.supabase.co";
 const ANON_KEY = "test-anon-key";
@@ -7,13 +7,10 @@ const ACCESS_TOKEN = "test-user-access-token";
 
 // Mimics Supabase/PostgREST's Range-header pagination: returns rows
 // [from, to] (inclusive, 0-indexed) out of a total, page size implied by
-// whatever Range the caller sends — matches the real API's contract for
-// api/transactions.js's own PAGE_SIZE (1000) to exercise it. The handler
-// now also fires an unpaged request against plaid_accounts (for account
-// labels) alongside the paged transactions request, so this branches on
-// the URL to serve both from a single mock.
-function fakeSupabaseFetch(total, { failStatus, accounts = [] } = {}) {
-  return vi.fn(async (url, opts) => {
+// whatever Range the caller sends -- matches fetchAllRows' own PAGE_SIZE
+// (1000) to exercise it.
+function fakeSupabaseFetch(total: number, { failStatus, accounts = [] as any[] } = {} as any) {
+  return vi.fn(async (url: any, opts: any) => {
     if (failStatus) {
       return { ok: false, status: failStatus, json: async () => ({ message: "boom" }) };
     }
@@ -31,21 +28,6 @@ function fakeSupabaseFetch(total, { failStatus, accounts = [] } = {}) {
   });
 }
 
-function fakeRes() {
-  return {
-    statusCode: null,
-    body: null,
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body) {
-      this.body = body;
-      return this;
-    },
-  };
-}
-
 describe("fetchAllRows", () => {
   const realFetch = global.fetch;
   afterEach(() => {
@@ -53,95 +35,43 @@ describe("fetchAllRows", () => {
   });
 
   it("pages through multiple partial pages and returns every row (regression test for the Max Rows truncation bug)", async () => {
-    global.fetch = fakeSupabaseFetch(2500);
+    global.fetch = fakeSupabaseFetch(2500) as any;
     const rows = await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(rows.length).toBe(2500);
     expect(global.fetch).toHaveBeenCalledTimes(3);
-    expect(global.fetch.mock.calls[0][1].headers.Range).toBe("0-999");
-    expect(global.fetch.mock.calls[1][1].headers.Range).toBe("1000-1999");
-    expect(global.fetch.mock.calls[2][1].headers.Range).toBe("2000-2999");
+    expect((global.fetch as any).mock.calls[0][1].headers.Range).toBe("0-999");
+    expect((global.fetch as any).mock.calls[1][1].headers.Range).toBe("1000-1999");
+    expect((global.fetch as any).mock.calls[2][1].headers.Range).toBe("2000-2999");
   });
 
   it("makes one extra (empty) request when the total is an exact multiple of the page size", async () => {
-    global.fetch = fakeSupabaseFetch(2000);
+    global.fetch = fakeSupabaseFetch(2000) as any;
     const rows = await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(rows.length).toBe(2000);
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   it("returns everything in one request when under a single page", async () => {
-    global.fetch = fakeSupabaseFetch(3);
+    global.fetch = fakeSupabaseFetch(3) as any;
     const rows = await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(rows.length).toBe(3);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("sends the anon key on apikey and the caller's own access token on Authorization", async () => {
-    global.fetch = fakeSupabaseFetch(1);
+    global.fetch = fakeSupabaseFetch(1) as any;
     await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
-    const headers = global.fetch.mock.calls[0][1].headers;
+    const headers = (global.fetch as any).mock.calls[0][1].headers;
     expect(headers.apikey).toBe(ANON_KEY);
     expect(headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
   });
 
   it("throws with the upstream status/body on failure", async () => {
-    global.fetch = fakeSupabaseFetch(0, { failStatus: 503 });
+    global.fetch = fakeSupabaseFetch(0, { failStatus: 503 }) as any;
     await expect(fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN)).rejects.toMatchObject({
       status: 503,
       body: { message: "boom" },
     });
-  });
-});
-
-describe("handler", () => {
-  const realFetch = global.fetch;
-  const realEnv = { ...process.env };
-
-  beforeEach(() => {
-    process.env.VITE_SUPABASE_URL = SUPABASE_URL;
-    process.env.VITE_SUPABASE_ANON_KEY = ANON_KEY;
-  });
-  afterEach(() => {
-    global.fetch = realFetch;
-    process.env = { ...realEnv };
-  });
-
-  it("rejects non-GET methods", async () => {
-    const res = fakeRes();
-    await handler({ method: "POST", headers: {} }, res);
-    expect(res.statusCode).toBe(405);
-  });
-
-  it("500s when env vars are missing", async () => {
-    delete process.env.VITE_SUPABASE_URL;
-    const res = fakeRes();
-    await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
-    expect(res.statusCode).toBe(500);
-  });
-
-  it("401s when there's no Authorization header (defense in depth alongside middleware.js)", async () => {
-    const res = fakeRes();
-    await handler({ method: "GET", headers: {} }, res);
-    expect(res.statusCode).toBe(401);
-  });
-
-  it("maps date/payee/category/amount to Date/Payee/Category/Amount with Amount coerced to a number, defaulting Account/IsTransfer for unlinked manual rows", async () => {
-    global.fetch = fakeSupabaseFetch(2);
-    const res = fakeRes();
-    await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual([
-      { Id: 0, Date: "2024-01-01", Payee: "Payee0", Category: "Groceries", Amount: -1.5, Account: "Manual entry", IsTransfer: false },
-      { Id: 1, Date: "2024-01-01", Payee: "Payee1", Category: "Groceries", Amount: -1.5, Account: "Manual entry", IsTransfer: false },
-    ]);
-  });
-
-  it("passes through the upstream status and error body on failure", async () => {
-    global.fetch = fakeSupabaseFetch(0, { failStatus: 503 });
-    const res = fakeRes();
-    await handler({ method: "GET", headers: { authorization: `Bearer ${ACCESS_TOKEN}` } }, res);
-    expect(res.statusCode).toBe(503);
-    expect(res.body).toEqual({ error: { message: "boom" } });
   });
 });
 
@@ -158,13 +88,13 @@ describe("fetchAccountLabels", () => {
         { account_id: "acc_1", name: "Chase Checking", mask: "1234" },
         { account_id: "acc_2", name: "Ally Savings", mask: null },
       ],
-    }));
+    })) as any;
     const labels = await fetchAccountLabels(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(labels).toEqual({ acc_1: "Chase Checking ••1234", acc_2: "Ally Savings" });
   });
 
   it("throws with the upstream status/body on failure", async () => {
-    global.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ message: "boom" }) }));
+    global.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ message: "boom" }) })) as any;
     await expect(fetchAccountLabels(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN)).rejects.toMatchObject({
       status: 503,
       body: { message: "boom" },
@@ -175,7 +105,7 @@ describe("fetchAccountLabels", () => {
     global.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => [{ account_id: "acc_1", name: "Chase Checking", mask: "123456789" }],
-    }));
+    })) as any;
     const labels = await fetchAccountLabels(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(labels).toEqual({ acc_1: "Chase Checking ••6789" });
   });
@@ -188,7 +118,7 @@ describe("fetchLedgerMeta", () => {
   });
 
   it("posts to the ledger_meta RPC with the caller's own token and maps the response", async () => {
-    global.fetch = vi.fn(async (url, opts) => {
+    global.fetch = vi.fn(async (url: any, opts: any) => {
       expect(url).toBe(`${SUPABASE_URL}/rest/v1/rpc/ledger_meta`);
       expect(opts.method).toBe("POST");
       expect(opts.headers.apikey).toBe(ANON_KEY);
@@ -206,7 +136,7 @@ describe("fetchLedgerMeta", () => {
           },
         ],
       };
-    });
+    }) as any;
     const meta = await fetchLedgerMeta(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(meta).toEqual({
       categories: ["Groceries", "Home"],
@@ -224,7 +154,7 @@ describe("fetchLedgerMeta", () => {
       json: async () => [
         { categories: [], subcategories: [], min_date: null, max_date: null, distinct_account_ids: [], has_manual: false },
       ],
-    }));
+    })) as any;
     const meta = await fetchLedgerMeta(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
     expect(meta).toEqual({
       categories: [],
@@ -237,7 +167,7 @@ describe("fetchLedgerMeta", () => {
   });
 
   it("throws with the upstream status/body on failure", async () => {
-    global.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ message: "boom" }) }));
+    global.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({ message: "boom" }) })) as any;
     await expect(fetchLedgerMeta(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN)).rejects.toMatchObject({
       status: 503,
       body: { message: "boom" },

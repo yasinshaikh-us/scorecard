@@ -194,7 +194,7 @@ export function buildChartData(filteredRows, spec) {
   return arr;
 }
 
-// Interprets the /api/query response into exactly one of
+// Interprets the `query` Edge Function's response into exactly one of
 // {error}/{offTopic}/{spec} — pulled out of App.jsx so the "did the
 // request actually fail" branch is unit-testable. Previously that check
 // didn't exist at all: any non-2xx response (an expired token, a
