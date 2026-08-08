@@ -54,9 +54,11 @@ Still to come:
 - [ ] Proper Android adaptive icon assets
 
 **Still not verified on a real device or simulator** — built and validated
-via `tsc --noEmit` and `expo export` (Metro bundles clean for both iOS and
-Android targets) in a sandbox with no Xcode/Android Studio available. Run
-it for real (see below) before trusting the UI actually works.
+via `tsc --noEmit`, `npm test` (Jest unit/component tests), and
+`expo export` (Metro bundles clean for both iOS and Android targets) in a
+sandbox with no Xcode/Android Studio available. See "Automated testing"
+below for what that covers and doesn't. Run it for real (see below)
+before trusting the UI actually works.
 
 ## Setup
 
@@ -120,48 +122,55 @@ flow some institutions use may need additional native configuration
 entries) that Plaid's own setup docs cover in more depth than this PR
 attempted to verify blind.
 
-## Automated testing (no phone required)
+## Automated testing
 
-Two tiers, both driven from `.github/workflows/mobile-build.yml`
-(manual-dispatch — EAS build minutes and Maestro Cloud runs aren't free,
-so this doesn't run on every push):
+A two-stage pyramid: the bulk of testing is automated and runs without a
+phone, so a human is only needed at the final gate (installing a real
+build and using it).
 
-**Build verification** — confirms the app compiles into a real native
-binary, not just that the JS bundles cleanly (`tsc`/`expo export` can't
-catch a broken Gradle config or native-module linking issue).  Needs an
-`EXPO_TOKEN` repo secret: create one at
-`expo.dev` → account settings → **Access Tokens**, add it as a GitHub
-Actions secret named `EXPO_TOKEN`.
+**Stage 1 — cheap and fast, runs on every push/PR that touches `mobile/`**
+(`.github/workflows/mobile-ci.yml`, a few seconds to a couple minutes,
+no paid resources):
 
-**UI flow testing (Maestro Cloud)** — runs `.maestro/*.yaml` flows against
-the fresh build on a real cloud Android device, no phone or emulator
-needed on either end. Needs a `MAESTRO_API_KEY` repo secret (create a
-Maestro account at [maestro.dev](https://maestro.dev), generate an API
-key) — the workflow skips this step cleanly if the secret isn't set.
-**Untested as of this commit** — built from Maestro/EAS's documented
-integration pattern, but there was no Maestro account available to verify
-against, so the first real run may need debugging.
+- **Typecheck** — `npx tsc --noEmit`.
+- **Unit/component tests** — `npm test`, via Jest (`jest-expo` preset +
+  `@testing-library/react-native`). Covers the pure logic
+  (`lib/logic.test.ts`, `lib/format.test.ts` — full parity with
+  `../src/logic.test.js`) and the components with real state/interaction
+  (`components/TransactionRow.test.tsx`'s inline-edit flow,
+  `components/CategoryRulesPanel.test.tsx`'s add/toggle/delete/reapply,
+  `components/PickerModal.test.tsx`'s select/cancel). Supabase calls are
+  mocked at the module boundary (`jest.mock("../lib/supabase")`) rather
+  than hitting a real project. Not yet covered: `AccountBalances`,
+  `QueryCard`, `Chart`, and the screen-level components (`home.tsx`,
+  `ask.tsx`) — those pull in `react-native-plaid-link-sdk` and
+  `react-native-gifted-charts`, native-ish modules that need more setup
+  to mock cleanly; adding as time allows.
+- **Metro bundle** — `npx expo export` for both iOS and Android. Catches
+  bad imports/native-module usage that `tsc` alone (types only, no
+  bundling) can't see.
 
-Only [`smoke-login.yaml`](.maestro/smoke-login.yaml) exists so far
-(launches the app, confirms the sign-in screen renders) — that's the only
-flow automatable *without a design decision first*. Home/Ask/Plaid
-Link/Rules/editing all require a signed-in session, and Google's OAuth
-consent screen actively resists automation (this is the same reason the
-web app's own Playwright tests never drive real Google sign-in either —
-see `tests/e2e/dashboard.spec.js`'s and
-`tests/synthetic/fixtures/monitor-session.js`'s comments). The web
-project's tests get around this by injecting a real session directly into
-`localStorage`/into the page before load. The mobile equivalent would be
-a build-time-gated deep link (e.g. `fathom://test-login?...`, compiled in
-*only* for `development`/`preview` profiles, never `production`) that
-lets a Maestro flow inject a real session non-interactively — a
-legitimate, common pattern, but it's a deliberate auth-bypass mechanism
-in a codebase handling real bank data, so it hasn't been added without
-an explicit go-ahead. Plaid Link itself is more automation-friendly than
-Google's OAuth (Plaid's sandbox environment ships fixed test credentials,
-`user_good`/`pass_good`, specifically for this), so once past the
-sign-in wall, driving a real sandbox Plaid Link flow with Maestro should
-work reasonably well.
+None of this needs a device, emulator, EAS account, or paid service —
+it's the same kind of check `tsc`/`expo export`/`jest` would give on a
+local machine, just running automatically on every change.
+
+**Stage 2 — EAS build verification, on demand**
+(`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build
+minutes aren't free): confirms the app compiles into a real native
+binary, not just that the JS bundles cleanly — `tsc`/`expo export` can't
+catch a broken Gradle config or native-module linking issue (relevant
+here given `react-native-plaid-link-sdk`). Needs an `EXPO_TOKEN` repo
+secret: create one at `expo.dev` → account settings → **Access Tokens**,
+add it as a GitHub Actions secret named `EXPO_TOKEN`.
+
+**Final gate — a human on a real device.** Stage 2's build artifact still
+needs to actually be installed and tapped through once — no environment
+available here has a connected Android/iOS device or emulator (see "Run"
+above), so real UI-flow verification (sign-in, Plaid Link's native OAuth
+redirect, chart rendering) can't be automated from this environment.
+Cloud device-farm services (e.g. Maestro Cloud) exist for this but run
+~$250/device/month and weren't worth it at this stage — revisit if the
+manual step becomes the actual bottleneck.
 
 ## Before shipping to a store
 

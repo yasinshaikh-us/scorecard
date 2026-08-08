@@ -1,0 +1,70 @@
+name: Mobile CI
+
+# Stage 1 of the mobile testing pyramid: cheap, fast, fully automated
+# checks that need no device, emulator, or EAS build minutes -- so they
+# run on every push/PR that touches mobile/, not just on request. Catches
+# type errors and logic/component regressions before anything reaches the
+# EAS build stage (mobile-build.yml, manual-dispatch, costs real minutes)
+# or a human's phone.
+
+on:
+  pull_request:
+    paths: ["mobile/**", ".github/workflows/mobile-ci.yml"]
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/mobile-ci.yml"]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      - run: npx tsc --noEmit
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      - run: npm test -- --ci
+
+  metro-bundle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: dummy-anon-key-for-bundling-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      # Bundles the JS with Metro for both platforms -- catches import
+      # errors, bad native-module usage, and other issues `tsc` can't see
+      # (tsc only checks types, it doesn't resolve/bundle). Doesn't build a
+      # native binary (that's mobile-build.yml's EAS step); this just
+      # proves the bundle itself is sound.
+      - run: npx expo export --platform ios --output-dir /tmp/export-ios
+      - run: npx expo export --platform android --output-dir /tmp/export-android
