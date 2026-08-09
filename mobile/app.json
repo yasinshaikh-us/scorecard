@@ -19,7 +19,15 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "./plugins/withDetoxTestBuildType.js"
+      "./plugins/withDetoxTestBuildType.js",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
