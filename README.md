@@ -193,7 +193,8 @@ failure surfaces before the slower browser test ever runs.
 │   ├── plaid-disconnect/index.ts
 │   ├── query/index.ts             # holds the Anthropic key server-side
 │   ├── plaid-webhook/index.ts     # Plaid calls this directly, --no-verify-jwt
-│   └── plaid-balance-refresh/index.ts  # hourly pg_cron job
+│   ├── plaid-balance-refresh/index.ts  # hourly pg_cron job
+│   └── test-login/index.ts        # mobile testing only -- see mobile/README.md
 ├── src/
 │   ├── App.jsx          # auth gate (Login vs dashboard) + the dashboard itself
 │   ├── Login.jsx        # "Continue with Google" screen
