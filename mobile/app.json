@@ -18,7 +18,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "./plugins/withDetoxTestBuildType.js"
     ],
     "ios": {
       "supportsTablet": true,

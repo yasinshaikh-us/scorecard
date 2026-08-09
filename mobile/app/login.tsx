@@ -41,7 +41,7 @@ export default function Login() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Fathom</Text>
-      <Pressable style={styles.button} onPress={handlePress} disabled={busy}>
+      <Pressable testID="google-signin-button" style={styles.button} onPress={handlePress} disabled={busy}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue with Google</Text>}
       </Pressable>
       {/* Only rendered in development/preview builds (see mobile/eas.json)
@@ -49,7 +49,7 @@ export default function Login() {
           test flow (Maestro/Detox, or a human) skip Google's OAuth screen
           by signing in as a designated dummy test account instead. */}
       {TEST_LOGIN_ENABLED ? (
-        <Pressable onPress={handleTestLoginPress} disabled={busy} hitSlop={8}>
+        <Pressable testID="test-signin-button" onPress={handleTestLoginPress} disabled={busy} hitSlop={8}>
           <Text style={styles.testLoginText}>Sign in as test user</Text>
         </Pressable>
       ) : null}

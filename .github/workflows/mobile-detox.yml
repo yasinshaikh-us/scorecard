@@ -1,0 +1,108 @@
+name: Mobile Detox (Firebase Test Lab)
+
+# Stage 3 of the mobile testing pyramid: real scripted UI flows (tap,
+# assert, tap again) running against a real Android virtual device --
+# Stage 1 (mobile-ci.yml) only proves the JS is sound, Stage 2
+# (mobile-build.yml) only proves it compiles into a real binary; neither
+# actually taps through the app. This does, using Detox to build an
+# instrumented Android APK pair and Firebase Test Lab's free virtual
+# device quota (Spark plan: 10 virtual-device runs/day, no cost) to run
+# them -- no emulator needed in this repo's CI or anywhere else.
+#
+# Manual-dispatch only -- this is the slowest and least-proven stage
+# (a real native Gradle build plus a cloud device run), not something to
+# run on every push while it's still new. See mobile/README.md for the
+# one-time GCP/Firebase setup this needs and exactly why each secret is
+# there.
+#
+# Skips cleanly (does nothing) if FIREBASE_PROJECT_ID or
+# FIREBASE_SERVICE_ACCOUNT_KEY aren't set yet.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  detox-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: https://bidorjtgbhuihppsznkc.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
+      # Same value baked into eas.json's development/preview profiles --
+      # see mobile/README.md's "Test login" section for what this is and
+      # why it's safe to commit (it can only ever mint a session for one
+      # hardcoded dummy account, and is unrelated to that account's real
+      # password).
+      EXPO_PUBLIC_ENABLE_TEST_LOGIN: "true"
+      EXPO_PUBLIC_TEST_LOGIN_SECRET: 0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea
+    steps:
+      - name: Check required secrets are set
+        id: check
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" ] || [ -z "${{ vars.FIREBASE_PROJECT_ID }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT_KEY secret and/or FIREBASE_PROJECT_ID variable not set -- skipping. See mobile/README.md's Stage 3 setup section."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip == 'false'
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip == 'false'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        if: steps.check.outputs.skip == 'false'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: npm ci --legacy-peer-deps
+        if: steps.check.outputs.skip == 'false'
+
+      # Generates android/ fresh -- not committed, same reasoning as
+      # mobile-build.yml relying on EAS to do this server-side. The one
+      # native tweak this needs (plugins/withDetoxTestBuildType.js) is
+      # applied automatically as part of this.
+      - run: npx expo prebuild --platform android
+        if: steps.check.outputs.skip == 'false'
+
+      # Builds the app + androidTest APK pair (.detoxrc.js's
+      # android.release build command) -- this is a real Gradle build,
+      # 5-15 minutes typical.
+      - run: npx detox build -c android.release
+        if: steps.check.outputs.skip == 'false'
+
+      - uses: google-github-actions/auth@v2
+        if: steps.check.outputs.skip == 'false'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.check.outputs.skip == 'false'
+
+      # Uploads both APKs to Firebase Test Lab and runs the Detox specs
+      # as a standard Android instrumentation test on a real virtual
+      # device -- Detox's own `detox test` is deliberately not used here
+      # (it expects a locally-connected device/emulator, which no leg of
+      # this pipeline has).
+      #
+      # model=Pixel2,version=30 is a long-available Firebase Test Lab
+      # virtual device as of this writing -- if this specific model/API
+      # level has since been retired from the catalog, list current
+      # options with `gcloud firebase test android models list` and swap
+      # it in here.
+      - name: Run Detox specs on Firebase Test Lab
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          gcloud firebase test android run \
+            --project "${{ vars.FIREBASE_PROJECT_ID }}" \
+            --type instrumentation \
+            --app android/app/build/outputs/apk/release/app-release.apk \
+            --test android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
+            --device model=Pixel2,version=30,locale=en,orientation=portrait \
+            --timeout 15m
