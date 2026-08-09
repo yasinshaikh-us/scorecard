@@ -12,12 +12,20 @@
     "development": {
       "extends": "base",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_ENABLE_TEST_LOGIN": "true",
+        "EXPO_PUBLIC_TEST_LOGIN_SECRET": "0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea"
+      }
     },
     "preview": {
       "extends": "base",
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_ENABLE_TEST_LOGIN": "true",
+        "EXPO_PUBLIC_TEST_LOGIN_SECRET": "0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea"
+      }
     },
     "production": {
       "extends": "base",

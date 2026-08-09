@@ -206,9 +206,46 @@ needs to actually be installed and tapped through once — no environment
 available here has a connected Android/iOS device or emulator (see "Run"
 above), so real UI-flow verification (sign-in, Plaid Link's native OAuth
 redirect, chart rendering) can't be automated from this environment.
-Cloud device-farm services (e.g. Maestro Cloud) exist for this but run
-~$250/device/month and weren't worth it at this stage — revisit if the
-manual step becomes the actual bottleneck.
+Cloud device-farm services (e.g. Maestro Cloud, Firebase Test Lab +
+Detox) exist for automating this too, at real cost or real setup effort
+— revisit if the manual step becomes the actual bottleneck.
+
+### Test login (skipping Google's sign-in screen)
+
+Every authenticated screen (Home, Ask, Rules, editing) needs a session,
+and Google's OAuth consent screen actively resists automation — the same
+reason the web app's own Playwright tests
+(`../tests/e2e/dashboard.spec.js`, `../tests/synthetic/fixtures/monitor-session.js`)
+never drive real Google sign-in either, injecting a session directly
+instead. `supabase/functions/test-login` is the mobile equivalent: it
+mints a real session for a designated dummy account
+(`synthetic-monitor@scorecard.test` — the same one the web app's
+synthetic monitor already uses) without touching Google at all.
+
+- **Gated to non-production builds only.** `eas.json`'s `development`/
+  `preview` profiles set `EXPO_PUBLIC_ENABLE_TEST_LOGIN=true` plus a
+  shared `EXPO_PUBLIC_TEST_LOGIN_SECRET`; `production` sets neither, so
+  the "Sign in as test user" link on the login screen (and the code
+  behind it) is compiled out of any build a real user would install.
+- **The account's real password never leaves the server.** The shared
+  secret only proves "this build is allowed to ask for a test session" —
+  it can't be used to look up or change the account's actual Supabase
+  password, and it's independently rotatable (just an Edge Function
+  secret) without touching that account's real credentials.
+- **Scoped to one hardcoded account.** The function ignores any email the
+  caller sends and always mints a session for the same designated dummy
+  account — it can't be used to bypass sign-in for a real user.
+- **Requires one manual setup step**, not yet done as of this commit: set
+  `TEST_LOGIN_SECRET` as an Edge Function secret on the Supabase project
+  (Project Settings → Edge Functions → Secrets, or
+  `supabase secrets set TEST_LOGIN_SECRET=<value> --project-ref bidorjtgbhuihppsznkc`),
+  matching the value baked into `eas.json`. Until that's set, the
+  function returns a clean 500 rather than silently failing.
+
+This unblocks real scripted UI testing (Maestro, Detox, or otherwise)
+past the login wall, whenever one of those gets built — the auth part of
+that problem is solved regardless of which tool ends up driving the rest
+of the flow.
 
 ## Before shipping to a store
 

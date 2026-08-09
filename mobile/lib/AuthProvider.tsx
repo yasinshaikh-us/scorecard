@@ -3,13 +3,24 @@ import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { functionUrl } from "./functionsClient";
 
 WebBrowser.maybeCompleteAuthSession();
+
+// Only set in development/preview EAS profiles (see mobile/eas.json) --
+// undefined here means the code below is dead in a production build, and
+// Metro strips it accordingly. See the test-login Edge Function for what
+// this unlocks and why: bootstrapping a session for a designated dummy
+// test account without driving Google's OAuth screen, the same reason
+// the web app's own e2e/synthetic tests inject a session directly rather
+// than automating Google sign-in.
+export const TEST_LOGIN_ENABLED = process.env.EXPO_PUBLIC_ENABLE_TEST_LOGIN === "true";
 
 type AuthContextValue = {
   session: Session | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithTestAccount: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -63,6 +74,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
         if (exchangeError) throw exchangeError;
+      },
+      async signInWithTestAccount() {
+        const secret = process.env.EXPO_PUBLIC_TEST_LOGIN_SECRET;
+        if (!TEST_LOGIN_ENABLED || !secret) throw new Error("Test login isn't enabled in this build.");
+
+        const resp = await fetch(functionUrl("test-login"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ secret }),
+        });
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body?.error || "Test login failed");
+
+        const { error } = await supabase.auth.setSession({
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+        });
+        if (error) throw error;
       },
       async signOut() {
         await supabase.auth.signOut();
