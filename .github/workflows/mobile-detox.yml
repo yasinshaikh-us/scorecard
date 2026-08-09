@@ -94,21 +94,17 @@ jobs:
         run: |
           MISSING=""
 
-          # Diagnostic only, never blocking -- attempts 13/14 (runs
-          # 31332668888, 31334848192) both failed at the actual Firebase
-          # Test Lab call with "Permission denied while fetching the
-          # default results bucket... Is billing enabled for project:
-          # [apps-4b900]?" even ~50 minutes after the user enabled billing
-          # in the console, which rules out simple propagation delay.
-          # Querying GCP's own billing status directly (rather than
-          # trusting gcloud's error-message guess) tells us for real
-          # whether this is still a billing-linkage problem or something
-          # else entirely (e.g. the results bucket needing separate
-          # storage-provisioning permission beyond Cloud Test Admin).
-          # Wrapped with || true and 2>&1 because the service account may
-          # not have billing.viewer -- a permission error here shouldn't
-          # crash the whole preflight the way a bare `set -e` failure
-          # would.
+          # Diagnostic only, never blocking. Run 31335677499 answered the
+          # question this was added to ask: the billing check itself
+          # failed with "API [cloudbilling.googleapis.com] not enabled on
+          # project [368080898165]" -- meaning the repeated "Is billing
+          # enabled for project...?" 403 on the actual Firebase Test Lab
+          # call plausibly has nothing to do with whether a billing
+          # account is linked (the user confirmed one is), and everything
+          # to do with the Cloud Billing API itself being off, which is
+          # now checked below as a real required API instead of guessed
+          # at here. Left in place (now that it can actually run) as a
+          # second confirmation once that API is enabled.
           BILLING_STATUS=$(gcloud billing projects describe "$FIREBASE_PROJECT" --format="value(billingEnabled)" 2>&1) || true
           echo "Billing status for $FIREBASE_PROJECT (best-effort -- blank/error below may just mean the service account lacks billing.viewer, not that billing is actually off): $BILLING_STATUS"
 
@@ -116,7 +112,11 @@ jobs:
           # too, so it's already implicitly proven once that step passes --
           # checked explicitly anyway so a fresh project reports it up
           # front rather than failing confusingly in that later step.
-          for api in testing.googleapis.com toolresults.googleapis.com; do
+          # cloudbilling.googleapis.com added after run 31335677499 showed
+          # it was the real reason the billing-status diagnostic itself
+          # couldn't answer the question, and is likely why Firebase Test
+          # Lab's own bucket-provisioning call keeps citing billing.
+          for api in testing.googleapis.com toolresults.googleapis.com cloudbilling.googleapis.com; do
             ENABLED=$(gcloud services list --enabled --project "$FIREBASE_PROJECT" --filter="config.name:$api" --format="value(config.name)")
             if [ -z "$ENABLED" ]; then
               MISSING="${MISSING}\n  - API not enabled: $api -- enable at https://console.developers.google.com/apis/api/$api/overview?project=$FIREBASE_PROJECT"
