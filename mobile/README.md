@@ -227,10 +227,12 @@ Two things this needed that earlier stages didn't:
   + billing, not something this session has access to). One-time setup:
   1. Create a Firebase project (or reuse an existing GCP project) at
      [console.firebase.google.com](https://console.firebase.google.com).
-  2. In that project, create a service account with the **Firebase Test
-     Lab Admin** role (`roles/cloudtestservice.testAdmin`) — Firebase
-     console's project settings → Service Accounts page can generate one
-     directly — and download its JSON key.
+  2. In that project, create a service account with the **Cloud Test
+     Admin** role (`roles/cloudtestservice.admin` — confirmed from a real
+     project's actual IAM policy; an earlier version of this doc guessed
+     `roles/cloudtestservice.testAdmin`, which doesn't exist under that
+     name) — Firebase console's project settings → Service Accounts page
+     can generate one directly — and download its JSON key.
   3. Add the JSON key as a GitHub Actions **secret** named
      `FIREBASE_SERVICE_ACCOUNT_KEY` (the whole file contents).
   4. Add the project's ID as a GitHub Actions **variable** (not secret —

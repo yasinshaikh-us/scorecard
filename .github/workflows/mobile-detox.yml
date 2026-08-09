@@ -105,21 +105,20 @@ jobs:
             fi
           done
 
-          # Printed unconditionally, not just on failure -- run 31331012834
-          # showed this specific role-id filter finding nothing even though
-          # the same service account had already proven (in real earlier
-          # runs) that it can invoke Test Lab successfully. That means
-          # either the "Cloud Test Admin" console label maps to a role id
-          # other than roles/cloudtestservice.testAdmin, or the filter
-          # itself is off -- either way, seeing the account's *actual*
-          # granted roles settles it with real data instead of another
-          # guess at the exact role id string.
+          # Run 31331317835 printed the account's real role list and
+          # settled this for good: the console's "Cloud Test Admin" label
+          # grants roles/cloudtestservice.admin, not
+          # roles/cloudtestservice.testAdmin (the id this workflow and
+          # mobile/README.md assumed throughout -- a naming guess that was
+          # simply wrong, not a permission gap). Still printed
+          # unconditionally so any future drift is visible without another
+          # round of guessing.
           SA_EMAIL=$(gcloud config get-value account 2>/dev/null)
           echo "Roles currently granted to $SA_EMAIL on $FIREBASE_PROJECT:"
           gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.members:$SA_EMAIL" --format="table(bindings.role)"
-          HAS_ROLE=$(gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.role:roles/cloudtestservice.testAdmin AND bindings.members:$SA_EMAIL" --format="value(bindings.members)")
+          HAS_ROLE=$(gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.role:roles/cloudtestservice.admin AND bindings.members:$SA_EMAIL" --format="value(bindings.members)")
           if [ -z "$HAS_ROLE" ]; then
-            MISSING="${MISSING}\n  - Role 'roles/cloudtestservice.testAdmin' not found for $SA_EMAIL on project $FIREBASE_PROJECT -- see the role table printed above for what's actually granted"
+            MISSING="${MISSING}\n  - Role 'roles/cloudtestservice.admin' not found for $SA_EMAIL on project $FIREBASE_PROJECT -- see the role table printed above for what's actually granted"
           fi
 
           if [ -n "$MISSING" ]; then
