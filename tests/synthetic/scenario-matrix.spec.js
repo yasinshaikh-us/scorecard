@@ -4,6 +4,7 @@ import {
   injectSession,
   insertTransactions,
   deleteAllTransactions,
+  dismissPlaidGateIfPresent,
 } from "./fixtures/monitor-session.js";
 
 // Layer 2 expansion: a broader matrix of real natural-language queries
@@ -53,7 +54,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("How much did I spend on Groceries?");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -69,7 +71,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("How much did I spend on rent?");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -85,7 +88,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("How much income did I receive?");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -102,7 +106,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("Show me purchases between $20 and $100");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -118,7 +123,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("What did I spend today?");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -135,7 +141,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page
       .getByRole("textbox")
       .fill(`Show me a month-by-month breakdown of all my spending from ${isoDate(start)} to ${isoDate(end)}`);
@@ -155,7 +162,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page
       .getByRole("textbox")
       .fill(`Show me a month-by-month breakdown of all my spending from ${isoDate(start)} to ${isoDate(end)}`);
@@ -174,7 +182,8 @@ test.describe("expanded ledger scenario matrix", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("Show me a breakdown of my spending by category");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -185,7 +194,8 @@ test.describe("expanded ledger scenario matrix", () => {
 
   test("an off-topic question is rejected against the live app", async ({ page }) => {
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("What is the weather currently in New York?");
     await page.getByRole("button", { name: "Ask" }).click();
 
@@ -197,7 +207,8 @@ test.describe("expanded ledger scenario matrix", () => {
 
   test("a query matching nothing renders the empty-table state", async ({ page }) => {
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
     await page.getByRole("textbox").fill("How much did I spend at SYNTHETIC-MATRIX-DOES-NOT-EXIST-ANYWHERE?");
     await page.getByRole("button", { name: "Ask" }).click();
 

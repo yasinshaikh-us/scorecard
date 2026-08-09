@@ -4,6 +4,7 @@ import {
   injectSession,
   insertTransactions,
   deleteAllTransactions,
+  dismissPlaidGateIfPresent,
 } from "./fixtures/monitor-session.js";
 
 // Layer 2: authenticated black-box checks against the real deployed app,
@@ -45,7 +46,8 @@ test.describe("natural-language ledger queries", () => {
     ]);
 
     await injectSession(page, session);
-    await page.goto("/");
+    await page.goto("/ask");
+    await dismissPlaidGateIfPresent(page);
 
     await page.getByRole("textbox").fill(`How much did I spend at ${FIXTURE_PAYEE}?`);
     await page.getByRole("button", { name: "Ask" }).click();
@@ -86,7 +88,8 @@ test.describe("natural-language ledger queries", () => {
       const context = await browser.newContext({ timezoneId });
       const p = await context.newPage();
       await injectSession(p, session);
-      await p.goto("/");
+      await p.goto("/ask");
+      await dismissPlaidGateIfPresent(p);
       await p.getByRole("textbox").fill(question);
       await p.getByRole("button", { name: "Ask" }).click();
       // recharts v3 split the tick mark and its text label into separate

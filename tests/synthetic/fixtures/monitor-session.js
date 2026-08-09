@@ -68,6 +68,22 @@ export async function injectSession(page, session) {
   );
 }
 
+// PlaidLinkGate (src/PlaidLinkGate.jsx) shows a "Connect your bank"
+// screen between sign-in and the actual dashboard the first time a
+// session has no linked bank -- gating on `skippedLink`, plain in-memory
+// React state in App.jsx, not persisted to localStorage or the server.
+// Every synthetic test gets a fresh browser context (and the monitoring
+// account has no real Plaid-linked bank), so this gate appears on every
+// single run and must be dismissed before the dashboard's Home/Ask UI
+// becomes reachable at all.
+export async function dismissPlaidGateIfPresent(page) {
+  try {
+    await page.getByRole("button", { name: "Skip for now" }).click({ timeout: 10_000 });
+  } catch {
+    // Not shown this run (e.g. already past it) -- nothing to do.
+  }
+}
+
 // Supabase's convention for authenticating as service_role over PostgREST:
 // the service-role key goes on both apikey and Authorization -- this
 // bypasses RLS entirely (same mechanism api/plaid-exchange.js /
