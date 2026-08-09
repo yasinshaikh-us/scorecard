@@ -94,6 +94,24 @@ jobs:
         run: |
           MISSING=""
 
+          # Diagnostic only, never blocking -- attempts 13/14 (runs
+          # 31332668888, 31334848192) both failed at the actual Firebase
+          # Test Lab call with "Permission denied while fetching the
+          # default results bucket... Is billing enabled for project:
+          # [apps-4b900]?" even ~50 minutes after the user enabled billing
+          # in the console, which rules out simple propagation delay.
+          # Querying GCP's own billing status directly (rather than
+          # trusting gcloud's error-message guess) tells us for real
+          # whether this is still a billing-linkage problem or something
+          # else entirely (e.g. the results bucket needing separate
+          # storage-provisioning permission beyond Cloud Test Admin).
+          # Wrapped with || true and 2>&1 because the service account may
+          # not have billing.viewer -- a permission error here shouldn't
+          # crash the whole preflight the way a bare `set -e` failure
+          # would.
+          BILLING_STATUS=$(gcloud billing projects describe "$FIREBASE_PROJECT" --format="value(billingEnabled)" 2>&1) || true
+          echo "Billing status for $FIREBASE_PROJECT (best-effort -- blank/error below may just mean the service account lacks billing.viewer, not that billing is actually off): $BILLING_STATUS"
+
           # testing.googleapis.com backs the device-catalog lookup below
           # too, so it's already implicitly proven once that step passes --
           # checked explicitly anyway so a fresh project reports it up
