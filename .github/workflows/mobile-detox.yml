@@ -38,6 +38,13 @@ jobs:
       EXPO_PUBLIC_ENABLE_TEST_LOGIN: "true"
       EXPO_PUBLIC_TEST_LOGIN_SECRET: 0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea
     steps:
+      # Unconditional and first -- every later step's `run:` shell starts
+      # in mobile/ (this job's default working-directory), which doesn't
+      # exist until the repo is actually checked out. The secret-check
+      # step below needs to run inside a checked-out repo for that reason
+      # alone, even though it doesn't touch any mobile-specific file.
+      - uses: actions/checkout@v4
+
       # The secret is passed via env: and read as a shell variable ($FIREBASE_KEY),
       # never interpolated directly into the run: script text via ${{ }} --
       # GitHub splices ${{ secrets.X }} into the script as literal text
@@ -57,8 +64,6 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
-        if: steps.check.outputs.skip == 'false'
       - uses: actions/setup-node@v4
         if: steps.check.outputs.skip == 'false'
         with:
