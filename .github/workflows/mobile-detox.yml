@@ -38,10 +38,19 @@ jobs:
       EXPO_PUBLIC_ENABLE_TEST_LOGIN: "true"
       EXPO_PUBLIC_TEST_LOGIN_SECRET: 0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea
     steps:
+      # The secret is passed via env: and read as a shell variable ($FIREBASE_KEY),
+      # never interpolated directly into the run: script text via ${{ }} --
+      # GitHub splices ${{ secrets.X }} into the script as literal text
+      # before bash ever runs it, and this secret is multi-line JSON full
+      # of quotes, which corrupts the generated script entirely instead of
+      # producing a clean "unset" check.
       - name: Check required secrets are set
         id: check
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
-          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" ] || [ -z "${{ vars.FIREBASE_PROJECT_ID }}" ]; then
+          if [ -z "$FIREBASE_KEY" ] || [ -z "$FIREBASE_PROJECT" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::warning::FIREBASE_SERVICE_ACCOUNT_KEY secret and/or FIREBASE_PROJECT_ID variable not set -- skipping. See mobile/README.md's Stage 3 setup section."
           else
@@ -98,9 +107,11 @@ jobs:
       # it in here.
       - name: Run Detox specs on Firebase Test Lab
         if: steps.check.outputs.skip == 'false'
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           gcloud firebase test android run \
-            --project "${{ vars.FIREBASE_PROJECT_ID }}" \
+            --project "$FIREBASE_PROJECT" \
             --type instrumentation \
             --app android/app/build/outputs/apk/release/app-release.apk \
             --test android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
