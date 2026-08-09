@@ -86,6 +86,23 @@ jobs:
       - run: npx expo prebuild --platform android
         if: steps.check.outputs.skip == 'false'
 
+      # Expo prebuild's default android/gradle.properties caps the daemon at
+      # -Xmx2048m -XX:MaxMetaspaceSize=512m. With org.gradle.parallel=true
+      # (also a prebuild default), several Kotlin compile workers run
+      # concurrently against that single 512m Metaspace budget -- attempt 5
+      # of this workflow (run 31290582438) exhausted it mid-build, which
+      # failed three unrelated compileDebugKotlin tasks at once
+      # (expo-constants, react-native-plaid-link-sdk, expo-log-box) and then
+      # left the daemon itself hung (repeated OutOfMemoryError: Metaspace on
+      # an idle RMI thread, no clean failure, no exit) instead of reporting
+      # the failure -- that's why that run and the one before it both needed
+      # manual cancellation rather than failing outright. ubuntu-latest
+      # runners have 16GB available, so there's ample headroom to just give
+      # the daemon more room instead of fighting parallelism for it.
+      - name: Raise Gradle daemon memory limits (see prior step's comment)
+        if: steps.check.outputs.skip == 'false'
+        run: sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
+
       # Builds the app + androidTest APK pair (.detoxrc.js's
       # android.release build command) -- this is a real Gradle build,
       # 5-15 minutes typical.
