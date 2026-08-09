@@ -27,7 +27,14 @@ module.exports = {
     "android.release": {
       type: "android.apk",
       binaryPath: "android/app/build/outputs/apk/release/app-release.apk",
-      build: "cd android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release",
+      // -PreactNativeArchitectures=x86_64 restricts native compilation to
+      // one ABI instead of the default four (armeabi-v7a, arm64-v8a, x86,
+      // x86_64, per android/gradle.properties) -- this build only ever
+      // runs on Firebase Test Lab's x86_64 virtual devices, so the other
+      // three are pure wasted native-compile time. Found by inspecting a
+      // real `expo prebuild` output after a first real CI run took over
+      // 40 minutes on this step alone.
+      build: "cd android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release -PreactNativeArchitectures=x86_64",
     },
   },
   devices: {
