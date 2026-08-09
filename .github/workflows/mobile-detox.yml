@@ -64,6 +64,42 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Auth + device-catalog lookup moved ahead of the ~15 min Gradle build
+      # on purpose -- neither needs the built APKs, and the device catalog
+      # is the one part of this pipeline that drifts on Google's schedule,
+      # not ours (see "Pick a Firebase Test Lab virtual device" below). No
+      # reason to burn a full build cycle just to find out the catalog
+      # changed again.
+      - uses: google-github-actions/auth@v2
+        if: steps.check.outputs.skip == 'false'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.check.outputs.skip == 'false'
+
+      # model=Pixel2 (this workflow's original hardcoded value) was removed
+      # from Firebase Test Lab's device catalog at some point after this
+      # workflow was written -- run 31293734708 failed with "'Pixel2' is
+      # not a valid model" once the (separate, now-fixed) IAM permission
+      # issue was resolved. Querying the live catalog and picking a
+      # supported virtual device at run time, instead of hardcoding a
+      # model id, means the next catalog change doesn't need another
+      # find-the-right-string round trip.
+      - name: Pick a Firebase Test Lab virtual device
+        if: steps.check.outputs.skip == 'false'
+        id: pick-device
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          gcloud firebase test android models list --project "$FIREBASE_PROJECT" --filter="form=VIRTUAL" --format="table(id,supportedVersionIds.list())"
+          MODEL_ID=$(gcloud firebase test android models list --project "$FIREBASE_PROJECT" --filter="form=VIRTUAL AND supportedVersionIds:30" --format="value(id)" | head -n1)
+          if [ -z "$MODEL_ID" ]; then
+            echo "::error::No Firebase Test Lab virtual device supporting API 30 found in the catalog -- see the model list printed above and update the filter."
+            exit 1
+          fi
+          echo "Selected device model: $MODEL_ID"
+          echo "model_id=$MODEL_ID" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         if: steps.check.outputs.skip == 'false'
         with:
@@ -109,33 +145,22 @@ jobs:
       - run: npx detox build -c android.release
         if: steps.check.outputs.skip == 'false'
 
-      - uses: google-github-actions/auth@v2
-        if: steps.check.outputs.skip == 'false'
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-      - uses: google-github-actions/setup-gcloud@v2
-        if: steps.check.outputs.skip == 'false'
-
       # Uploads both APKs to Firebase Test Lab and runs the Detox specs
       # as a standard Android instrumentation test on a real virtual
       # device -- Detox's own `detox test` is deliberately not used here
       # (it expects a locally-connected device/emulator, which no leg of
-      # this pipeline has).
-      #
-      # model=Pixel2,version=30 is a long-available Firebase Test Lab
-      # virtual device as of this writing -- if this specific model/API
-      # level has since been retired from the catalog, list current
-      # options with `gcloud firebase test android models list` and swap
-      # it in here.
+      # this pipeline has). Device model comes from the "Pick a Firebase
+      # Test Lab virtual device" step above, not hardcoded.
       - name: Run Detox specs on Firebase Test Lab
         if: steps.check.outputs.skip == 'false'
         env:
           FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+          DEVICE_MODEL: ${{ steps.pick-device.outputs.model_id }}
         run: |
           gcloud firebase test android run \
             --project "$FIREBASE_PROJECT" \
             --type instrumentation \
             --app android/app/build/outputs/apk/release/app-release.apk \
             --test android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
-            --device model=Pixel2,version=30,locale=en,orientation=portrait \
+            --device model="$DEVICE_MODEL",version=30,locale=en,orientation=portrait \
             --timeout 15m
