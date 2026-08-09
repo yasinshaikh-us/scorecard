@@ -1,0 +1,128 @@
+name: Firebase Test Lab Smoke Test
+
+# Fast-iteration companion to mobile-detox.yml. mobile/ takes ~14 min just to
+# build (Expo + Detox + Plaid's SDK + several Expo modules), which makes it
+# expensive to debug GCP-side pipeline issues (IAM roles, enabled APIs,
+# billing, device selection, the actual `gcloud firebase test android run`
+# call) -- six real mobile-detox.yml runs in a row hit six different GCP
+# prerequisite issues, each only discoverable after paying that ~14 min cost.
+#
+# mobile-smoke/ is a deliberately trivial native Android project (no Expo,
+# no Detox, no React Native, no third-party SDKs -- just a bare Activity and
+# one instrumented test) that builds in well under a minute, so this
+# workflow proves the entire GCP/Firebase Test Lab pipeline end to end fast.
+# Once a run here succeeds, mobile-detox.yml should too, since it exercises
+# the exact same auth/preflight/device-pick/gcloud-run steps against the
+# same project -- the only thing that differs is which APKs get built.
+#
+# Skips cleanly (does nothing) if FIREBASE_PROJECT_ID or
+# FIREBASE_SERVICE_ACCOUNT_KEY aren't set yet. See mobile/README.md for the
+# one-time GCP/Firebase setup.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-smoke
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets are set
+        id: check
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$FIREBASE_KEY" ] || [ -z "$FIREBASE_PROJECT" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT_KEY secret and/or FIREBASE_PROJECT_ID variable not set -- skipping. See mobile/README.md's Stage 3 setup section."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: google-github-actions/auth@v2
+        if: steps.check.outputs.skip == 'false'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.check.outputs.skip == 'false'
+
+      # Identical to mobile-detox.yml's own preflight step (kept in sync by
+      # hand -- this workflow is meant to be short-lived) so both pipelines
+      # are validated against the exact same real GCP/Firebase state.
+      - name: Preflight -- verify GCP/Firebase prerequisites
+        if: steps.check.outputs.skip == 'false'
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          MISSING=""
+
+          BILLING_STATUS=$(gcloud billing projects describe "$FIREBASE_PROJECT" --format="value(billingEnabled)" 2>&1) || true
+          echo "Billing status for $FIREBASE_PROJECT (best-effort -- blank/error below may just mean the service account lacks billing.viewer, not that billing is actually off): $BILLING_STATUS"
+
+          for api in testing.googleapis.com toolresults.googleapis.com cloudbilling.googleapis.com; do
+            ENABLED=$(gcloud services list --enabled --project "$FIREBASE_PROJECT" --filter="config.name:$api" --format="value(config.name)")
+            if [ -z "$ENABLED" ]; then
+              MISSING="${MISSING}\n  - API not enabled: $api -- enable at https://console.developers.google.com/apis/api/$api/overview?project=$FIREBASE_PROJECT"
+            fi
+          done
+
+          SA_EMAIL=$(gcloud config get-value account 2>/dev/null)
+          echo "Roles currently granted to $SA_EMAIL on $FIREBASE_PROJECT:"
+          gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.members:$SA_EMAIL" --format="table(bindings.role)"
+          HAS_ROLE=$(gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.role:roles/cloudtestservice.admin AND bindings.members:$SA_EMAIL" --format="value(bindings.members)")
+          if [ -z "$HAS_ROLE" ]; then
+            MISSING="${MISSING}\n  - Role 'roles/cloudtestservice.admin' not found for $SA_EMAIL on project $FIREBASE_PROJECT -- see the role table printed above for what's actually granted"
+          fi
+
+          if [ -n "$MISSING" ]; then
+            echo -e "::error::Missing GCP/Firebase prerequisites -- fix all of these, then re-run:$MISSING"
+            exit 1
+          fi
+          echo "All known GCP/Firebase prerequisites are satisfied."
+
+      - name: Pick a Firebase Test Lab virtual device
+        if: steps.check.outputs.skip == 'false'
+        id: pick-device
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          MODEL_ID=$(gcloud firebase test android models list --project "$FIREBASE_PROJECT" --filter="form=VIRTUAL AND supportedVersionIds:30" --format="value(id)" | head -n1)
+          if [ -z "$MODEL_ID" ]; then
+            echo "::error::No Firebase Test Lab virtual device supporting API 30 found in the catalog."
+            exit 1
+          fi
+          echo "Selected device model: $MODEL_ID"
+          echo "model_id=$MODEL_ID" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        if: steps.check.outputs.skip == 'false'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # No npm, no Expo prebuild, no Detox -- mobile-smoke/ is a plain,
+      # already-complete Gradle project committed as-is. Debug build type
+      # (Android's auto-generated debug keystore), so no signing config is
+      # needed either.
+      - name: Build app + androidTest APKs
+        if: steps.check.outputs.skip == 'false'
+        run: ./gradlew assembleDebug assembleAndroidTest
+
+      - name: Run smoke test on Firebase Test Lab
+        if: steps.check.outputs.skip == 'false'
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+          DEVICE_MODEL: ${{ steps.pick-device.outputs.model_id }}
+        run: |
+          gcloud firebase test android run \
+            --project "$FIREBASE_PROJECT" \
+            --type instrumentation \
+            --app app/build/outputs/apk/debug/app-debug.apk \
+            --test app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+            --device model="$DEVICE_MODEL",version=30,locale=en,orientation=portrait \
+            --timeout 10m
