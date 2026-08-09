@@ -77,6 +77,46 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
         if: steps.check.outputs.skip == 'false'
 
+      # Every prior real run of this workflow that got past the secret
+      # check failed on a *different* one-off GCP project prerequisite --
+      # a missing IAM role, then a disabled API -- each only discoverable
+      # by waiting through the full ~13 min Gradle build first, since the
+      # actual failure only surfaced in the final "gcloud firebase test
+      # android run" call. Everything checked here is read-only, doesn't
+      # touch Firebase Test Lab's daily device-run quota, and runs in
+      # seconds -- so a fresh GCP project (or a permission that regresses
+      # later) reports every missing prerequisite in one shot instead of
+      # one per ~13 min build cycle.
+      - name: Preflight -- verify GCP/Firebase prerequisites
+        if: steps.check.outputs.skip == 'false'
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          MISSING=""
+
+          # testing.googleapis.com backs the device-catalog lookup below
+          # too, so it's already implicitly proven once that step passes --
+          # checked explicitly anyway so a fresh project reports it up
+          # front rather than failing confusingly in that later step.
+          for api in testing.googleapis.com toolresults.googleapis.com; do
+            ENABLED=$(gcloud services list --enabled --project "$FIREBASE_PROJECT" --filter="config.name:$api" --format="value(config.name)")
+            if [ -z "$ENABLED" ]; then
+              MISSING="${MISSING}\n  - API not enabled: $api -- enable at https://console.developers.google.com/apis/api/$api/overview?project=$FIREBASE_PROJECT"
+            fi
+          done
+
+          SA_EMAIL=$(gcloud config get-value account 2>/dev/null)
+          HAS_ROLE=$(gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.role:roles/cloudtestservice.testAdmin AND bindings.members:$SA_EMAIL" --format="value(bindings.members)")
+          if [ -z "$HAS_ROLE" ]; then
+            MISSING="${MISSING}\n  - IAM role missing: $SA_EMAIL needs 'Cloud Test Admin' (roles/cloudtestservice.testAdmin) on project $FIREBASE_PROJECT"
+          fi
+
+          if [ -n "$MISSING" ]; then
+            echo -e "::error::Missing GCP/Firebase prerequisites -- fix all of these, then re-run:$MISSING"
+            exit 1
+          fi
+          echo "All known GCP/Firebase prerequisites are satisfied."
+
       # model=Pixel2 (this workflow's original hardcoded value) was removed
       # from Firebase Test Lab's device catalog at some point after this
       # workflow was written -- run 31293734708 failed with "'Pixel2' is

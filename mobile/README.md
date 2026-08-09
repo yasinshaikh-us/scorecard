@@ -235,8 +235,17 @@ Two things this needed that earlier stages didn't:
      `FIREBASE_SERVICE_ACCOUNT_KEY` (the whole file contents).
   4. Add the project's ID as a GitHub Actions **variable** (not secret —
      project IDs aren't sensitive) named `FIREBASE_PROJECT_ID`.
+  5. Enable the **Cloud Tool Results API** (`toolresults.googleapis.com`)
+     on that project — Firebase Test Lab needs it to store run results,
+     but it isn't turned on by default just because Test Lab itself is
+     enabled. Same page pattern as any other GCP API:
+     `console.developers.google.com/apis/api/toolresults.googleapis.com/overview?project=<your-project-id>`.
 
-  The workflow skips cleanly with a warning if either isn't set yet.
+  The workflow skips cleanly with a warning if the secret/variable
+  aren't set yet. If the service account role or either required API is
+  missing, the workflow's own "Preflight -- verify GCP/Firebase
+  prerequisites" step catches it in seconds (before the ~13 min build)
+  and reports everything missing at once.
 
 **Untested as of this commit** — built from Detox's own verified build
 output (confirmed by actually running `expo prebuild` and inspecting the
