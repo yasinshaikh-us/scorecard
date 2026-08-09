@@ -41,7 +41,7 @@ export default function Home() {
     : [];
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
+    <SafeAreaView testID="home-screen" style={styles.screen} edges={["top"]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Fathom</Text>
         <View style={styles.headerActions}>

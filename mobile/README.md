@@ -201,14 +201,62 @@ here given `react-native-plaid-link-sdk`). Needs an `EXPO_TOKEN` repo
 secret: create one at `expo.dev` → account settings → **Access Tokens**,
 add it as a GitHub Actions secret named `EXPO_TOKEN`.
 
-**Final gate — a human on a real device.** Stage 2's build artifact still
-needs to actually be installed and tapped through once — no environment
-available here has a connected Android/iOS device or emulator (see "Run"
-above), so real UI-flow verification (sign-in, Plaid Link's native OAuth
-redirect, chart rendering) can't be automated from this environment.
-Cloud device-farm services (e.g. Maestro Cloud, Firebase Test Lab +
-Detox) exist for automating this too, at real cost or real setup effort
-— revisit if the manual step becomes the actual bottleneck.
+**Stage 3 — scripted UI flows on Firebase Test Lab, on demand**
+(`.github/workflows/mobile-detox.yml`, manual-dispatch — a real native
+Gradle build plus a cloud device run, the slowest and newest stage here):
+[Detox](https://github.com/wix/Detox) builds an instrumented Android APK
+pair (`npx detox build -c android.release`, via `.detoxrc.js`), and
+Firebase Test Lab runs it as a standard Android instrumentation test on a
+real virtual device — Firebase's Spark (free) plan includes 10
+virtual-device test runs/day, no cost. This is real scripted coverage
+(tap, assert, tap again), not just "did it crash" — see `e2e/*.test.js`.
+
+Two things this needed that earlier stages didn't:
+
+- **`plugins/withDetoxTestBuildType.js`** — an Expo config plugin that
+  injects one line (`testBuildType System.getProperty('testBuildType',
+  'debug')`) into the prebuild-generated `android/app/build.gradle`.
+  Bare React Native's community template wires this up by default; Expo's
+  prebuild template doesn't, which was only discoverable by actually
+  running `expo prebuild` and inspecting the output — without it, the
+  androidTest APK Detox builds always targets the debug variant
+  regardless of which app build type was actually compiled, which would
+  hand Firebase Test Lab a mismatched APK pair.
+- **A GCP/Firebase project with Test Lab enabled**, plus a service
+  account — the one thing that had to be set up by hand (Google identity
+  + billing, not something this session has access to). One-time setup:
+  1. Create a Firebase project (or reuse an existing GCP project) at
+     [console.firebase.google.com](https://console.firebase.google.com).
+  2. In that project, create a service account with the **Firebase Test
+     Lab Admin** role (`roles/cloudtestservice.testAdmin`) — Firebase
+     console's project settings → Service Accounts page can generate one
+     directly — and download its JSON key.
+  3. Add the JSON key as a GitHub Actions **secret** named
+     `FIREBASE_SERVICE_ACCOUNT_KEY` (the whole file contents).
+  4. Add the project's ID as a GitHub Actions **variable** (not secret —
+     project IDs aren't sensitive) named `FIREBASE_PROJECT_ID`.
+
+  The workflow skips cleanly with a warning if either isn't set yet.
+
+**Untested as of this commit** — built from Detox's own verified build
+output (confirmed by actually running `expo prebuild` and inspecting the
+generated Gradle files and Detox's APK-path-deriving source, not guessed
+from docs — most of the reference docs for this specific combination
+were unreachable from the sandbox that wrote it) and the documented
+Detox-build-then-hand-off-to-`gcloud`-directly pattern other teams use
+for this combination, but there was no real GCP project available to run
+it against. The Firebase Test Lab device string
+(`model=Pixel2,version=30`) in particular is a guess at a
+long-available catalog entry, not a verified-current one — if it's been
+retired, `gcloud firebase test android models list` (once authenticated)
+shows current options. Expect the first real run to need at least one
+debugging round, the same as Stage 2's EAS project-linking issues did.
+
+**Final gate — a human on a real device, for whatever Stage 3 doesn't
+cover.** Plaid Link's native OAuth-redirect flow in particular isn't
+scripted yet (Plaid's sandbox does ship fixed test credentials,
+`user_good`/`pass_good`, that a future spec could drive) — that and
+anything Stage 3 doesn't reach are still a manual install-and-tap.
 
 ### Test login (skipping Google's sign-in screen)
 
@@ -235,17 +283,14 @@ synthetic monitor already uses) without touching Google at all.
 - **Scoped to one hardcoded account.** The function ignores any email the
   caller sends and always mints a session for the same designated dummy
   account — it can't be used to bypass sign-in for a real user.
-- **Requires one manual setup step**, not yet done as of this commit: set
-  `TEST_LOGIN_SECRET` as an Edge Function secret on the Supabase project
-  (Project Settings → Edge Functions → Secrets, or
-  `supabase secrets set TEST_LOGIN_SECRET=<value> --project-ref bidorjtgbhuihppsznkc`),
-  matching the value baked into `eas.json`. Until that's set, the
-  function returns a clean 500 rather than silently failing.
+- **`TEST_LOGIN_SECRET`** is set as an Edge Function secret on the
+  Supabase project, matching the value baked into `eas.json`.
 
-This unblocks real scripted UI testing (Maestro, Detox, or otherwise)
-past the login wall, whenever one of those gets built — the auth part of
-that problem is solved regardless of which tool ends up driving the rest
-of the flow.
+This is what Stage 3 (below) actually drives to get past the login wall
+— `e2e/testLogin.test.js` taps the "Sign in as test user" link and
+asserts Home renders, the first real end-to-end exercise of this
+function (nothing in this sandbox could invoke its HTTP endpoint
+directly to check it ahead of time — see that spec's comments).
 
 ## Before shipping to a store
 
