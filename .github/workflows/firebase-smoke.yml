@@ -74,6 +74,22 @@ jobs:
           SA_EMAIL=$(gcloud config get-value account 2>/dev/null)
           echo "Roles currently granted to $SA_EMAIL on $FIREBASE_PROJECT:"
           gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.members:$SA_EMAIL" --format="table(bindings.role)"
+
+          # Diagnostic only. Every error this pipeline has hit cites project
+          # number 368080898165 (apps-4b900's numeric id), and the "fetching
+          # the default results bucket" 403 persists even with billing
+          # confirmed on, all required APIs enabled, and both
+          # cloudtestservice.admin and storage.admin granted to our own
+          # service account. One remaining real hypothesis: GCP's own Google
+          # APIs Service Agent (<project-number>@cloudservices.gserviceaccount.com),
+          # which several GCP services use internally to provision default
+          # resources, might be missing its usual Editor binding on this
+          # project. Printed here so the next run either confirms or rules
+          # this out with real data instead of another guess.
+          PROJECT_NUMBER=$(gcloud projects describe "$FIREBASE_PROJECT" --format="value(projectNumber)")
+          echo "Roles currently granted to the Google APIs Service Agent (${PROJECT_NUMBER}@cloudservices.gserviceaccount.com) on $FIREBASE_PROJECT:"
+          gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.members:${PROJECT_NUMBER}@cloudservices.gserviceaccount.com" --format="table(bindings.role)"
+
           HAS_ROLE=$(gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.role:roles/cloudtestservice.admin AND bindings.members:$SA_EMAIL" --format="value(bindings.members)")
           if [ -z "$HAS_ROLE" ]; then
             MISSING="${MISSING}\n  - Role 'roles/cloudtestservice.admin' not found for $SA_EMAIL on project $FIREBASE_PROJECT -- see the role table printed above for what's actually granted"
