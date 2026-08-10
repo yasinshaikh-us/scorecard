@@ -103,9 +103,14 @@ testing (see `mobile/README.md`'s "Test login" / "Test Plaid Link"
 sections) and aren't needed for the web app itself:
 `supabase functions deploy test-login --no-verify-jwt` and
 `supabase functions deploy test-plaid-link` (this one keeps `verify_jwt`
-enabled, like the five above — it needs a real signed-in user). Both also
-need their own Edge Function secret (`TEST_LOGIN_SECRET` /
-`TEST_PLAID_LINK_SECRET`) set before they'll do anything.
+enabled, like the five above — it needs a real signed-in user). `test-login`
+needs its own Edge Function secret (`TEST_LOGIN_SECRET`) set before it'll do
+anything. `test-plaid-link` needs three: `TEST_PLAID_LINK_SECRET`, plus
+`PLAID_SANDBOX_CLIENT_ID` / `PLAID_SANDBOX_SECRET` — dedicated Plaid
+**Sandbox** credentials (from your Plaid Dashboard's Sandbox tab),
+deliberately separate from this project's real `PLAID_CLIENT_ID`/
+`PLAID_SECRET` above, since `test-plaid-link` uses its own isolated Sandbox
+client (`_shared/plaidSandbox.ts`) rather than the shared one those back.
 
 ## 5. Install on your phone (PWA)
 
@@ -194,7 +199,8 @@ failure surfaces before the slower browser test ever runs.
 │   │   ├── plaidExchangeLogic.ts  # pure duplicate-account detection logic
 │   │   ├── plaidExchangeLogic.test.ts
 │   │   ├── querySystemPrompt.ts   # builds the NL-query system prompt
-│   │   ├── plaid.ts               # shared Plaid client
+│   │   ├── plaid.ts               # shared Plaid client (real, Production-configured)
+│   │   ├── plaidSandbox.ts        # dedicated Sandbox-only Plaid client, test-plaid-link only
 │   │   └── supabaseAdmin.ts       # shared service-role Supabase client
 │   ├── transactions/index.ts      # replaces the old api/transactions.js
 │   ├── plaid-link-token/index.ts
