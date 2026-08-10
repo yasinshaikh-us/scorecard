@@ -1,13 +1,18 @@
 name: Mobile Detox (Firebase Test Lab)
 
-# Stage 3 of the mobile testing pyramid: real scripted UI flows (tap,
+# Stage 2 of the mobile testing pyramid: real scripted UI flows (tap,
 # assert, tap again) running against a real Android virtual device --
-# Stage 1 (mobile-ci.yml) only proves the JS is sound, Stage 2
-# (mobile-build.yml) only proves it compiles into a real binary; neither
-# actually taps through the app. This does, using Detox to build an
-# instrumented Android APK pair and Firebase Test Lab's free virtual
-# device quota (Spark plan: 10 virtual-device runs/day, no cost) to run
-# them -- no emulator needed in this repo's CI or anywhere else.
+# Stage 1 (mobile-ci.yml) only proves the JS is sound; neither it nor
+# Stage 3's EAS build (mobile-build.yml) actually taps through the app.
+# This does, using Detox to build an instrumented Android APK pair and
+# Firebase Test Lab's free virtual device quota (Spark plan: 10
+# virtual-device runs/day, no cost) to run them -- no emulator needed in
+# this repo's CI or anywhere else.
+#
+# Deliberately placed before Stage 3: this builds via a direct Gradle
+# invocation (not EAS's cloud build) and runs entirely on free-tier
+# resources, so it's the gate that has to pass before Stage 3 spends any
+# real EAS build minutes producing the actual human-installable binary.
 #
 # Manual-dispatch only -- this is the slowest and least-proven stage
 # (a real native Gradle build plus a cloud device run), not something to
@@ -59,7 +64,7 @@ jobs:
         run: |
           if [ -z "$FIREBASE_KEY" ] || [ -z "$FIREBASE_PROJECT" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::FIREBASE_SERVICE_ACCOUNT_KEY secret and/or FIREBASE_PROJECT_ID variable not set -- skipping. See mobile/README.md's Stage 3 setup section."
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT_KEY secret and/or FIREBASE_PROJECT_ID variable not set -- skipping. See mobile/README.md's Stage 2 setup section."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
