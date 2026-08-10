@@ -230,7 +230,13 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: |
           sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
-          echo "org.gradle.caching=true" >> android/gradle.properties
+          # android/gradle.properties (Expo's generated file) doesn't end
+          # with a trailing newline -- `echo ... >>` alone would concatenate
+          # straight onto the last line (e.g. "org.gradle.workers.max=26")
+          # instead of adding a new one, corrupting that property's value
+          # (run 31346936174 failed with 'For input string:
+          # "26org.gradle.caching=true"' from exactly this).
+          printf '\norg.gradle.caching=true\n' >> android/gradle.properties
 
       # Builds the app + androidTest APK pair (.detoxrc.js's
       # android.release build command) -- this is a real Gradle build,
