@@ -1,12 +1,20 @@
 name: Mobile Build
 
-# Stage 2 of the mobile testing pyramid: confirms the app actually
-# compiles into a real native binary via EAS Build, not just that the JS
-# bundles cleanly (Stage 1's tsc/jest/expo-export can't catch a broken
-# Gradle config or native-module linking issue -- react-native-plaid-link-sdk
-# in particular). Runs in Expo's cloud, so this needs no Xcode/Android
-# Studio here, only an EXPO_TOKEN repo secret (see mobile/README.md for
-# how to create one).
+# Stage 3 (final automated stage) of the mobile testing pyramid: produces
+# the actual human-installable binary via EAS Build. Deliberately last --
+# EAS build minutes are the one paid/metered resource in this pyramid, so
+# they're only spent once Stage 1 (fast checks) and Stage 2
+# (mobile-detox.yml's real scripted UI flows on Firebase Test Lab, all
+# free-tier) have already given confidence the app works, rather than
+# packaging a build that might be broken in ways only device-level
+# testing catches.
+#
+# Confirms the app compiles into a real native binary via EAS's own cloud
+# build -- a different toolchain than Stage 2's direct Gradle invocation,
+# with its own project-linking/credential handling that can fail
+# independently of Gradle itself (see mobile/README.md). Runs in Expo's
+# cloud, so this needs no Xcode/Android Studio here, only an EXPO_TOKEN
+# repo secret (see mobile/README.md for how to create one).
 #
 # Manual-dispatch only -- EAS build minutes aren't unlimited on free
 # tiers, and there's no reason to burn them on every push while the app

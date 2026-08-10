@@ -162,9 +162,12 @@ attempted to verify blind.
 
 ## Automated testing
 
-A two-stage pyramid: the bulk of testing is automated and runs without a
-phone, so a human is only needed at the final gate (installing a real
-build and using it).
+A three-stage pyramid: the bulk of testing is automated and runs without
+a phone, so a human is only needed at the final gate (installing a real
+build and using it). The one paid/metered stage (EAS build, Stage 3) is
+deliberately last: Stage 2 already proves the app actually works, via
+real scripted device tests on free-tier resources, before any real build
+minutes get spent producing the artifact a human installs.
 
 **Stage 1 — cheap and fast, runs on every push/PR that touches `mobile/`**
 (`.github/workflows/mobile-ci.yml`, a few seconds to a couple minutes,
@@ -192,24 +195,18 @@ None of this needs a device, emulator, EAS account, or paid service —
 it's the same kind of check `tsc`/`expo export`/`jest` would give on a
 local machine, just running automatically on every change.
 
-**Stage 2 — EAS build verification, on demand**
-(`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build
-minutes aren't free): confirms the app compiles into a real native
-binary, not just that the JS bundles cleanly — `tsc`/`expo export` can't
-catch a broken Gradle config or native-module linking issue (relevant
-here given `react-native-plaid-link-sdk`). Needs an `EXPO_TOKEN` repo
-secret: create one at `expo.dev` → account settings → **Access Tokens**,
-add it as a GitHub Actions secret named `EXPO_TOKEN`.
-
-**Stage 3 — scripted UI flows on Firebase Test Lab, on demand**
+**Stage 2 — scripted UI flows on Firebase Test Lab, on demand**
 (`.github/workflows/mobile-detox.yml`, manual-dispatch — a real native
-Gradle build plus a cloud device run, the slowest and newest stage here):
-[Detox](https://github.com/wix/Detox) builds an instrumented Android APK
-pair (`npx detox build -c android.release`, via `.detoxrc.js`), and
-Firebase Test Lab runs it as a standard Android instrumentation test on a
-real virtual device — Firebase's Spark (free) plan includes 10
-virtual-device test runs/day, no cost. This is real scripted coverage
-(tap, assert, tap again), not just "did it crash" — see `e2e/*.test.js`.
+Gradle build plus a cloud device run): [Detox](https://github.com/wix/Detox)
+builds an instrumented Android APK pair (`npx detox build -c
+android.release`, via `.detoxrc.js`), and Firebase Test Lab runs it as a
+standard Android instrumentation test on a real virtual device —
+Firebase's Spark (free) plan includes 10 virtual-device test runs/day, no
+cost. This is real scripted coverage (tap, assert, tap again), not just
+"did it crash" — see `e2e/*.test.js`. Builds via a direct Gradle
+invocation on the runner itself, not EAS's cloud build, so it proves the
+app actually compiles and works before Stage 3 spends any paid EAS build
+minutes on it.
 
 Two things this needed that earlier stages didn't:
 
@@ -261,13 +258,27 @@ it against. The Firebase Test Lab device string
 long-available catalog entry, not a verified-current one — if it's been
 retired, `gcloud firebase test android models list` (once authenticated)
 shows current options. Expect the first real run to need at least one
-debugging round, the same as Stage 2's EAS project-linking issues did.
+debugging round, the same as Stage 3's EAS project-linking issues did.
 
-**Final gate — a human on a real device, for whatever Stage 3 doesn't
+**Stage 3 — EAS build verification, produces the human-installable binary**
+(`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build
+minutes aren't free): confirms the app compiles into a real native
+binary via EAS's own cloud build — a different toolchain than Stage 2's
+direct Gradle invocation, with its own project-linking/credential
+handling that can fail independently of Gradle itself. Deliberately last: this is the one
+paid/metered stage in the pyramid, so it only runs once Stage 2's real
+device tests already give confidence the app works, rather than
+packaging a build that might be broken in ways only device-level testing
+catches. Needs an `EXPO_TOKEN` repo secret: create one at `expo.dev` →
+account settings → **Access Tokens**, add it as a GitHub Actions secret
+named `EXPO_TOKEN`.
+
+**Final gate — a human on a real device, for whatever Stage 2 doesn't
 cover.** Plaid Link's native OAuth-redirect flow in particular isn't
 scripted yet (Plaid's sandbox does ship fixed test credentials,
 `user_good`/`pass_good`, that a future spec could drive) — that and
-anything Stage 3 doesn't reach are still a manual install-and-tap.
+anything Stage 2 doesn't reach are still a manual install-and-tap, using
+the binary Stage 3 produces.
 
 ### Test login (skipping Google's sign-in screen)
 
@@ -297,7 +308,7 @@ synthetic monitor already uses) without touching Google at all.
 - **`TEST_LOGIN_SECRET`** is set as an Edge Function secret on the
   Supabase project, matching the value baked into `eas.json`.
 
-This is what Stage 3 (below) actually drives to get past the login wall
+This is what Stage 2 (above) actually drives to get past the login wall
 — `e2e/testLogin.test.js` taps the "Sign in as test user" link and
 asserts Home renders, the first real end-to-end exercise of this
 function (nothing in this sandbox could invoke its HTTP endpoint
