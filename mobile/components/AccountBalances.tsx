@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useAuth } from "../lib/AuthProvider";
+import { useAuth, TEST_LOGIN_ENABLED } from "../lib/AuthProvider";
 import { supabase } from "../lib/supabase";
 import { functionUrl } from "../lib/functionsClient";
 import { fmtMoney } from "../lib/format";
@@ -25,6 +25,8 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   const [refreshKey, setRefreshKey] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [disconnect, setDisconnect] = useState<DisconnectState | null>(null);
+  const [testLinking, setTestLinking] = useState(false);
+  const [testLinkError, setTestLinkError] = useState<string | null>(null);
 
   const loadBalances = useCallback(async () => {
     const [accountsRes, balancesRes] = await Promise.all([
@@ -92,21 +94,67 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
     }
   }
 
+  // Seeds a Plaid Sandbox-linked bank account via the test-plaid-link
+  // Edge Function instead of driving Plaid Link's own hosted UI, which
+  // this app doesn't own and can't reliably script (native WebView
+  // content, no stable testIDs to match against) -- see
+  // mobile/README.md's "Test Plaid Link" section and Detox's own
+  // e2e/testPlaidLink.test.js. Only rendered in development/preview
+  // builds, same gate as the "Sign in as test user" link.
+  async function startTestLink() {
+    if (!session) return;
+    setTestLinking(true);
+    setTestLinkError(null);
+    try {
+      const secret = process.env.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET;
+      if (!secret) throw new Error("Test Plaid link isn't enabled in this build.");
+
+      const resp = await fetch(functionUrl("test-plaid-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ secret }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => null);
+        throw new Error(data?.error || "Test Plaid link failed");
+      }
+      setRefreshKey((k) => k + 1);
+      onLinked?.();
+    } catch (e) {
+      setTestLinkError(e instanceof Error ? e.message : "Test Plaid link failed");
+    } finally {
+      setTestLinking(false);
+    }
+  }
+
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
         <Text style={styles.headerLabel}>Banks</Text>
-        {!showConfirm && !disconnect && (
-          <Pressable onPress={() => setShowConfirm(true)} disabled={connecting} style={styles.addBtn}>
-            <Text style={styles.addBtnText}>{connecting ? "Connecting…" : "+ Add bank"}</Text>
-          </Pressable>
-        )}
+        <View style={styles.headerButtons}>
+          {TEST_LOGIN_ENABLED ? (
+            <Pressable
+              testID="test-plaid-link-button"
+              onPress={startTestLink}
+              disabled={testLinking}
+              hitSlop={6}
+              style={styles.testLinkBtn}
+            >
+              <Text style={styles.testLinkBtnText}>{testLinking ? "Linking…" : "Link test bank"}</Text>
+            </Pressable>
+          ) : null}
+          {!showConfirm && !disconnect && (
+            <Pressable onPress={() => setShowConfirm(true)} disabled={connecting} style={styles.addBtn}>
+              <Text style={styles.addBtnText}>{connecting ? "Connecting…" : "+ Add bank"}</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {balances.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.row}>
           {balances.map((b) => (
-            <View key={b.id} style={styles.chip}>
+            <View key={b.id} testID="linked-account-chip" style={styles.chip}>
               <View style={styles.chipTopRow}>
                 <Text style={styles.chipLabel} numberOfLines={1}>
                   {b.label}
@@ -185,6 +233,7 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
         </View>
       )}
       {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
+      {testLinkError ? <Text style={styles.error}>{testLinkError}</Text> : null}
     </View>
   );
 }
@@ -194,8 +243,11 @@ const styles = StyleSheet.create({
   loading: { marginVertical: 20 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginBottom: 8 },
   headerLabel: { fontSize: 12, fontWeight: "700", color: "#999", textTransform: "uppercase" },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 12 },
   addBtn: {},
   addBtnText: { color: "#1a73e8", fontSize: 13, fontWeight: "600" },
+  testLinkBtn: {},
+  testLinkBtnText: { color: "#999", fontSize: 12, textDecorationLine: "underline" },
   row: { paddingLeft: 16 },
   empty: { paddingHorizontal: 16, color: "#888" },
   chip: { backgroundColor: "#f2f2f2", borderRadius: 12, padding: 12, marginRight: 10, minWidth: 150 },

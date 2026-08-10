@@ -285,11 +285,13 @@ build's own log on `expo.dev`. First hit (and fixed) on the first real
 earlier project-linking issues.
 
 **Final gate — a human on a real device, for whatever Stage 2 doesn't
-cover.** Plaid Link's native OAuth-redirect flow in particular isn't
-scripted yet (Plaid's sandbox does ship fixed test credentials,
-`user_good`/`pass_good`, that a future spec could drive) — that and
-anything Stage 2 doesn't reach are still a manual install-and-tap, using
-the binary Stage 3 produces.
+cover.** Plaid Link's own hosted UI (native WebView content this app
+doesn't own, no stable testIDs to match against) still isn't scripted --
+see "Test Plaid Link" below for how the *backend* half of that flow (does
+linking actually work: token exchange, DB writes, RLS-scoped reads,
+balance display) is covered instead, without needing to drive that UI.
+Real-device install-and-tap is still how you'd catch a Link UI rendering
+bug specifically, or anything else Stage 2 doesn't reach.
 
 ### Test login (skipping Google's sign-in screen)
 
@@ -324,6 +326,52 @@ This is what Stage 2 (above) actually drives to get past the login wall
 asserts Home renders, the first real end-to-end exercise of this
 function (nothing in this sandbox could invoke its HTTP endpoint
 directly to check it ahead of time — see that spec's comments).
+
+### Test Plaid Link (skipping Plaid's own hosted Link UI)
+
+Plaid Link's own UI is a native WebView Plaid controls, not this app --
+no stable `testID`s to script against, and Plaid can change it
+independent of anything this app does. Rather than fight that,
+`supabase/functions/test-plaid-link` mints a real Plaid **Sandbox**
+`public_token` directly via Plaid's own `/sandbox/public_token/create`
+endpoint (against `ins_109508`, "First Platypus Bank" -- Plaid's
+standard always-available Sandbox institution, the same one the fixed
+`user_good`/`pass_good` test credentials work against, though this
+endpoint doesn't even need those -- it mints a token as if that login
+had already happened) and runs it through the **real** production
+`plaid-exchange` + `syncItemTransactions` pipeline. This verifies the
+part of Plaid linking this app actually owns and could have real bugs in
+-- token exchange, `plaid_items`/`plaid_accounts` writes, RLS-scoped
+reads, balance/transaction sync, and the Home screen actually rendering
+the result -- without the fragility of scripting Plaid's own UI.
+
+- **Gated the same way as test login**, plus one more check: `eas.json`'s
+  `development`/`preview` profiles set a separate
+  `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET` (independently rotatable from
+  `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same reasoning), and the Edge Function
+  itself additionally refuses to run unless `PLAID_ENV` is actually
+  `"sandbox"` on the Supabase project -- this can never touch a real bank
+  or a real Plaid environment, even if the secret leaked.
+- **Idempotent.** Before linking, it disconnects any bank already linked
+  to the test account (via the real `plaid-disconnect` function, so
+  Items are properly revoked at Plaid too) -- Plaid's Sandbox test data
+  (including account/routing numbers) is deterministic per institution,
+  so without this a second CI run would look like the exact same real
+  account relinking, and `plaid-exchange`'s own duplicate-account
+  detection would reject it.
+- **`TEST_PLAID_LINK_SECRET`** is set as an Edge Function secret on the
+  Supabase project (same place as `TEST_LOGIN_SECRET`), matching the
+  value baked into `eas.json`. Unlike `test-login`, this function needs
+  `verify_jwt` enabled (the platform default, same as `plaid-exchange`)
+  since it writes real rows scoped to a real signed-in user -- deploy it
+  the normal way (`supabase functions deploy test-plaid-link`), not with
+  `--no-verify-jwt`.
+- **Triggered from the app, not called directly by the test.** A "Link
+  test bank" button (`components/AccountBalances.tsx`, same
+  `EXPO_PUBLIC_ENABLE_TEST_LOGIN` gate as "Sign in as test user") calls
+  it with the already-signed-in session's token -- `e2e/testPlaidLink.test.js`
+  signs in via test login, taps that button, then waits for the linked
+  account to actually show up in the Banks strip.
 
 ## Before shipping to a store
 

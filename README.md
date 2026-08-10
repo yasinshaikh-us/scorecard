@@ -98,6 +98,15 @@ exception in this project (deployed with `--no-verify-jwt`, since Plaid
 calls it directly, not a signed-in user) — see
 `supabase/functions/plaid-webhook`.
 
+Two more functions exist purely to support the mobile app's automated
+testing (see `mobile/README.md`'s "Test login" / "Test Plaid Link"
+sections) and aren't needed for the web app itself:
+`supabase functions deploy test-login --no-verify-jwt` and
+`supabase functions deploy test-plaid-link` (this one keeps `verify_jwt`
+enabled, like the five above — it needs a real signed-in user). Both also
+need their own Edge Function secret (`TEST_LOGIN_SECRET` /
+`TEST_PLAID_LINK_SECRET`) set before they'll do anything.
+
 ## 5. Install on your phone (PWA)
 
 Open the deployed URL on your phone:
@@ -194,7 +203,8 @@ failure surfaces before the slower browser test ever runs.
 │   ├── query/index.ts             # holds the Anthropic key server-side
 │   ├── plaid-webhook/index.ts     # Plaid calls this directly, --no-verify-jwt
 │   ├── plaid-balance-refresh/index.ts  # hourly pg_cron job
-│   └── test-login/index.ts        # mobile testing only -- see mobile/README.md
+│   ├── test-login/index.ts        # mobile testing only -- see mobile/README.md
+│   └── test-plaid-link/index.ts   # mobile testing only -- see mobile/README.md
 ├── src/
 │   ├── App.jsx          # auth gate (Login vs dashboard) + the dashboard itself
 │   ├── Login.jsx        # "Continue with Google" screen
