@@ -116,7 +116,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
       <View style={styles.screen}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Rules Engine</Text>
-          <Pressable onPress={onClose} hitSlop={8}>
+          <Pressable testID="rules-close-button" onPress={onClose} hitSlop={8}>
             <Text style={styles.close}>×</Text>
           </Pressable>
         </View>
@@ -132,22 +132,22 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
               {confirmDeleteId === r.id ? (
                 <View style={styles.deleteConfirmRow}>
                   <Text style={styles.deleteConfirmText}>Delete this rule?</Text>
-                  <Pressable onPress={() => setConfirmDeleteId(null)} style={styles.cancelBtn}>
+                  <Pressable testID="rule-delete-cancel-button" onPress={() => setConfirmDeleteId(null)} style={styles.cancelBtn}>
                     <Text style={styles.cancelBtnText}>Cancel</Text>
                   </Pressable>
-                  <Pressable onPress={() => deleteRule(r)} style={styles.deleteBtn}>
+                  <Pressable testID="rule-delete-confirm-button" onPress={() => deleteRule(r)} style={styles.deleteBtn}>
                     <Text style={styles.deleteBtnText}>Delete</Text>
                   </Pressable>
                 </View>
               ) : (
                 <>
-                  <Switch value={r.enabled} onValueChange={() => toggleRule(r)} />
+                  <Switch testID="rule-switch-toggle" value={r.enabled} onValueChange={() => toggleRule(r)} />
                   <Text style={styles.ruleText}>
                     if {r.match_field} contains "{r.match_value}"
                     {r.set_category ? ` → category ${r.set_category}` : ""}
                     {r.set_payee ? ` → payee ${r.set_payee}` : ""}
                   </Text>
-                  <Pressable onPress={() => setConfirmDeleteId(r.id)} hitSlop={8}>
+                  <Pressable testID="rule-delete-button" onPress={() => setConfirmDeleteId(r.id)} hitSlop={8}>
                     <Text style={styles.trash}>🗑</Text>
                   </Pressable>
                 </>
@@ -158,12 +158,13 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
           <View style={styles.form}>
             <View style={styles.formLine}>
               <Text style={styles.formLabel}>If</Text>
-              <Pressable style={styles.selectBtn} onPress={() => setMatchFieldPickerOpen(true)}>
+              <Pressable testID="rule-match-field-button" style={styles.selectBtn} onPress={() => setMatchFieldPickerOpen(true)}>
                 <Text style={styles.selectBtnText}>{form.matchField === "payee" ? "Payee" : "Category"}</Text>
               </Pressable>
               <Text style={styles.formLabel}>contains</Text>
             </View>
             <TextInput
+              testID="rule-match-value-input"
               style={styles.input}
               placeholder="e.g. starbucks"
               value={form.matchValue}
@@ -172,11 +173,12 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
 
             <View style={styles.formLine}>
               <Text style={styles.formLabel}>set category to</Text>
-              <Pressable style={styles.selectBtn} onPress={() => setCategoryPickerOpen(true)}>
+              <Pressable testID="rule-category-select-button" style={styles.selectBtn} onPress={() => setCategoryPickerOpen(true)}>
                 <Text style={styles.selectBtnText}>{form.setCategory || "(no change)"}</Text>
               </Pressable>
             </View>
             <TextInput
+              testID="rule-set-payee-input"
               style={styles.input}
               placeholder="and payee to (optional)"
               value={form.setPayee}
@@ -184,12 +186,12 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
             />
 
             <Text style={styles.hint}>New rules are added at the bottom of the list and win any conflict with rules above them.</Text>
-            <Pressable style={[styles.addBtn, saving && styles.disabled]} onPress={addRule} disabled={saving}>
+            <Pressable testID="add-rule-button" style={[styles.addBtn, saving && styles.disabled]} onPress={addRule} disabled={saving}>
               <Text style={styles.addBtnText}>{saving ? "Saving…" : "Add rule"}</Text>
             </Pressable>
           </View>
 
-          {status ? <Text style={styles.status}>{status}</Text> : null}
+          {status ? <Text testID="rules-status" style={styles.status}>{status}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
       </View>

@@ -59,17 +59,29 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
   if (editing) {
     return (
       <View style={styles.row}>
-        <TextInput style={styles.editInput} value={draftPayee} onChangeText={setDraftPayee} editable={!saving} autoFocus />
-        <Pressable style={styles.categorySelectBtn} onPress={() => setCategoryPickerOpen(true)} disabled={saving}>
+        <TextInput
+          testID="transaction-edit-payee-input"
+          style={styles.editInput}
+          value={draftPayee}
+          onChangeText={setDraftPayee}
+          editable={!saving}
+          autoFocus
+        />
+        <Pressable
+          testID="transaction-edit-category-button"
+          style={styles.categorySelectBtn}
+          onPress={() => setCategoryPickerOpen(true)}
+          disabled={saving}
+        >
           <Text style={styles.categorySelectText} numberOfLines={1}>
             {draftCategory}
           </Text>
         </Pressable>
         <View style={styles.editActions}>
-          <Pressable onPress={() => setEditing(false)} disabled={saving} style={styles.cancelBtn}>
+          <Pressable testID="transaction-edit-cancel-button" onPress={() => setEditing(false)} disabled={saving} style={styles.cancelBtn}>
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </Pressable>
-          <Pressable onPress={save} disabled={saving} style={styles.saveBtn}>
+          <Pressable testID="transaction-edit-save-button" onPress={save} disabled={saving} style={styles.saveBtn}>
             <Text style={styles.saveBtnText}>{saving ? "Saving…" : "Save"}</Text>
           </Pressable>
         </View>
@@ -87,14 +99,14 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
 
   const color = catColor(row.Category, CATS, topCategory);
   return (
-    <Pressable style={styles.row} onPress={row.Id != null ? startEdit : undefined} disabled={row.Id == null}>
+    <Pressable testID="transaction-row" style={styles.row} onPress={row.Id != null ? startEdit : undefined} disabled={row.Id == null}>
       <View style={styles.main}>
         <Text style={styles.payee} numberOfLines={1}>
           {row.Payee}
         </Text>
         <View style={styles.metaRow}>
           <View style={[styles.categoryBadge, { backgroundColor: color + "26" }]}>
-            <Text style={[styles.categoryText, { color }]} numberOfLines={1}>
+            <Text testID="transaction-category-badge" style={[styles.categoryText, { color }]} numberOfLines={1}>
               {row.Category}
             </Text>
           </View>

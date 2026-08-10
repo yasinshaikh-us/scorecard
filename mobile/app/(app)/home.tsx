@@ -45,10 +45,10 @@ export default function Home() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Fathom</Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={() => setRulesOpen(true)} hitSlop={8}>
+          <Pressable testID="rules-button" onPress={() => setRulesOpen(true)} hitSlop={8}>
             <Text style={styles.headerAction}>Rules</Text>
           </Pressable>
-          <Pressable onPress={() => signOut()} hitSlop={8}>
+          <Pressable testID="sign-out-button" onPress={() => signOut()} hitSlop={8}>
             <Text style={styles.headerAction}>Sign out</Text>
           </Pressable>
         </View>
