@@ -35,9 +35,8 @@ function isTransferFor(tx: any, linkedAccountCount: number) {
   return (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") && linkedAccountCount >= 2;
 }
 
-export async function syncItemTransactions(itemId: string) {
+export async function syncItemTransactions(itemId: string, client: ReturnType<typeof plaidClient> = plaidClient()) {
   const db = supabaseAdmin();
-  const client = plaidClient();
 
   const { data: item, error: itemError } = await db
     .from("plaid_items")

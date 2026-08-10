@@ -338,33 +338,51 @@ endpoint (against `ins_109508`, "First Platypus Bank" -- Plaid's
 standard always-available Sandbox institution, the same one the fixed
 `user_good`/`pass_good` test credentials work against, though this
 endpoint doesn't even need those -- it mints a token as if that login
-had already happened) and runs it through the **real** production
-`plaid-exchange` + `syncItemTransactions` pipeline. This verifies the
-part of Plaid linking this app actually owns and could have real bugs in
--- token exchange, `plaid_items`/`plaid_accounts` writes, RLS-scoped
-reads, balance/transaction sync, and the Home screen actually rendering
-the result -- without the fragility of scripting Plaid's own UI.
+had already happened) and runs it through the same token-exchange +
+sync logic `plaid-exchange`/`syncItemTransactions` use. This verifies
+the part of Plaid linking this app actually owns and could have real
+bugs in -- token exchange, `plaid_items`/`plaid_accounts` writes,
+RLS-scoped reads, balance/transaction sync, and the Home screen actually
+rendering the result -- without the fragility of scripting Plaid's own
+UI.
 
-- **Gated the same way as test login**, plus one more check: `eas.json`'s
-  `development`/`preview` profiles set a separate
-  `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET` (independently rotatable from
-  `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same reasoning), and the Edge Function
-  itself additionally refuses to run unless `PLAID_ENV` is actually
-  `"sandbox"` on the Supabase project -- this can never touch a real bank
-  or a real Plaid environment, even if the secret leaked.
+- **Isolated from the real Plaid connection structurally, not by a
+  runtime check.** This function uses its own dedicated Sandbox-only
+  Plaid client (`supabase/functions/_shared/plaidSandbox.ts`), backed by
+  separate `PLAID_SANDBOX_CLIENT_ID` / `PLAID_SANDBOX_SECRET` Edge
+  Function secrets, hardcoded to Plaid's Sandbox API -- it never reads
+  `PLAID_CLIENT_ID`/`PLAID_SECRET`/`PLAID_ENV` or touches
+  `_shared/plaid.ts`'s shared client at all. That client backs this
+  project's real, Production-linked bank account, and Plaid's Sandbox
+  and Production environments don't interoperate (a Sandbox-minted
+  token can't be exchanged against Production anyway) -- so this
+  function's exchange/cleanup logic is a deliberate, self-contained copy
+  of `plaid-exchange`/`plaid-disconnect`'s logic (adapted to the sandbox
+  client) rather than a call to those functions, which stay untouched.
+- **Gated the same way as test login**: `eas.json`'s `development`/
+  `preview` profiles set a separate `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET`
+  (independently rotatable from `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same
+  reasoning) that must match the `TEST_PLAID_LINK_SECRET` Edge Function
+  secret. Even a leaked secret can only ever link a Sandbox test bank
+  using Sandbox-only credentials that have no access to any real bank
+  data.
 - **Idempotent.** Before linking, it disconnects any bank already linked
-  to the test account (via the real `plaid-disconnect` function, so
-  Items are properly revoked at Plaid too) -- Plaid's Sandbox test data
-  (including account/routing numbers) is deterministic per institution,
-  so without this a second CI run would look like the exact same real
-  account relinking, and `plaid-exchange`'s own duplicate-account
-  detection would reject it.
-- **`TEST_PLAID_LINK_SECRET`** is set as an Edge Function secret on the
-  Supabase project (same place as `TEST_LOGIN_SECRET`), matching the
-  value baked into `eas.json`. Unlike `test-login`, this function needs
-  `verify_jwt` enabled (the platform default, same as `plaid-exchange`)
-  since it writes real rows scoped to a real signed-in user -- deploy it
-  the normal way (`supabase functions deploy test-plaid-link`), not with
+  to the test account (mirroring `plaid-disconnect`'s logic against the
+  sandbox client, so Items are properly revoked at Plaid too) -- Plaid's
+  Sandbox test data (including account/routing numbers) is deterministic
+  per institution, so without this a second CI run would look like the
+  exact same real account relinking, and the duplicate-account detection
+  below would reject it.
+- **Three Edge Function secrets to set** on the Supabase project (same
+  place as `TEST_LOGIN_SECRET`): `TEST_PLAID_LINK_SECRET` (matching the
+  value baked into `eas.json`), and `PLAID_SANDBOX_CLIENT_ID` /
+  `PLAID_SANDBOX_SECRET` (from your Plaid Dashboard's **Sandbox**
+  environment tab -- deliberately separate credentials from this
+  project's real `PLAID_CLIENT_ID`/`PLAID_SECRET`, which stay on
+  Production). Unlike `test-login`, this function needs `verify_jwt`
+  enabled (the platform default, same as `plaid-exchange`) since it
+  writes real rows scoped to a real signed-in user -- deploy it the
+  normal way (`supabase functions deploy test-plaid-link`), not with
   `--no-verify-jwt`.
 - **Triggered from the app, not called directly by the test.** A "Link
   test bank" button (`components/AccountBalances.tsx`, same
