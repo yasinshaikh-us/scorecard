@@ -325,6 +325,21 @@ jobs:
           mkdir -p firebase-test-lab-results
           gcloud storage cp -r "${{ steps.detox-run.outputs.gcs_path }}" firebase-test-lab-results/
 
+          # actions/upload-artifact rejects colons in artifact paths (NTFS
+          # compatibility -- confirmed by run 31431893924's real failure:
+          # "The path for one of the files in artifact is not valid: ...
+          # Contains the following character: Colon"). Firebase Test Lab's
+          # own GCS results directory name is a colon-containing timestamp
+          # (e.g. 2026-08-10_21:08:05.304681_qClG), which `gcloud storage
+          # cp` preserves verbatim as a local directory name -- strip
+          # colons out of every copied path (deepest entries first, so
+          # renaming a parent can't invalidate an already-listed child
+          # path) before the upload step below ever sees it.
+          find firebase-test-lab-results -depth -name '*:*' -print0 |
+            while IFS= read -r -d '' path; do
+              mv "$path" "$(dirname "$path")/$(basename "$path" | tr ':' '-')"
+            done
+
       # Re-hosts Firebase Test Lab's own results as a GitHub Actions
       # artifact -- fetchable directly through the GitHub API (list/download
       # workflow run artifacts) without needing separate Google Cloud
