@@ -27,14 +27,21 @@ module.exports = {
     "android.release": {
       type: "android.apk",
       binaryPath: "android/app/build/outputs/apk/release/app-release.apk",
-      // -PreactNativeArchitectures=x86_64 restricts native compilation to
-      // one ABI instead of the default four (armeabi-v7a, arm64-v8a, x86,
-      // x86_64, per android/gradle.properties) -- this build only ever
-      // runs on Firebase Test Lab's x86_64 virtual devices, so the other
-      // three are pure wasted native-compile time. Found by inspecting a
-      // real `expo prebuild` output after a first real CI run took over
-      // 40 minutes on this step alone.
-      build: "cd android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release -PreactNativeArchitectures=x86_64",
+      // -PreactNativeArchitectures restricts native compilation to one ABI
+      // instead of the default four (armeabi-v7a, arm64-v8a, x86, x86_64,
+      // per android/gradle.properties) -- building all four is pure wasted
+      // native-compile time when only one will ever actually run. Originally
+      // x86_64 (mobile-detox.yml run 31290582438's first real CI attempt
+      // took 40+ min on this step with all four ABIs), matching the
+      // workflow's then-hardcoded model=Pixel2 device (an x86_64 emulator).
+      // Switched to arm64-v8a after PR #85 replaced that hardcoded model
+      // with a live catalog lookup, which now consistently picks
+      // AndroidTablet270dpi.arm -- run 31344289584 confirmed a real x86_64
+      // build fails on that device with "Test is Incompatible Architecture"
+      // (App architecture or requested options are incompatible with this
+      // device), meaning Firebase Test Lab's current virtual device catalog
+      // has shifted to ARM.
+      build: "cd android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release -PreactNativeArchitectures=arm64-v8a",
     },
   },
   devices: {
