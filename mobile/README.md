@@ -273,6 +273,17 @@ catches. Needs an `EXPO_TOKEN` repo secret: create one at `expo.dev` →
 account settings → **Access Tokens**, add it as a GitHub Actions secret
 named `EXPO_TOKEN`.
 
+Also needs **`mobile/.npmrc`** (`legacy-peer-deps=true`, already
+committed). EAS's remote build workers run their own `npm install` in an
+"Install dependencies" phase, separate from any `npm ci` in this repo's
+own CI steps — without this file, that install fails with a real
+`ERESOLVE` peer-dependency conflict (`react-test-renderer@19.2.8`'s peer
+`react` requirement), surfaced only as a generic "Unknown error. See
+logs of the Install dependencies build phase" until you go check the
+build's own log on `expo.dev`. First hit (and fixed) on the first real
+`mobile-build.yml` run (android/preview) that got past this stage's
+earlier project-linking issues.
+
 **Final gate — a human on a real device, for whatever Stage 2 doesn't
 cover.** Plaid Link's native OAuth-redirect flow in particular isn't
 scripted yet (Plaid's sandbox does ship fixed test credentials,
