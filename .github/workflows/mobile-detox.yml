@@ -42,6 +42,13 @@ jobs:
       # password).
       EXPO_PUBLIC_ENABLE_TEST_LOGIN: "true"
       EXPO_PUBLIC_TEST_LOGIN_SECRET: 0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea
+      # Same value baked into eas.json's development/preview profiles --
+      # see mobile/README.md's "Test Plaid Link" section. Independently
+      # rotatable from EXPO_PUBLIC_TEST_LOGIN_SECRET above -- leaking this
+      # one can only ever link a Plaid Sandbox test bank to the same
+      # hardcoded dummy account, gated separately server-side by
+      # PLAID_ENV actually being "sandbox".
+      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: 231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55
     steps:
       # Unconditional and first -- every later step's `run:` shell starts
       # in mobile/ (this job's default working-directory), which doesn't

@@ -1,0 +1,37 @@
+// `device`, `element`, `by`, `expect`, `waitFor` are Detox globals
+// injected by detox/runners/jest/testEnvironment (see e2e/jest.config.js).
+//
+// Exercises Plaid Link end to end WITHOUT driving Plaid's own hosted Link
+// UI, which this app doesn't own and can't reliably script (native
+// WebView content, no stable testIDs to match against -- see
+// mobile/README.md's Stage 2 section). Instead, taps "Link test bank"
+// (see components/AccountBalances.tsx, only rendered when
+// EXPO_PUBLIC_ENABLE_TEST_LOGIN is set), which calls the
+// supabase/functions/test-plaid-link Edge Function -- it mints a real
+// Plaid Sandbox public_token via Plaid's own /sandbox/public_token/create
+// endpoint and runs it through the REAL production plaid-exchange +
+// syncItemTransactions pipeline. This verifies the part of the flow this
+// app actually owns (token exchange, DB writes, RLS-scoped reads, balance
+// display) end to end, without the fragility of scripting a third-party
+// webview.
+describe("Plaid Link (Sandbox, test-seeded)", () => {
+  beforeAll(async () => {
+    await device.launchApp({ newInstance: true, delete: true });
+  });
+
+  it("signs in, links a Sandbox test bank, and shows the linked account on Home", async () => {
+    await element(by.id("test-signin-button")).tap();
+    await waitFor(element(by.id("home-screen")))
+      .toBeVisible()
+      .withTimeout(15000);
+
+    await element(by.id("test-plaid-link-button")).tap();
+    // test-plaid-link chains several real network calls (cleanup,
+    // Plaid's sandboxPublicTokenCreate, the real plaid-exchange, then a
+    // full transactionsSync loop) -- a longer window than the sign-in
+    // wait above.
+    await waitFor(element(by.id("linked-account-chip")))
+      .toBeVisible()
+      .withTimeout(30000);
+  });
+});
