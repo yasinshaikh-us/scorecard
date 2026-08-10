@@ -259,19 +259,17 @@ Two things this needed that earlier stages didn't:
   prerequisites" step catches it in seconds (before the ~13 min build)
   and reports everything missing at once.
 
-**Untested as of this commit** — built from Detox's own verified build
-output (confirmed by actually running `expo prebuild` and inspecting the
-generated Gradle files and Detox's APK-path-deriving source, not guessed
-from docs — most of the reference docs for this specific combination
-were unreachable from the sandbox that wrote it) and the documented
-Detox-build-then-hand-off-to-`gcloud`-directly pattern other teams use
-for this combination, but there was no real GCP project available to run
-it against. The Firebase Test Lab device string
-(`model=Pixel2,version=30`) in particular is a guess at a
-long-available catalog entry, not a verified-current one — if it's been
-retired, `gcloud firebase test android models list` (once authenticated)
-shows current options. Expect the first real run to need at least one
-debugging round, the same as Stage 3's EAS project-linking issues did.
+**Video/screenshots, not just pass/fail.** Firebase Test Lab records the
+whole run (video, periodic screenshots, logcat) — the workflow's last two
+steps parse the GCS results path out of `gcloud`'s own output, download
+that whole prefix, and re-upload it as a `firebase-test-lab-results`
+GitHub Actions artifact (`retention-days: 2`, since these are debugging
+aids for the run that produced them, not something meant to be kept).
+That's what lets a UI change actually be verified visually — by fetching
+the artifact through the GitHub API — rather than only trusting that a
+`toHaveText`/`toBeVisible` assertion passed. Runs via `always()`, so a
+*failed* run's artifacts are fetchable too, showing the screen it
+actually failed on.
 
 **Stage 3 — EAS build verification, produces the human-installable binary**
 (`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build

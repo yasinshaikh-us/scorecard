@@ -33,6 +33,28 @@ it owns. Check PR/CI state directly (e.g. `pull_request_read`) and act
 once the merge criteria above are met — no need to subscribe to or wait
 on GitHub webhook notifications first.
 
+## Stage 2 (Detox/Firebase Test Lab) visual verification
+
+Whenever a Stage 2 run (`mobile-detox.yml`) follows a UI/screen change,
+passing Detox assertions is not the end of verification — a `toHaveText`/
+`toBeVisible` assertion proves a specific value or element is present, not
+that the screen actually renders/looks correct. Claude owns closing that
+loop itself, not the user. Once the run completes:
+
+1. Confirm the "Run Detox specs on Firebase Test Lab" step itself
+   succeeded (not just that the job didn't error elsewhere).
+2. Download the run's `firebase-test-lab-results` artifact via the GitHub
+   API (list/download workflow run artifacts) — don't ask the user to
+   open the Firebase console and look themselves.
+3. Actually view the screenshots/video from it (the Read tool renders
+   images) and check that the screen(s) the change touched look right.
+4. State an explicit visual verdict in the reply — what was checked and
+   whether it looks correct — before calling the change done. "Tests
+   passed" alone is not a finished verification for a UI change.
+
+This is the required last step of Stage 2 for any run tied to a UI
+change, not an optional follow-up.
+
 ## CI check-in cadence
 
 GitHub webhooks reliably push CI *failures* into the conversation, but not
