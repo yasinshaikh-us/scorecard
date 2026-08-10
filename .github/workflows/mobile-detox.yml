@@ -190,6 +190,24 @@ jobs:
       - run: npx expo prebuild --platform android
         if: steps.check.outputs.skip == 'false'
 
+      # android/ only exists after prebuild (previous step), so this has to
+      # run after it -- both to have something real to hash for the cache
+      # key and because the restored ~/.gradle/caches needs to already be in
+      # place before the build step below downloads anything into it.
+      # Restore key falls back to the most recent cache for this OS even on
+      # a key miss (e.g. a dependency bump), so a partial/stale cache still
+      # beats a fully cold one instead of building from scratch.
+      - name: Cache Gradle dependencies + build cache
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/build.gradle', 'mobile/android/app/build.gradle') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       # Expo prebuild's default android/gradle.properties caps the daemon at
       # -Xmx2048m -XX:MaxMetaspaceSize=512m. With org.gradle.parallel=true
       # (also a prebuild default), several Kotlin compile workers run
@@ -203,9 +221,16 @@ jobs:
       # manual cancellation rather than failing outright. ubuntu-latest
       # runners have 16GB available, so there's ample headroom to just give
       # the daemon more room instead of fighting parallelism for it.
-      - name: Raise Gradle daemon memory limits (see prior step's comment)
+      #
+      # org.gradle.caching=true turns on Gradle's own task output cache
+      # (separate from the dependency cache the step above restores) --
+      # without it, a warm ~/.gradle/caches still skips re-downloading
+      # dependencies but every task still re-executes from scratch.
+      - name: Raise Gradle daemon memory limits + enable build cache (see prior steps' comments)
         if: steps.check.outputs.skip == 'false'
-        run: sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
+        run: |
+          sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
+          echo "org.gradle.caching=true" >> android/gradle.properties
 
       # Builds the app + androidTest APK pair (.detoxrc.js's
       # android.release build command) -- this is a real Gradle build,
