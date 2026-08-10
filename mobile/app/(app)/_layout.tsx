@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Text } from "react-native";
+import { Pressable, Text } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { useAuth } from "../../lib/AuthProvider";
 import { DataProvider } from "../../lib/DataProvider";
@@ -51,11 +51,24 @@ export default function AppLayout() {
       <Tabs screenOptions={{ headerShown: false }}>
         <Tabs.Screen
           name="home"
-          options={{ title: "Home", tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🏠</Text> }}
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🏠</Text>,
+            // Default tab labels ("Home") collide with visible in-screen text
+            // elsewhere (e.g. Ask's own "Ask" button) -- a stable testID on
+            // the tab button itself, via this standard react-navigation
+            // customization point, is what e2e/appFlows.test.js switches
+            // tabs with instead of matching by text.
+            tabBarButton: ({ ref: _ref, ...props }) => <Pressable {...props} testID="tab-home-button" />,
+          }}
         />
         <Tabs.Screen
           name="ask"
-          options={{ title: "Ask", tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>💬</Text> }}
+          options={{
+            title: "Ask",
+            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>💬</Text>,
+            tabBarButton: ({ ref: _ref, ...props }) => <Pressable {...props} testID="tab-ask-button" />,
+          }}
         />
       </Tabs>
     </DataProvider>

@@ -16,11 +16,16 @@ export default function PlaidLinkGate({ onDone }: { onDone: () => void }) {
         Link a bank account so new transactions and balances sync in automatically. You can always add this later.
       </Text>
 
-      <Pressable style={[styles.connectBtn, connecting && styles.disabled]} onPress={startLink} disabled={connecting}>
+      <Pressable
+        testID="plaid-gate-connect-button"
+        style={[styles.connectBtn, connecting && styles.disabled]}
+        onPress={startLink}
+        disabled={connecting}
+      >
         <Text style={styles.connectBtnText}>{connecting ? "Connecting…" : "Connect a bank account"}</Text>
       </Pressable>
 
-      <Pressable onPress={onDone} hitSlop={8}>
+      <Pressable testID="plaid-gate-skip-button" onPress={onDone} hitSlop={8}>
         <Text style={styles.skip}>Skip for now</Text>
       </Pressable>
 

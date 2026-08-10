@@ -59,7 +59,7 @@ export default function QueryCard({
       <View style={styles.card}>
         <View style={styles.headerRow}>
           <Text style={styles.question}>"{card.question}"</Text>
-          <Pressable onPress={onRemove} hitSlop={8}>
+          <Pressable testID="query-card-close-button" onPress={onRemove} hitSlop={8}>
             <Text style={styles.close}>×</Text>
           </Pressable>
         </View>
@@ -73,7 +73,7 @@ export default function QueryCard({
       <View style={styles.card}>
         <View style={styles.headerRow}>
           <Text style={styles.question}>"{card.question}"</Text>
-          <Pressable onPress={onRemove} hitSlop={8}>
+          <Pressable testID="query-card-close-button" onPress={onRemove} hitSlop={8}>
             <Text style={styles.close}>×</Text>
           </Pressable>
         </View>
@@ -94,7 +94,7 @@ export default function QueryCard({
           <Text style={styles.question}>"{card.question}"</Text>
           <Text style={styles.title}>{spec.title}</Text>
         </View>
-        <Pressable onPress={onRemove} hitSlop={8}>
+        <Pressable testID="query-card-close-button" onPress={onRemove} hitSlop={8}>
           <Text style={styles.close}>×</Text>
         </Pressable>
       </View>

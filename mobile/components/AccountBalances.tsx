@@ -144,7 +144,7 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             </Pressable>
           ) : null}
           {!showConfirm && !disconnect && (
-            <Pressable onPress={() => setShowConfirm(true)} disabled={connecting} style={styles.addBtn}>
+            <Pressable testID="add-bank-button" onPress={() => setShowConfirm(true)} disabled={connecting} style={styles.addBtn}>
               <Text style={styles.addBtnText}>{connecting ? "Connecting…" : "+ Add bank"}</Text>
             </Pressable>
           )}
@@ -159,7 +159,7 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
                 <Text style={styles.chipLabel} numberOfLines={1}>
                   {b.label}
                 </Text>
-                <Pressable onPress={() => startDisconnect(b)} hitSlop={6}>
+                <Pressable testID="disconnect-button" onPress={() => startDisconnect(b)} hitSlop={6}>
                   <Text style={styles.disconnectIcon}>⛓️‍💥</Text>
                 </Pressable>
               </View>
@@ -175,10 +175,11 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
         <View style={styles.confirmBanner}>
           <Text style={styles.confirmText}>Only checking / savings accounts can be connected.</Text>
           <View style={styles.confirmActions}>
-            <Pressable onPress={() => setShowConfirm(false)} style={styles.cancelBtn}>
+            <Pressable testID="add-bank-cancel-button" onPress={() => setShowConfirm(false)} style={styles.cancelBtn}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </Pressable>
             <Pressable
+              testID="add-bank-proceed-button"
               onPress={() => {
                 setShowConfirm(false);
                 startLink();
@@ -202,10 +203,14 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             Existing transaction history is kept for 90 days in case you reconnect, then permanently deleted.
           </Text>
           <View style={styles.confirmActions}>
-            <Pressable onPress={() => setDisconnect(null)} style={styles.cancelBtn}>
+            <Pressable testID="disconnect-cancel-button" onPress={() => setDisconnect(null)} style={styles.cancelBtn}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </Pressable>
-            <Pressable onPress={() => setDisconnect((d) => (d ? { ...d, step: 2 } : d))} style={styles.proceedBtn}>
+            <Pressable
+              testID="disconnect-continue-button"
+              onPress={() => setDisconnect((d) => (d ? { ...d, step: 2 } : d))}
+              style={styles.proceedBtn}
+            >
               <Text style={styles.proceedBtnText}>Continue</Text>
             </Pressable>
           </View>
@@ -220,10 +225,15 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             access, and after 90 days any transaction history that isn't reconnected is gone for good.
           </Text>
           <View style={styles.confirmActions}>
-            <Pressable onPress={() => setDisconnect(null)} disabled={disconnect.submitting} style={styles.cancelBtn}>
+            <Pressable
+              testID="disconnect-final-cancel-button"
+              onPress={() => setDisconnect(null)}
+              disabled={disconnect.submitting}
+              style={styles.cancelBtn}
+            >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </Pressable>
-            <Pressable onPress={confirmDisconnect} disabled={disconnect.submitting} style={styles.deleteBtn}>
+            <Pressable testID="disconnect-confirm-button" onPress={confirmDisconnect} disabled={disconnect.submitting} style={styles.deleteBtn}>
               <Text style={styles.deleteBtnText}>
                 {disconnect.submitting ? "Disconnecting…" : `Yes, disconnect ${disconnect.label}`}
               </Text>

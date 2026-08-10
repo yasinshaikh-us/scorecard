@@ -86,6 +86,7 @@ export default function Ask() {
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.queryBar}>
         <TextInput
+          testID="ask-input"
           style={styles.input}
           value={input}
           onChangeText={setInput}
@@ -95,6 +96,7 @@ export default function Ask() {
           returnKeyType="send"
         />
         <Pressable
+          testID="ask-button"
           style={[styles.askBtn, (loading || dataStatus !== "ready") && styles.askBtnDisabled]}
           onPress={() => runQuery(input)}
           disabled={loading || dataStatus !== "ready"}
@@ -109,6 +111,7 @@ export default function Ask() {
             {SUGGESTIONS.map((s) => (
               <Pressable
                 key={s}
+                testID="ask-suggestion"
                 style={styles.suggestion}
                 disabled={dataStatus !== "ready"}
                 onPress={() => runQuery(s)}

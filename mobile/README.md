@@ -208,6 +208,19 @@ invocation on the runner itself, not EAS's cloud build, so it proves the
 app actually compiles and works before Stage 3 spends any paid EAS build
 minutes on it.
 
+Four spec files, one Gradle build + one Firebase Test Lab run:
+`smoke.test.js` (signed-out sign-in screen), `testLogin.test.js` /
+`testPlaidLink.test.js` (the two bypasses covered above), and
+`appFlows.test.js` — everything else: the Rules engine (add/toggle/delete
+a rule), editing a transaction's category, the account-management
+banners' cancel paths (real Plaid Link and a real bank disconnect can't
+be scripted — see "Test Plaid Link" above and this spec's own header
+comment), tab navigation, an Ask suggestion round-trip, and sign-out.
+Deliberately one file for all of that rather than one per screen — each
+`describe` block's own `device.launchApp` reinstalls the app, and that
+reinstall (not the interactions themselves) dominates this step's
+wall-clock time against `mobile-detox.yml`'s `--timeout 15m` budget.
+
 Two things this needed that earlier stages didn't:
 
 - **`plugins/withDetoxTestBuildType.js`** — an Expo config plugin that
