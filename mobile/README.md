@@ -259,17 +259,31 @@ Two things this needed that earlier stages didn't:
   prerequisites" step catches it in seconds (before the ~13 min build)
   and reports everything missing at once.
 
-**Video/screenshots, not just pass/fail.** Firebase Test Lab records the
-whole run (video, periodic screenshots, logcat) — the workflow's last two
-steps parse the GCS results path out of `gcloud`'s own output, download
-that whole prefix, and re-upload it as a `firebase-test-lab-results`
-GitHub Actions artifact (`retention-days: 2`, since these are debugging
-aids for the run that produced them, not something meant to be kept).
-That's what lets a UI change actually be verified visually — by fetching
-the artifact through the GitHub API — rather than only trusting that a
-`toHaveText`/`toBeVisible` assertion passed. Runs via `always()`, so a
-*failed* run's artifacts are fetchable too, showing the screen it
-actually failed on.
+**Real screenshots, not just pass/fail — and not Test Lab's own video.**
+Firebase Test Lab records a video of every run, but for this app it's not
+useful: confirmed by downloading and inspecting a real run's `video.mp4`
+frame-by-frame, it shows Test Lab's own "Device Details" backdrop
+activity for the *entire* recording, never the app itself (cross-checked
+against `logcat`, which confirms the app process genuinely runs the
+whole time — it's just never what's on screen in the recording). Real,
+viewable screenshots instead come from `e2e/screenshot.js`'s
+`captureScreen(name)`, called at key points in each spec
+(`device.takeScreenshot()`, then copied to `/sdcard/Download/detox-
+screenshots` since Detox's own artifact-relocation needs a live `detox
+test` host connection this workflow doesn't have — see that file's header
+comment). `mobile-detox.yml`'s `--directories-to-pull
+/sdcard/Download/detox-screenshots` flag (the same convention Google's
+own Firebase Test Lab docs use for pulling code-coverage files) is what
+gets those off the device and into the run's GCS results, alongside
+`video.mp4`/`logcat` — from there, the workflow's last two steps parse
+the GCS results path out of `gcloud`'s own output, download that whole
+prefix, and re-upload it as a `firebase-test-lab-results` GitHub Actions
+artifact (`retention-days: 2`, since these are debugging aids for the run
+that produced them, not something meant to be kept). That's what lets a
+UI change actually be verified visually — by fetching the artifact
+through the GitHub API and viewing the screenshots directly — rather than
+only trusting that a `toHaveText`/`toBeVisible` assertion passed. Runs
+via `always()`, so a *failed* run's artifacts are fetchable too.
 
 **Stage 3 — EAS build verification, produces the human-installable binary**
 (`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build
