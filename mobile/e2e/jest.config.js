@@ -4,10 +4,7 @@
 // one needs Detox's device-connected test environment, not jsdom/node.
 module.exports = {
   rootDir: "..",
-  // TEMPORARY: narrowed to just the screenshot diagnostic for a fast,
-  // isolated debug run -- revert to "<rootDir>/e2e/**/*.test.js" before
-  // merging.
-  testMatch: ["<rootDir>/e2e/screenshotDebug.test.js"],
+  testMatch: ["<rootDir>/e2e/**/*.test.js"],
   testTimeout: 120000,
   maxWorkers: 1,
   globalSetup: "detox/runners/jest/globalSetup",
