@@ -91,7 +91,17 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // issue, not an app bug.
     await element(by.id("rule-match-value-input")).tapReturnKey();
     await element(by.id("rule-category-select-button")).tap();
-    await waitFor(element(by.text("Dining"))).toBeVisible().withTimeout(5000);
+    // "Dining" is real (see lib/categories.ts's 19-category set) but it's
+    // the 8th entry in the picker's height-capped, scrollable list -- a
+    // real run confirmed the picker now opens correctly (tapReturnKey()
+    // fixed that), but "Dining" itself was off-screen below the fold,
+    // so the bare waitFor().toBeVisible() timed out on something that
+    // was never going to scroll into view on its own. whileElement's
+    // scroll-until-visible is Detox's standard pattern for exactly this.
+    await waitFor(element(by.text("Dining")))
+      .toBeVisible()
+      .whileElement(by.id("picker-options-list"))
+      .scroll(150, "down");
     await element(by.text("Dining")).tap();
 
     await element(by.id("add-rule-button")).tap();
