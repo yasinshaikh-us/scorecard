@@ -132,7 +132,11 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await element(by.id("transaction-row")).atIndex(0).tap();
 
     await element(by.id("transaction-edit-category-button")).tap();
-    await element(by.text("Miscellaneous")).tap();
+    // by.id, not by.text("Miscellaneous"): a real run showed that text
+    // matching 8 views at once -- every already-categorized transaction
+    // row's own category badge reads "Miscellaneous" too, not just the
+    // picker option -- see PickerModal.tsx's header comment.
+    await element(by.id("picker-option-Miscellaneous")).tap();
     await element(by.id("transaction-edit-save-button")).tap();
 
     // Waiting for the (post-save, non-editing) category badge to actually

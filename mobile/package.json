@@ -10,6 +10,7 @@
     "expo-auth-session": "^57.0.6",
     "expo-build-properties": "~57.0.10",
     "expo-constants": "^57.0.10",
+    "expo-linear-gradient": "~57.0.1",
     "expo-linking": "^57.0.5",
     "expo-router": "^57.0.12",
     "expo-secure-store": "^57.0.1",
