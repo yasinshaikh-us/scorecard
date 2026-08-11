@@ -22,6 +22,7 @@ export default function PickerModal({
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <Text style={styles.title}>{title}</Text>
           <FlatList
+            testID="picker-options-list"
             data={options}
             keyExtractor={(o) => o.value}
             style={{ maxHeight: 360 }}
