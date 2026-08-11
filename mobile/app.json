@@ -22,6 +22,7 @@
       "./plugins/withDetoxTestBuildType.js",
       "./plugins/withDetoxAndroidModule.js",
       "./plugins/withDetoxTestStub.js",
+      "./plugins/withDetoxReleaseCleartext.js",
       [
         "expo-build-properties",
         {
