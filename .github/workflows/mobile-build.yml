@@ -4,10 +4,10 @@ name: Mobile Build
 # the actual human-installable binary via EAS Build. Deliberately last --
 # EAS build minutes are the one paid/metered resource in this pyramid, so
 # they're only spent once Stage 1 (fast checks) and Stage 2
-# (mobile-detox.yml's real scripted UI flows on Firebase Test Lab, all
-# free-tier) have already given confidence the app works, rather than
-# packaging a build that might be broken in ways only device-level
-# testing catches.
+# (mobile-detox.yml's real scripted UI flows on a real Android emulator
+# booted directly on the runner, no paid or third-party service) have
+# already given confidence the app works, rather than packaging a build
+# that might be broken in ways only device-level testing catches.
 #
 # Confirms the app compiles into a real native binary via EAS's own cloud
 # build -- a different toolchain than Stage 2's direct Gradle invocation,
