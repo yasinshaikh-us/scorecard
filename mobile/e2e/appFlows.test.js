@@ -41,11 +41,16 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // a linked bank from a prior run's "Link test bank" call) -- but stays
     // robust to a genuinely fresh account too, where app/(app)/_layout.tsx
     // shows PlaidLinkGate first instead.
+    //
+    // 30s, not 8s/10s -- see testLogin.test.js's comment on the identical
+    // wait; a cold install + real Supabase auth round-trip is slower on a
+    // resource-constrained CI emulator than the original budget allowed
+    // for.
     try {
-      await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(8000);
+      await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(30000);
     } catch {
       await element(by.id("plaid-gate-skip-button")).tap();
-      await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(10000);
+      await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(30000);
     }
 
     // Guarantees a linked account (for the account-management banners
