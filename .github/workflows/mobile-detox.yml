@@ -177,7 +177,19 @@ jobs:
       # test screenshots needed). --record-videos/--record-logs default
       # to "none" -- turned on for failing tests only, so a failure's
       # actual on-device video/log is available without paying to record
-      # every passing run too.
+      # every passing run too. --loglevel trace surfaces Detox's own
+      # device-connection diagnostics (run 31453370056 booted the emulator
+      # for real -- see the libpulse0 fix above -- but every spec's
+      # beforeAll still hit "Detox can't seem to connect to the test
+      # app(s)!"; default log level doesn't say why).
+      #
+      # Deliberately ONE line, no backslash continuations: run
+      # 31453370056's log showed "Invalid testPattern \ supplied" and
+      # zero files under e2e/artifacts/ despite --record-logs failing --
+      # this action's `script:` input doesn't join multi-line `\`-
+      # continued commands the way a plain `run:` step does, so every flag
+      # after the first line was silently never reaching detox test at
+      # all.
       - name: Run Detox tests on a real Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -187,14 +199,7 @@ jobs:
           avd-name: Pixel_API_30
           disable-animations: true
           working-directory: mobile
-          script: |
-            npx detox test -c android.release \
-              --headless \
-              --cleanup \
-              --artifacts-location e2e/artifacts/ \
-              --take-screenshots manual \
-              --record-videos failing \
-              --record-logs failing
+          script: npx detox test -c android.release --headless --cleanup --loglevel trace --artifacts-location e2e/artifacts/ --take-screenshots manual --record-videos failing --record-logs failing
 
       # Runs even if the test itself failed (`always()`) -- a failure is
       # exactly when seeing the actual screen/log the run ended on
