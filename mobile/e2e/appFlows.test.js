@@ -58,8 +58,16 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // anchored to the ledger's OWN latest date, so whatever this seeds is
     // always "recent" -- see app/(app)/home.tsx's daysBefore comment) --
     // regardless of whatever state a previous CI run left behind.
+    //
+    // .atIndex(0), not a bare id match: Plaid Sandbox's "First Platypus
+    // Bank" test institution (see test-plaid-link/index.ts) returns its
+    // whole account portfolio -- checking, savings, CD, and more --  not
+    // just one account, so several linked-account-chip views are always
+    // on screen at once by design (confirmed via a real run: exactly one
+    // plaid_items row, freshly created, with 12 accounts under it -- this
+    // is expected Sandbox data, not accumulated cruft from prior runs).
     await element(by.id("test-plaid-link-button")).tap();
-    await waitFor(element(by.id("linked-account-chip"))).toBeVisible().withTimeout(30000);
+    await waitFor(element(by.id("linked-account-chip")).atIndex(0)).toBeVisible().withTimeout(30000);
     await captureScreen("home-with-linked-account");
   });
 
