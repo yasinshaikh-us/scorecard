@@ -23,9 +23,12 @@ describe("Plaid Link (Sandbox, test-seeded)", () => {
 
   it("signs in, links a Sandbox test bank, and shows the linked account on Home", async () => {
     await element(by.id("test-signin-button")).tap();
+    // 30s, not 15s -- see testLogin.test.js's comment on the identical
+    // wait; a cold install + real Supabase auth round-trip is slower on a
+    // resource-constrained CI emulator than 15s allowed for.
     await waitFor(element(by.id("home-screen")))
       .toBeVisible()
-      .withTimeout(15000);
+      .withTimeout(30000);
 
     await element(by.id("test-plaid-link-button")).tap();
     // test-plaid-link chains several real network calls (cleanup,

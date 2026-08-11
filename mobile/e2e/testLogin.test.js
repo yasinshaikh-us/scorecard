@@ -19,9 +19,15 @@ describe("Test login", () => {
   it("signs in as the test account and lands on Home", async () => {
     await captureScreen("login-screen");
     await element(by.id("test-signin-button")).tap();
+    // 30s, not 15s: a cold install + real Supabase auth round-trip on a
+    // resource-constrained CI emulator (software GPU rendering, shared
+    // CPU) is slower than on a real device -- 15s wasn't enough headroom
+    // (confirmed on a real run: testLogin/testPlaidLink both timed out
+    // here identically while smoke.test.js, which needs no sign-in,
+    // passed comfortably).
     await waitFor(element(by.id("home-screen")))
       .toBeVisible()
-      .withTimeout(15000);
+      .withTimeout(30000);
     await expect(element(by.text("Recent Activity"))).toBeVisible();
     await captureScreen("home-screen-after-login");
   });
