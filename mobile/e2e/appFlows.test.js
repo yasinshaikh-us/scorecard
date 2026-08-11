@@ -66,6 +66,17 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // on screen at once by design (confirmed via a real run: exactly one
     // plaid_items row, freshly created, with 12 accounts under it -- this
     // is expected Sandbox data, not accumulated cruft from prior runs).
+    // waitFor, not a bare tap: test-plaid-link-button lives inside
+    // AccountBalances, which renders just an ActivityIndicator ("Loading…")
+    // until its own real balances fetch resolves (see AccountBalances.tsx)
+    // -- home-screen itself being visible doesn't mean that fetch has
+    // finished. A real run hit exactly this: "No views in hierarchy found
+    // matching: ... test-plaid-link-button" with the hierarchy dump
+    // showing "Loading…" still on screen. This line never had a wait
+    // before, and simply hadn't been unlucky enough to fail until the
+    // shared test account's dataset (transactions, rules) grew large
+    // enough across repeated runs to slow the fetch down.
+    await waitFor(element(by.id("test-plaid-link-button"))).toBeVisible().withTimeout(15000);
     await element(by.id("test-plaid-link-button")).tap();
     await waitFor(element(by.id("linked-account-chip")).atIndex(0)).toBeVisible().withTimeout(30000);
     await captureScreen("home-with-linked-account");

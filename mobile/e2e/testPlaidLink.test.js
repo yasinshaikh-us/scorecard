@@ -30,6 +30,13 @@ describe("Plaid Link (Sandbox, test-seeded)", () => {
       .toBeVisible()
       .withTimeout(30000);
 
+    // waitFor, not a bare tap: test-plaid-link-button lives inside
+    // AccountBalances, which renders just an ActivityIndicator until its
+    // own real balances fetch resolves -- home-screen being visible
+    // doesn't mean that fetch has finished. A real run hit exactly this
+    // race in appFlows.test.js's identical tap (see its beforeAll for the
+    // same fix and why).
+    await waitFor(element(by.id("test-plaid-link-button"))).toBeVisible().withTimeout(15000);
     await element(by.id("test-plaid-link-button")).tap();
     // test-plaid-link chains several real network calls (cleanup,
     // Plaid's sandboxPublicTokenCreate, the real plaid-exchange, then a
