@@ -333,11 +333,34 @@ jobs:
       # most. Guarded on gcs_path actually being set, since a gcloud
       # invocation that failed before creating a test matrix (e.g. an auth
       # problem) has nothing in GCS to fetch.
-      - name: Download Firebase Test Lab artifacts (video, screenshots, logcat)
+      - name: Download Firebase Test Lab artifacts (screenshots, logcat -- skips video/APKs)
         if: steps.check.outputs.skip == 'false' && always() && steps.detox-run.outputs.gcs_path != ''
         run: |
           mkdir -p firebase-test-lab-results
-          gcloud storage cp -r "${{ steps.detox-run.outputs.gcs_path }}" firebase-test-lab-results/
+
+          # `gcloud storage cp` has no --exclude flag, so this lists the
+          # run's objects first and filters out video.mp4/the two APKs --
+          # confirmed (run 31431893924) the video only ever shows Firebase
+          # Test Lab's own "Device Details" backdrop, never the app, so
+          # there's no reason to keep pulling/storing/uploading the ~80MB
+          # those three files account for out of a ~70MB-compressed
+          # artifact. logcat/instrumentation.results/test_result_1.xml and
+          # (once captureScreen() actually works) real screenshots are
+          # what's left.
+          # `**` in the path itself (not the -r/--recursive flag) is what
+          # gcloud's own docs call out as giving a flat list of full
+          # object URLs, one per line, with no header/blank-line
+          # formatting to filter out -- --recursive's output has both,
+          # which would need extra parsing to strip safely.
+          GCS_PATH="${{ steps.detox-run.outputs.gcs_path }}"
+          gcloud storage ls "${GCS_PATH}**" 2>/dev/null |
+            grep -vE '\.(mp4|apk)$' |
+            while IFS= read -r obj; do
+              [ -z "$obj" ] && continue
+              rel="${obj#$GCS_PATH}"
+              mkdir -p "firebase-test-lab-results/$(dirname "$rel")"
+              gcloud storage cp "$obj" "firebase-test-lab-results/$rel"
+            done
 
           # actions/upload-artifact rejects colons in artifact paths (NTFS
           # compatibility -- confirmed by run 31431893924's real failure:
