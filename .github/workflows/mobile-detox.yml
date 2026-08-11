@@ -1,36 +1,41 @@
-name: Mobile Detox (Firebase Test Lab)
+name: Mobile Detox (real Android emulator)
 
 # Stage 2 of the mobile testing pyramid: real scripted UI flows (tap,
-# assert, tap again) running against a real Android virtual device --
-# Stage 1 (mobile-ci.yml) only proves the JS is sound; neither it nor
-# Stage 3's EAS build (mobile-build.yml) actually taps through the app.
-# This does, using Detox to build an instrumented Android APK pair and
-# Firebase Test Lab's free virtual device quota (Spark plan: 10
-# virtual-device runs/day, no cost) to run them -- no emulator needed in
-# this repo's CI or anywhere else.
+# assert, tap again) running against a real Android device -- Stage 1
+# (mobile-ci.yml) only proves the JS is sound; neither it nor Stage 3's
+# EAS build (mobile-build.yml) actually taps through the app.
 #
-# Deliberately placed before Stage 3: this builds via a direct Gradle
-# invocation (not EAS's cloud build) and runs entirely on free-tier
-# resources, so it's the gate that has to pass before Stage 3 spends any
-# real EAS build minutes producing the actual human-installable binary.
+# This boots a real, hardware-accelerated (KVM) Android emulator
+# directly on the GitHub Actions runner (reactivecircus/android-
+# emulator-runner) and runs `detox test` against it for real -- Detox's
+# own host-driven Jest process, not a raw APK handed to a device farm's
+# instrumentation runner.
 #
-# Manual-dispatch only -- this is the slowest and least-proven stage
-# (a real native Gradle build plus a cloud device run), not something to
-# run on every push while it's still new. See mobile/README.md for the
-# one-time GCP/Firebase setup this needs and exactly why each secret is
-# there.
+# That's a deliberate correction of an earlier design, which handed the
+# built APKs straight to `gcloud firebase test android run`, bypassing
+# `detox test` entirely. That design *looked* like it worked -- Firebase
+# Test Lab reported "Passed" run after run -- but it was a false
+# positive the whole time. Detox's Android architecture runs the actual
+# JS test code (e2e/*.test.js) on a *host* machine (`detox test`'s own
+# Jest process), which drives a thin on-device bridge over a live
+# connection; the androidTest APK Detox builds contains no JS test logic
+# of its own. With no host process anywhere in that pipeline, nothing
+# was ever actually executing -- confirmed two independent ways: every
+# run's raw instrumentation.results said "OK (0 tests)", and a direct
+# database check found zero real Plaid Sandbox links ever created
+# despite testPlaidLink.test.js reporting "Passed" repeatedly. Genymotion
+# SaaS is Detox's own first-class-documented cloud alternative (same
+# host-driven model, remote device instead of local), but needs a new
+# third-party account/credentials; a real local emulator needs neither,
+# and runs Detox's most mature, best-supported code path.
 #
-# Skips cleanly (does nothing) if FIREBASE_PROJECT_ID or
-# FIREBASE_SERVICE_ACCOUNT_KEY aren't set yet.
+# Deliberately placed before Stage 3: runs entirely on free GitHub
+# Actions/Android SDK tooling, no paid or third-party service, so it's
+# the gate that has to pass before Stage 3 spends any real EAS build
+# minutes producing the actual human-installable binary.
 #
-# Firebase Test Lab's own video/screenshots/logcat for the run are pulled
-# out of its GCS results bucket and re-uploaded as a GitHub Actions
-# artifact (see the last two steps below) -- that's what lets a run's
-# results be fetched and actually looked at (not just "did it pass")
-# directly via the GitHub API, without needing separate Google Cloud
-# console access. `retention-days: 2` keeps this from accumulating storage
-# -- these are debugging aids for the run that produced them, not
-# something meant to be kept around.
+# Manual-dispatch only -- a real Gradle build plus emulator boot is the
+# slowest stage in the pyramid, not something to run on every push.
 
 on:
   workflow_dispatch:
@@ -55,161 +60,40 @@ jobs:
       # see mobile/README.md's "Test Plaid Link" section. Independently
       # rotatable from EXPO_PUBLIC_TEST_LOGIN_SECRET above -- leaking this
       # one can only ever link a Plaid Sandbox test bank to the same
-      # hardcoded dummy account, gated separately server-side by
-      # PLAID_ENV actually being "sandbox".
+      # hardcoded dummy account, using Sandbox-only credentials with no
+      # access to any real bank data.
       EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: 231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55
     steps:
-      # Unconditional and first -- every later step's `run:` shell starts
-      # in mobile/ (this job's default working-directory), which doesn't
-      # exist until the repo is actually checked out. The secret-check
-      # step below needs to run inside a checked-out repo for that reason
-      # alone, even though it doesn't touch any mobile-specific file.
       - uses: actions/checkout@v4
 
-      # The secret is passed via env: and read as a shell variable ($FIREBASE_KEY),
-      # never interpolated directly into the run: script text via ${{ }} --
-      # GitHub splices ${{ secrets.X }} into the script as literal text
-      # before bash ever runs it, and this secret is multi-line JSON full
-      # of quotes, which corrupts the generated script entirely instead of
-      # producing a clean "unset" check.
-      - name: Check required secrets are set
-        id: check
-        env:
-          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+      # GitHub Actions' Ubuntu runners don't expose KVM by default --
+      # without it, the emulator falls back to slow software
+      # virtualization (or fails outright on some images). This udev
+      # rule is the standard, documented fix (see reactivecircus/
+      # android-emulator-runner's own README).
+      - name: Enable KVM group perms
         run: |
-          if [ -z "$FIREBASE_KEY" ] || [ -z "$FIREBASE_PROJECT" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::FIREBASE_SERVICE_ACCOUNT_KEY secret and/or FIREBASE_PROJECT_ID variable not set -- skipping. See mobile/README.md's Stage 2 setup section."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Auth + device-catalog lookup moved ahead of the ~15 min Gradle build
-      # on purpose -- neither needs the built APKs, and the device catalog
-      # is the one part of this pipeline that drifts on Google's schedule,
-      # not ours (see "Pick a Firebase Test Lab virtual device" below). No
-      # reason to burn a full build cycle just to find out the catalog
-      # changed again.
-      - uses: google-github-actions/auth@v2
-        if: steps.check.outputs.skip == 'false'
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-      - uses: google-github-actions/setup-gcloud@v2
-        if: steps.check.outputs.skip == 'false'
-
-      # Every prior real run of this workflow that got past the secret
-      # check failed on a *different* one-off GCP project prerequisite --
-      # a missing IAM role, then a disabled API -- each only discoverable
-      # by waiting through the full ~13 min Gradle build first, since the
-      # actual failure only surfaced in the final "gcloud firebase test
-      # android run" call. Everything checked here is read-only, doesn't
-      # touch Firebase Test Lab's daily device-run quota, and runs in
-      # seconds -- so a fresh GCP project (or a permission that regresses
-      # later) reports every missing prerequisite in one shot instead of
-      # one per ~13 min build cycle.
-      - name: Preflight -- verify GCP/Firebase prerequisites
-        if: steps.check.outputs.skip == 'false'
-        env:
-          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
-        run: |
-          MISSING=""
-
-          # Diagnostic only, never blocking. Run 31335677499 answered the
-          # question this was added to ask: the billing check itself
-          # failed with "API [cloudbilling.googleapis.com] not enabled on
-          # project [368080898165]" -- meaning the repeated "Is billing
-          # enabled for project...?" 403 on the actual Firebase Test Lab
-          # call plausibly has nothing to do with whether a billing
-          # account is linked (the user confirmed one is), and everything
-          # to do with the Cloud Billing API itself being off, which is
-          # now checked below as a real required API instead of guessed
-          # at here. Left in place (now that it can actually run) as a
-          # second confirmation once that API is enabled.
-          BILLING_STATUS=$(gcloud billing projects describe "$FIREBASE_PROJECT" --format="value(billingEnabled)" 2>&1) || true
-          echo "Billing status for $FIREBASE_PROJECT (best-effort -- blank/error below may just mean the service account lacks billing.viewer, not that billing is actually off): $BILLING_STATUS"
-
-          # testing.googleapis.com backs the device-catalog lookup below
-          # too, so it's already implicitly proven once that step passes --
-          # checked explicitly anyway so a fresh project reports it up
-          # front rather than failing confusingly in that later step.
-          # cloudbilling.googleapis.com added after run 31335677499 showed
-          # it was the real reason the billing-status diagnostic itself
-          # couldn't answer the question, and is likely why Firebase Test
-          # Lab's own bucket-provisioning call keeps citing billing.
-          for api in testing.googleapis.com toolresults.googleapis.com cloudbilling.googleapis.com; do
-            ENABLED=$(gcloud services list --enabled --project "$FIREBASE_PROJECT" --filter="config.name:$api" --format="value(config.name)")
-            if [ -z "$ENABLED" ]; then
-              MISSING="${MISSING}\n  - API not enabled: $api -- enable at https://console.developers.google.com/apis/api/$api/overview?project=$FIREBASE_PROJECT"
-            fi
-          done
-
-          # Run 31331317835 printed the account's real role list and
-          # settled this for good: the console's "Cloud Test Admin" label
-          # grants roles/cloudtestservice.admin, not
-          # roles/cloudtestservice.testAdmin (the id this workflow and
-          # mobile/README.md assumed throughout -- a naming guess that was
-          # simply wrong, not a permission gap). Still printed
-          # unconditionally so any future drift is visible without another
-          # round of guessing.
-          SA_EMAIL=$(gcloud config get-value account 2>/dev/null)
-          echo "Roles currently granted to $SA_EMAIL on $FIREBASE_PROJECT:"
-          gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.members:$SA_EMAIL" --format="table(bindings.role)"
-          HAS_ROLE=$(gcloud projects get-iam-policy "$FIREBASE_PROJECT" --flatten="bindings[].members" --filter="bindings.role:roles/cloudtestservice.admin AND bindings.members:$SA_EMAIL" --format="value(bindings.members)")
-          if [ -z "$HAS_ROLE" ]; then
-            MISSING="${MISSING}\n  - Role 'roles/cloudtestservice.admin' not found for $SA_EMAIL on project $FIREBASE_PROJECT -- see the role table printed above for what's actually granted"
-          fi
-
-          if [ -n "$MISSING" ]; then
-            echo -e "::error::Missing GCP/Firebase prerequisites -- fix all of these, then re-run:$MISSING"
-            exit 1
-          fi
-          echo "All known GCP/Firebase prerequisites are satisfied."
-
-      # model=Pixel2 (this workflow's original hardcoded value) was removed
-      # from Firebase Test Lab's device catalog at some point after this
-      # workflow was written -- run 31293734708 failed with "'Pixel2' is
-      # not a valid model" once the (separate, now-fixed) IAM permission
-      # issue was resolved. Querying the live catalog and picking a
-      # supported virtual device at run time, instead of hardcoding a
-      # model id, means the next catalog change doesn't need another
-      # find-the-right-string round trip.
-      - name: Pick a Firebase Test Lab virtual device
-        if: steps.check.outputs.skip == 'false'
-        id: pick-device
-        env:
-          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
-        run: |
-          gcloud firebase test android models list --project "$FIREBASE_PROJECT" --filter="form=VIRTUAL" --format="table(id,supportedVersionIds.list())"
-          MODEL_ID=$(gcloud firebase test android models list --project "$FIREBASE_PROJECT" --filter="form=VIRTUAL AND supportedVersionIds:30" --format="value(id)" | head -n1)
-          if [ -z "$MODEL_ID" ]; then
-            echo "::error::No Firebase Test Lab virtual device supporting API 30 found in the catalog -- see the model list printed above and update the filter."
-            exit 1
-          fi
-          echo "Selected device model: $MODEL_ID"
-          echo "model_id=$MODEL_ID" >> "$GITHUB_OUTPUT"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - uses: actions/setup-node@v4
-        if: steps.check.outputs.skip == 'false'
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - uses: actions/setup-java@v4
-        if: steps.check.outputs.skip == 'false'
         with:
           distribution: temurin
           java-version: "17"
 
       - run: npm ci --legacy-peer-deps
-        if: steps.check.outputs.skip == 'false'
 
       # Generates android/ fresh -- not committed, same reasoning as
       # mobile-build.yml relying on EAS to do this server-side. The one
       # native tweak this needs (plugins/withDetoxTestBuildType.js) is
       # applied automatically as part of this.
       - run: npx expo prebuild --platform android
-        if: steps.check.outputs.skip == 'false'
 
       # android/ only exists after prebuild (previous step), so this has to
       # run after it -- both to have something real to hash for the cache
@@ -219,7 +103,6 @@ jobs:
       # a key miss (e.g. a dependency bump), so a partial/stale cache still
       # beats a fully cold one instead of building from scratch.
       - name: Cache Gradle dependencies + build cache
-        if: steps.check.outputs.skip == 'false'
         uses: actions/cache@v4
         with:
           path: |
@@ -248,7 +131,6 @@ jobs:
       # without it, a warm ~/.gradle/caches still skips re-downloading
       # dependencies but every task still re-executes from scratch.
       - name: Raise Gradle daemon memory limits + enable build cache (see prior steps' comments)
-        if: steps.check.outputs.skip == 'false'
         run: |
           sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
           # android/gradle.properties (Expo's generated file) doesn't end
@@ -261,113 +143,53 @@ jobs:
 
       # Builds the app + androidTest APK pair (.detoxrc.js's
       # android.release build command) -- this is a real Gradle build,
-      # 5-15 minutes typical.
+      # 5-15 minutes typical. Doesn't need a device, so it runs before
+      # the emulator boots below.
       - run: npx detox build -c android.release
-        if: steps.check.outputs.skip == 'false'
 
-      # Uploads both APKs to Firebase Test Lab and runs the Detox specs
-      # as a standard Android instrumentation test on a real virtual
-      # device -- Detox's own `detox test` is deliberately not used here
-      # (it expects a locally-connected device/emulator, which no leg of
-      # this pipeline has). Device model comes from the "Pick a Firebase
-      # Test Lab virtual device" step above, not hardcoded.
-      - name: Run Detox specs on Firebase Test Lab
-        if: steps.check.outputs.skip == 'false'
-        id: detox-run
-        env:
-          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
-          DEVICE_MODEL: ${{ steps.pick-device.outputs.model_id }}
-        run: |
-          # `set +e` + capturing $PIPESTATUS below is what lets this step
-          # both (a) stream/log gcloud's own output as it happens (piped
-          # through `tee`, so the run still reads the same as before) and
-          # (b) still fail the step on a real test failure once the GCS
-          # path below has been parsed out of it -- a bare `gcloud ... |
-          # tee ...` would always "succeed" as far as bash's default `-e`
-          # is concerned, since tee's own exit code (not gcloud's) is what
-          # a pipeline reports without PIPESTATUS.
-          set +e
-          # --directories-to-pull: Test Lab's own video records its
-          # "Device Details" backdrop activity for the *entire* run, never
-          # the app itself (confirmed by downloading and inspecting a real
-          # run's video.mp4, then cross-checking logcat -- the app process
-          # genuinely runs the whole time, it's just never what's on
-          # screen in the recording). e2e/screenshot.js's captureScreen()
-          # copies real in-app screenshots to /sdcard/Download/detox-
-          # screenshots during the test -- this is the Google-documented
-          # --directories-to-pull convention (Firebase's own
-          # code-coverage-pulling example uses /sdcard/Download the same
-          # way) for getting files a test wrote on-device into the run's
-          # GCS results bucket, alongside video.mp4/logcat, where the
-          # existing download/upload steps below already pick them up.
-          gcloud firebase test android run \
-            --project "$FIREBASE_PROJECT" \
-            --type instrumentation \
-            --app android/app/build/outputs/apk/release/app-release.apk \
-            --test android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
-            --device model="$DEVICE_MODEL",version=30,locale=en,orientation=portrait \
-            --timeout 15m \
-            --directories-to-pull /sdcard/Download/detox-screenshots \
-            2>&1 | tee gcloud-test-output.log
-          TEST_EXIT_CODE=${PIPESTATUS[0]}
-
-          # Firebase Test Lab always prints its GCS results location, e.g.
-          # "Raw results will be stored in your GCS bucket at
-          # [https://console.developers.google.com/storage/browser/test-lab-.../2026-.../]"
-          # -- parsed from stdout rather than fixed via --results-bucket/
-          # --results-dir flags, since the project's default results
-          # bucket name is autogenerated per-project and not something
-          # this workflow should have to know or configure ahead of time.
-          GCS_CONSOLE_URL=$(grep -oP 'GCS bucket at \[\Khttps://console\.developers\.google\.com/storage/browser/[^]]+' gcloud-test-output.log || true)
-          if [ -n "$GCS_CONSOLE_URL" ]; then
-            GCS_PATH="gs://${GCS_CONSOLE_URL#https://console.developers.google.com/storage/browser/}"
-            echo "gcs_path=$GCS_PATH" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::Couldn't find Firebase Test Lab's GCS results path in its own output -- the artifact-download steps below will have nothing to fetch."
-          fi
-
-          exit "$TEST_EXIT_CODE"
+      # Boots a real, hardware-accelerated emulator matching .detoxrc.js's
+      # `avdName` (Pixel_API_30) directly on the runner, then runs `detox
+      # test` against it for real inside `script:` -- Detox's Android
+      # driver detects the already-running emulator (via `adb devices`)
+      # and attaches to it instead of trying to launch a second one.
+      #
+      # --artifacts-location with a trailing slash means no extra
+      # timestamped subdirectory gets appended (see Detox's CLI docs) --
+      # a predictable path the upload step below can rely on.
+      # --take-screenshots defaults to "manual", which is exactly what's
+      # wanted: e2e/screenshot.js's captureScreen() calls
+      # device.takeScreenshot() explicitly at meaningful points in each
+      # spec, and Detox saves exactly those (no extra before/after-every-
+      # test screenshots needed). --record-videos/--record-logs default
+      # to "none" -- turned on for failing tests only, so a failure's
+      # actual on-device video/log is available without paying to record
+      # every passing run too.
+      - name: Run Detox tests on a real Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          avd-name: Pixel_API_30
+          disable-animations: true
+          working-directory: mobile
+          script: |
+            npx detox test -c android.release \
+              --headless \
+              --cleanup \
+              --artifacts-location e2e/artifacts/ \
+              --take-screenshots manual \
+              --record-videos failing \
+              --record-logs failing
 
       # Runs even if the test itself failed (`always()`) -- a failure is
-      # exactly when seeing the actual screen the run ended on matters
-      # most. Guarded on gcs_path actually being set, since a gcloud
-      # invocation that failed before creating a test matrix (e.g. an auth
-      # problem) has nothing in GCS to fetch.
-      - name: Download Firebase Test Lab artifacts (video, screenshots, logcat)
-        if: steps.check.outputs.skip == 'false' && always() && steps.detox-run.outputs.gcs_path != ''
-        run: |
-          mkdir -p firebase-test-lab-results
-          gcloud storage cp -r "${{ steps.detox-run.outputs.gcs_path }}" firebase-test-lab-results/
-
-          # actions/upload-artifact rejects colons in artifact paths (NTFS
-          # compatibility -- confirmed by run 31431893924's real failure:
-          # "The path for one of the files in artifact is not valid: ...
-          # Contains the following character: Colon"). Firebase Test Lab's
-          # own GCS results directory name is a colon-containing timestamp
-          # (e.g. 2026-08-10_21:08:05.304681_qClG), which `gcloud storage
-          # cp` preserves verbatim as a local directory name -- strip
-          # colons out of every copied path (deepest entries first, so
-          # renaming a parent can't invalidate an already-listed child
-          # path) before the upload step below ever sees it.
-          find firebase-test-lab-results -depth -name '*:*' -print0 |
-            while IFS= read -r -d '' path; do
-              mv "$path" "$(dirname "$path")/$(basename "$path" | tr ':' '-')"
-            done
-
-      # Re-hosts Firebase Test Lab's own results as a GitHub Actions
-      # artifact -- fetchable directly through the GitHub API (list/download
-      # workflow run artifacts) without needing separate Google Cloud
-      # console access, which is what actually lets a run's video/
-      # screenshots be inspected programmatically instead of only by a
-      # human clicking through the Firebase console. `retention-days: 2`
-      # keeps this from accumulating storage -- these are debugging aids
-      # for the run that produced them, not build artifacts meant to be
-      # kept.
-      - name: Upload Firebase Test Lab artifacts
-        if: steps.check.outputs.skip == 'false' && always() && steps.detox-run.outputs.gcs_path != ''
+      # exactly when seeing the actual screen/log the run ended on
+      # matters most.
+      - name: Upload Detox artifacts (screenshots, and video/logs for any failure)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: firebase-test-lab-results
-          path: mobile/firebase-test-lab-results/
+          name: detox-results
+          path: mobile/e2e/artifacts/
           retention-days: 2
           if-no-files-found: warn

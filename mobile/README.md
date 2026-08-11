@@ -195,95 +195,71 @@ None of this needs a device, emulator, EAS account, or paid service —
 it's the same kind of check `tsc`/`expo export`/`jest` would give on a
 local machine, just running automatically on every change.
 
-**Stage 2 — scripted UI flows on Firebase Test Lab, on demand**
+**Stage 2 — scripted UI flows on a real Android emulator, on demand**
 (`.github/workflows/mobile-detox.yml`, manual-dispatch — a real native
-Gradle build plus a cloud device run): [Detox](https://github.com/wix/Detox)
+Gradle build plus a real emulator boot): [Detox](https://github.com/wix/Detox)
 builds an instrumented Android APK pair (`npx detox build -c
-android.release`, via `.detoxrc.js`), and Firebase Test Lab runs it as a
-standard Android instrumentation test on a real virtual device —
-Firebase's Spark (free) plan includes 10 virtual-device test runs/day, no
-cost. This is real scripted coverage (tap, assert, tap again), not just
-"did it crash" — see `e2e/*.test.js`. Builds via a direct Gradle
-invocation on the runner itself, not EAS's cloud build, so it proves the
-app actually compiles and works before Stage 3 spends any paid EAS build
-minutes on it.
+android.release`, via `.detoxrc.js`), then `detox test` runs the real
+`e2e/*.test.js` files against a hardware-accelerated (KVM) Android
+emulator booted directly on the GitHub Actions runner
+([reactivecircus/android-emulator-runner](https://github.com/ReactiveCircus/android-emulator-runner))
+— no paid or third-party service. This is real scripted coverage (tap,
+assert, tap again), not just "did it crash."
 
-Four spec files, one Gradle build + one Firebase Test Lab run:
-`smoke.test.js` (signed-out sign-in screen), `testLogin.test.js` /
-`testPlaidLink.test.js` (the two bypasses covered above), and
-`appFlows.test.js` — everything else: the Rules engine (add/toggle/delete
-a rule), editing a transaction's category, the account-management
-banners' cancel paths (real Plaid Link and a real bank disconnect can't
-be scripted — see "Test Plaid Link" above and this spec's own header
-comment), tab navigation, an Ask suggestion round-trip, and sign-out.
-Deliberately one file for all of that rather than one per screen — each
-`describe` block's own `device.launchApp` reinstalls the app, and that
-reinstall (not the interactions themselves) dominates this step's
-wall-clock time against `mobile-detox.yml`'s `--timeout 15m` budget.
+This corrects an earlier design that handed the built APKs straight to
+`gcloud firebase test android run` (Firebase Test Lab), bypassing `detox
+test` entirely. That looked like it worked — Firebase Test Lab reported
+"Passed" run after run — but it was a false positive the whole time.
+Detox's Android architecture runs the actual JS test code on a **host**
+machine (`detox test`'s own Jest process), which drives a thin on-device
+bridge over a live connection; the androidTest APK Detox builds contains
+no JS test logic of its own. With no host process anywhere in that
+pipeline, nothing was ever actually executing — confirmed two
+independent ways: every run's raw `instrumentation.results` said `"OK (0
+tests)"`, and a direct database check found zero real Plaid Sandbox
+links ever created despite `testPlaidLink.test.js` reporting "Passed"
+repeatedly. (Genymotion SaaS is Detox's own first-class-documented cloud
+alternative — same host-driven model, a remote device instead of a local
+one — but needs a new third-party account and credentials; a real local
+emulator needs neither, and exercises Detox's most mature,
+best-supported code path.)
 
-Two things this needed that earlier stages didn't:
+Four spec files, one Gradle build + one emulator boot: `smoke.test.js`
+(signed-out sign-in screen), `testLogin.test.js` / `testPlaidLink.test.js`
+(the two bypasses covered below), and `appFlows.test.js` — everything
+else: the Rules engine (add/toggle/delete a rule), editing a
+transaction's category, the account-management banners' cancel paths
+(real Plaid Link and a real bank disconnect can't be scripted — see
+"Test Plaid Link" below and this spec's own header comment), tab
+navigation, an Ask suggestion round-trip, and sign-out. Deliberately one
+file for all of that rather than one per screen — each `describe`
+block's own `device.launchApp` reinstalls the app, which adds up across
+files.
 
-- **`plugins/withDetoxTestBuildType.js`** — an Expo config plugin that
-  injects one line (`testBuildType System.getProperty('testBuildType',
-  'debug')`) into the prebuild-generated `android/app/build.gradle`.
-  Bare React Native's community template wires this up by default; Expo's
-  prebuild template doesn't, which was only discoverable by actually
-  running `expo prebuild` and inspecting the output — without it, the
-  androidTest APK Detox builds always targets the debug variant
-  regardless of which app build type was actually compiled, which would
-  hand Firebase Test Lab a mismatched APK pair.
-- **A GCP/Firebase project with Test Lab enabled**, plus a service
-  account — the one thing that had to be set up by hand (Google identity
-  + billing, not something this session has access to). One-time setup:
-  1. Create a Firebase project (or reuse an existing GCP project) at
-     [console.firebase.google.com](https://console.firebase.google.com).
-  2. In that project, create a service account with the **Cloud Test
-     Admin** role (`roles/cloudtestservice.admin` — confirmed from a real
-     project's actual IAM policy; an earlier version of this doc guessed
-     `roles/cloudtestservice.testAdmin`, which doesn't exist under that
-     name) — Firebase console's project settings → Service Accounts page
-     can generate one directly — and download its JSON key.
-  3. Add the JSON key as a GitHub Actions **secret** named
-     `FIREBASE_SERVICE_ACCOUNT_KEY` (the whole file contents).
-  4. Add the project's ID as a GitHub Actions **variable** (not secret —
-     project IDs aren't sensitive) named `FIREBASE_PROJECT_ID`.
-  5. Enable the **Cloud Tool Results API** (`toolresults.googleapis.com`)
-     on that project — Firebase Test Lab needs it to store run results,
-     but it isn't turned on by default just because Test Lab itself is
-     enabled. Same page pattern as any other GCP API:
-     `console.developers.google.com/apis/api/toolresults.googleapis.com/overview?project=<your-project-id>`.
+One thing this needed that earlier stages didn't: **`plugins/
+withDetoxTestBuildType.js`** — an Expo config plugin that injects one
+line (`testBuildType System.getProperty('testBuildType', 'debug')`) into
+the prebuild-generated `android/app/build.gradle`. Bare React Native's
+community template wires this up by default; Expo's prebuild template
+doesn't, which was only discoverable by actually running `expo prebuild`
+and inspecting the output — without it, the androidTest APK Detox builds
+always targets the debug variant regardless of which app build type was
+actually compiled, which would produce a mismatched APK pair.
 
-  The workflow skips cleanly with a warning if the secret/variable
-  aren't set yet. If the service account role or either required API is
-  missing, the workflow's own "Preflight -- verify GCP/Firebase
-  prerequisites" step catches it in seconds (before the ~13 min build)
-  and reports everything missing at once.
-
-**Real screenshots, not just pass/fail — and not Test Lab's own video.**
-Firebase Test Lab records a video of every run, but for this app it's not
-useful: confirmed by downloading and inspecting a real run's `video.mp4`
-frame-by-frame, it shows Test Lab's own "Device Details" backdrop
-activity for the *entire* recording, never the app itself (cross-checked
-against `logcat`, which confirms the app process genuinely runs the
-whole time — it's just never what's on screen in the recording). Real,
-viewable screenshots instead come from `e2e/screenshot.js`'s
-`captureScreen(name)`, called at key points in each spec
-(`device.takeScreenshot()`, then copied to `/sdcard/Download/detox-
-screenshots` since Detox's own artifact-relocation needs a live `detox
-test` host connection this workflow doesn't have — see that file's header
-comment). `mobile-detox.yml`'s `--directories-to-pull
-/sdcard/Download/detox-screenshots` flag (the same convention Google's
-own Firebase Test Lab docs use for pulling code-coverage files) is what
-gets those off the device and into the run's GCS results, alongside
-`video.mp4`/`logcat` — from there, the workflow's last two steps parse
-the GCS results path out of `gcloud`'s own output, download that whole
-prefix, and re-upload it as a `firebase-test-lab-results` GitHub Actions
-artifact (`retention-days: 2`, since these are debugging aids for the run
-that produced them, not something meant to be kept). That's what lets a
-UI change actually be verified visually — by fetching the artifact
-through the GitHub API and viewing the screenshots directly — rather than
-only trusting that a `toHaveText`/`toBeVisible` assertion passed. Runs
-via `always()`, so a *failed* run's artifacts are fetchable too.
+**Real screenshots, from Detox's own artifact system.** `e2e/screenshot.js`'s
+`captureScreen(name)` calls `device.takeScreenshot(name)` at key points
+in each spec; since `detox test` now genuinely drives the device,
+Detox's own artifact system relocates the result to `--artifacts-location`
+(`e2e/artifacts/`, set in `mobile-detox.yml`) when the test completes —
+no manual on-device file copying needed. The workflow's last step
+uploads that whole directory as a `detox-results` GitHub Actions
+artifact (`retention-days: 2`, since these are debugging aids for the
+run that produced them, not something meant to be kept), fetchable
+directly through the GitHub API. `--record-videos failing`/`--record-logs
+failing` add a real screen recording and device log for any failing
+test, without paying to record every passing run too. That's what lets a
+UI change actually be verified visually, rather than only trusting that
+a `toHaveText`/`toBeVisible` assertion passed.
 
 **Stage 3 — EAS build verification, produces the human-installable binary**
 (`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build

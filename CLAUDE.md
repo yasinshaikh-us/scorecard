@@ -33,7 +33,7 @@ it owns. Check PR/CI state directly (e.g. `pull_request_read`) and act
 once the merge criteria above are met — no need to subscribe to or wait
 on GitHub webhook notifications first.
 
-## Stage 2 (Detox/Firebase Test Lab) visual verification
+## Stage 2 (Detox real-emulator) visual verification
 
 Whenever a Stage 2 run (`mobile-detox.yml`) follows a UI/screen change,
 passing Detox assertions is not the end of verification — a `toHaveText`/
@@ -41,13 +41,16 @@ passing Detox assertions is not the end of verification — a `toHaveText`/
 that the screen actually renders/looks correct. Claude owns closing that
 loop itself, not the user. Once the run completes:
 
-1. Confirm the "Run Detox specs on Firebase Test Lab" step itself
-   succeeded (not just that the job didn't error elsewhere).
-2. Download the run's `firebase-test-lab-results` artifact via the GitHub
-   API (list/download workflow run artifacts) — don't ask the user to
-   open the Firebase console and look themselves.
-3. Actually view the screenshots/video from it (the Read tool renders
-   images) and check that the screen(s) the change touched look right.
+1. Confirm the "Run Detox tests on a real Android emulator" step itself
+   succeeded (not just that the job didn't error elsewhere), and that the
+   real instrumentation result shows a nonzero, genuine test count (not
+   an "OK (0 tests)"-shaped false positive — see mobile/README.md's Stage
+   2 section for why that check exists).
+2. Download the run's `detox-results` artifact via the GitHub API
+   (list/download workflow run artifacts) — don't ask the user to look
+   themselves.
+3. Actually view the screenshots from it (the Read tool renders images)
+   and check that the screen(s) the change touched look right.
 4. State an explicit visual verdict in the reply — what was checked and
    whether it looks correct — before calling the change done. "Tests
    passed" alone is not a finished verification for a UI change.
