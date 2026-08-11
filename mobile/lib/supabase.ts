@@ -26,14 +26,19 @@ class LargeSecureStore {
     const encrypted = await AsyncStorage.getItem(key);
     if (!encrypted) return null;
     const encryptionKey = await this.getEncryptionKey();
-    const cipher = new aesjs.ModeOfOperationCTR(encryptionKey);
+    // aes-js's real export is ModeOfOperation.ctr, not a top-level
+    // ModeOfOperationCTR -- the latter is undefined, so calling `new` on it
+    // throws "undefined cannot be used as a constructor" (confirmed the hard
+    // way: every real sign-in failed here, invisible to Stage 1's Jest tests
+    // because they mock this whole module at the boundary).
+    const cipher = new aesjs.ModeOfOperation.ctr(encryptionKey);
     const decryptedBytes = cipher.decrypt(aesjs.utils.hex.toBytes(encrypted));
     return aesjs.utils.utf8.fromBytes(decryptedBytes);
   }
 
   async setItem(key: string, value: string) {
     const encryptionKey = await this.getEncryptionKey();
-    const cipher = new aesjs.ModeOfOperationCTR(encryptionKey);
+    const cipher = new aesjs.ModeOfOperation.ctr(encryptionKey);
     const encryptedBytes = cipher.encrypt(aesjs.utils.utf8.toBytes(value));
     await AsyncStorage.setItem(key, aesjs.utils.hex.fromBytes(encryptedBytes));
   }
