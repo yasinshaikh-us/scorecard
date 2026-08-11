@@ -77,6 +77,20 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The Android SDK's emulator ships a qemu-system-x86_64 binary
+      # dynamically linked against libpulse.so.0 -- current ubuntu-latest
+      # images no longer ship it by default (confirmed run 31450439614:
+      # the emulator step ran for its full ~10 minutes, with Detox's host
+      # Jest process genuinely executing real specs/hooks the whole time,
+      # but every one timed out because qemu itself refused to start:
+      # "error while loading shared libraries: libpulse.so.0: cannot open
+      # shared object file"). Installing the library is enough -- audio
+      # itself stays off via the emulator-options default (-noaudio).
+      - name: Install libpulse0 (qemu's audio-backend dependency)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpulse0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
