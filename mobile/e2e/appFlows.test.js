@@ -142,6 +142,14 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
     await element(by.id("transaction-row")).atIndex(0).tap();
 
+    // tapReturnKey(), not straight into the next tap: transaction-edit-
+    // payee-input is autoFocus (see TransactionRow.tsx), so the software
+    // keyboard is already up the moment edit mode opens. A real run hit
+    // exactly the same class of issue this caused in the Rules engine
+    // test (see its own tapReturnKey() comment above) -- the very next
+    // tap can get eaten as a keyboard dismiss instead of reaching the
+    // button underneath, so the picker never opens.
+    await element(by.id("transaction-edit-payee-input")).tapReturnKey();
     await element(by.id("transaction-edit-category-button")).tap();
     // by.id, not by.text("Miscellaneous"): a real run showed that text
     // matching 8 views at once -- every already-categorized transaction
