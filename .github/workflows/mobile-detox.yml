@@ -104,10 +104,22 @@ jobs:
       - run: npm ci --legacy-peer-deps
 
       # Generates android/ fresh -- not committed, same reasoning as
-      # mobile-build.yml relying on EAS to do this server-side. The one
-      # native tweak this needs (plugins/withDetoxTestBuildType.js) is
-      # applied automatically as part of this.
+      # mobile-build.yml relying on EAS to do this server-side. The
+      # native tweaks this needs (plugins/withDetoxTestBuildType.js,
+      # withDetoxAndroidModule.js, withDetoxTestStub.js) are applied
+      # automatically as part of this.
+      #
+      # DETOX_ANDROID_RELEASE_CLEARTEXT=1 is read by
+      # withDetoxReleaseCleartext.js -- Detox's own local host<->device
+      # websocket bridge is plain ws:// (loopback-only, not real app
+      # traffic), which Android blocks by default on the release build
+      # type Detox instruments (confirmed via a real run's logcat:
+      # DetoxWSClient retrying "at connectToServer" every ~3s, forever).
+      # Deliberately set only here, not in mobile-build.yml's EAS prebuild
+      # -- this override must never reach the real production app.
       - run: npx expo prebuild --platform android
+        env:
+          DETOX_ANDROID_RELEASE_CLEARTEXT: "1"
 
       # android/ only exists after prebuild (previous step), so this has to
       # run after it -- both to have something real to hash for the cache
