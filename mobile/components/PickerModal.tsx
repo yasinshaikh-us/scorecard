@@ -3,6 +3,14 @@ import { FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native
 // Minimal single-select picker, standing in for the web's <select> -- RN
 // has no built-in equivalent. Used by CategoryRulesPanel (category /
 // match-field pickers) and TransactionRow (category edit).
+//
+// Each option gets its own testID (picker-option-<value>), not just its
+// label text: a real Stage 2 run hit an option's label text (a category
+// name) simultaneously matching several OTHER on-screen elements too --
+// e.g. every already-categorized transaction row's own category badge --
+// making a text-based matcher genuinely ambiguous, not just a picker-vs-
+// picker collision. A stable per-option id sidesteps that regardless of
+// what else happens to be showing the same text elsewhere on screen.
 export default function PickerModal({
   visible,
   title,
@@ -28,6 +36,7 @@ export default function PickerModal({
             style={{ maxHeight: 360 }}
             renderItem={({ item }) => (
               <Pressable
+                testID={`picker-option-${item.value}`}
                 style={styles.option}
                 onPress={() => {
                   onSelect(item.value);
