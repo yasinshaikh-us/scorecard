@@ -287,6 +287,19 @@ jobs:
           # is concerned, since tee's own exit code (not gcloud's) is what
           # a pipeline reports without PIPESTATUS.
           set +e
+          # --directories-to-pull: Test Lab's own video records its
+          # "Device Details" backdrop activity for the *entire* run, never
+          # the app itself (confirmed by downloading and inspecting a real
+          # run's video.mp4, then cross-checking logcat -- the app process
+          # genuinely runs the whole time, it's just never what's on
+          # screen in the recording). e2e/screenshot.js's captureScreen()
+          # copies real in-app screenshots to /sdcard/Download/detox-
+          # screenshots during the test -- this is the Google-documented
+          # --directories-to-pull convention (Firebase's own
+          # code-coverage-pulling example uses /sdcard/Download the same
+          # way) for getting files a test wrote on-device into the run's
+          # GCS results bucket, alongside video.mp4/logcat, where the
+          # existing download/upload steps below already pick them up.
           gcloud firebase test android run \
             --project "$FIREBASE_PROJECT" \
             --type instrumentation \
@@ -294,6 +307,7 @@ jobs:
             --test android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
             --device model="$DEVICE_MODEL",version=30,locale=en,orientation=portrait \
             --timeout 15m \
+            --directories-to-pull /sdcard/Download/detox-screenshots \
             2>&1 | tee gcloud-test-output.log
           TEST_EXIT_CODE=${PIPESTATUS[0]}
 

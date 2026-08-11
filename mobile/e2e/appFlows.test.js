@@ -29,6 +29,8 @@
 // test below target the one rule it creates via `.atIndex(0)` /
 // "No rules yet." rather than needing to disambiguate it from unrelated
 // rows.
+const { captureScreen } = require("./screenshot");
+
 describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   beforeAll(async () => {
     await device.launchApp({ newInstance: true, delete: true });
@@ -53,6 +55,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // regardless of whatever state a previous CI run left behind.
     await element(by.id("test-plaid-link-button")).tap();
     await waitFor(element(by.id("linked-account-chip"))).toBeVisible().withTimeout(30000);
+    await captureScreen("home-with-linked-account");
   });
 
   it("Rules engine: add, toggle, and delete a rule", async () => {
@@ -68,6 +71,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
     await element(by.id("add-rule-button")).tap();
     await waitFor(element(by.id("rule-switch-toggle")).atIndex(0)).toBeVisible().withTimeout(10000);
+    await captureScreen("rules-engine-with-rule");
 
     // Toggling round-trips through a real DB update + apply_category_rules()
     // RPC -- the "Applied to N transaction(s)." status text is proof both
@@ -103,11 +107,13 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await waitFor(element(by.id("transaction-category-badge")).atIndex(0))
       .toHaveText("Miscellaneous")
       .withTimeout(10000);
+    await captureScreen("transaction-edited");
   });
 
   it("Account management: add-bank and disconnect banners can be cancelled", async () => {
     await element(by.id("add-bank-button")).tap();
     await expect(element(by.id("add-bank-cancel-button"))).toBeVisible();
+    await captureScreen("add-bank-confirm-banner");
     await element(by.id("add-bank-cancel-button")).tap();
 
     await element(by.id("disconnect-button")).atIndex(0).tap();
@@ -117,6 +123,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await element(by.id("disconnect-button")).atIndex(0).tap();
     await element(by.id("disconnect-continue-button")).tap();
     await expect(element(by.id("disconnect-final-cancel-button"))).toBeVisible();
+    await captureScreen("disconnect-final-confirm-banner");
     await element(by.id("disconnect-final-cancel-button")).tap();
 
     // Never taps disconnect-confirm-button -- see this file's header
@@ -127,12 +134,14 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   it("Ask: a suggestion produces a card that can be closed", async () => {
     await element(by.id("tab-ask-button")).tap();
     await expect(element(by.id("ask-input"))).toBeVisible();
+    await captureScreen("ask-screen-empty");
 
     await element(by.id("ask-suggestion")).atIndex(0).tap();
     // A real call to the `query` Edge Function (Anthropic-backed) -- no
     // fixed response to assert on, only that it resolves out of the
     // pending "thinking…" state into a card with a close button.
     await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await captureScreen("ask-screen-with-result");
     await element(by.id("query-card-close-button")).tap();
 
     await element(by.id("tab-home-button")).tap();

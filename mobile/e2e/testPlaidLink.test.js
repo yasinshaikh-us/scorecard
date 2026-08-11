@@ -14,6 +14,8 @@
 // app actually owns (token exchange, DB writes, RLS-scoped reads, balance
 // display) end to end, without the fragility of scripting a third-party
 // webview.
+const { captureScreen } = require("./screenshot");
+
 describe("Plaid Link (Sandbox, test-seeded)", () => {
   beforeAll(async () => {
     await device.launchApp({ newInstance: true, delete: true });
@@ -33,5 +35,6 @@ describe("Plaid Link (Sandbox, test-seeded)", () => {
     await waitFor(element(by.id("linked-account-chip")))
       .toBeVisible()
       .withTimeout(30000);
+    await captureScreen("plaid-link-account-chip");
   });
 });

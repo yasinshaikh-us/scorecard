@@ -9,16 +9,20 @@
 // verified from the sandbox that built it (no way to curl the Edge
 // Function directly, no device to tap the button on) -- this spec is its
 // first real end-to-end check.
+const { captureScreen } = require("./screenshot");
+
 describe("Test login", () => {
   beforeAll(async () => {
     await device.launchApp({ newInstance: true, delete: true });
   });
 
   it("signs in as the test account and lands on Home", async () => {
+    await captureScreen("login-screen");
     await element(by.id("test-signin-button")).tap();
     await waitFor(element(by.id("home-screen")))
       .toBeVisible()
       .withTimeout(15000);
     await expect(element(by.text("Recent Activity"))).toBeVisible();
+    await captureScreen("home-screen-after-login");
   });
 });
