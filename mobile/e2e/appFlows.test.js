@@ -79,7 +79,19 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await element(by.text("Category")).tap();
 
     await element(by.id("rule-match-value-input")).typeText("e2e-test-rule");
+    // tapReturnKey(), not straight into the next tap: a real run (see
+    // rules-engine-with-rule's failure video/hierarchy dump from a prior
+    // attempt) showed the software keyboard still up and the match-value
+    // text mid-typed at the moment "set category to" was tapped, and the
+    // picker never opened -- Android's real soft keyboard can eat that
+    // first tap as a dismiss rather than passing it through to the
+    // button underneath. A Stage 1 (RNTL) render of this exact tap
+    // sequence confirmed the component's own state logic opens the
+    // picker correctly, so this is a real-device-only keyboard timing
+    // issue, not an app bug.
+    await element(by.id("rule-match-value-input")).tapReturnKey();
     await element(by.id("rule-category-select-button")).tap();
+    await waitFor(element(by.text("Dining"))).toBeVisible().withTimeout(5000);
     await element(by.text("Dining")).tap();
 
     await element(by.id("add-rule-button")).tap();
