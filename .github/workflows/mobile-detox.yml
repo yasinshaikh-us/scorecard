@@ -202,12 +202,22 @@ jobs:
       # continued commands the way a plain `run:` step does, so every flag
       # after the first line was silently never reaching detox test at
       # all.
+      # profile: pixel_5 pins a real device hardware profile (screen size +
+      # density). Without it, avdmanager falls back to a generic default --
+      # avd-name: Pixel_API_30 is just this AVD's own label, not a device
+      # selection, and a real run's boot log confirmed the fallback
+      # resolves to a 320x640 skin, nowhere near any actual phone's
+      # resolution. That made captureScreen()'s screenshots a poor visual
+      # match for what a real Pixel 5 (or similar modern phone) shows --
+      # this doesn't affect whether the app's *logic* is correct, only how
+      # representative the screenshots are when eyeballing a UI change.
       - name: Run Detox tests on a real Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           target: google_apis
           arch: x86_64
+          profile: pixel_5
           avd-name: Pixel_API_30
           disable-animations: true
           working-directory: mobile
