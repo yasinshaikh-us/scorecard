@@ -58,7 +58,7 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
 
   if (editing) {
     return (
-      <View style={styles.row}>
+      <View style={styles.editingRow}>
         <TextInput
           testID="transaction-edit-payee-input"
           style={styles.editInput}
@@ -123,6 +123,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#eee",
+  },
+  // Column flow (RN's default), not row: editInput/categorySelectBtn's
+  // own marginBottom already assumes a vertical stack, but this branch
+  // used to reuse the read-only row's flexDirection: "row" wrapper. With
+  // a long real payee string (a real Stage 2 run hit "Ach Electronic
+  // Creditgusto Pay 123456"), the unconstrained-width TextInput consumed
+  // nearly the whole row, pushing editActions (Cancel/Save) off-screen
+  // entirely -- confirmed via that run's failure video, which showed the
+  // payee input and category button on one line with no Save/Cancel
+  // anywhere below or beside them. Never caught by Stage 1's component
+  // tests, which use a short payee ("Chipotle") and don't measure real
+  // layout/visibility at all.
+  editingRow: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
