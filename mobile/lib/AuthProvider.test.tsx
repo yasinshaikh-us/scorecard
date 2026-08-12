@@ -33,6 +33,13 @@ jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: (...args: any[]) => mockOpenAuthSessionAsync(...args),
 }));
 
+const mockGetInitialURL = jest.fn() as jest.Mock<any>;
+const mockAddEventListener = jest.fn() as jest.Mock<any>;
+jest.mock("expo-linking", () => ({
+  getInitialURL: (...args: any[]) => mockGetInitialURL(...args),
+  addEventListener: (...args: any[]) => mockAddEventListener(...args),
+}));
+
 const mockFetch = jest.fn() as jest.Mock<any>;
 
 function makeSession(overrides: Record<string, unknown> = {}) {
@@ -50,9 +57,13 @@ describe("AuthProvider", () => {
     mockMakeRedirectUri.mockClear();
     mockOpenAuthSessionAsync.mockReset();
     mockFetch.mockReset();
+    mockGetInitialURL.mockReset();
+    mockAddEventListener.mockReset();
 
     mockGetSession.mockResolvedValue({ data: { session: null } });
     mockOnAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: jest.fn() } } });
+    mockGetInitialURL.mockResolvedValue(null);
+    mockAddEventListener.mockReturnValue({ remove: jest.fn() });
     (global as any).fetch = mockFetch;
   });
 
@@ -173,5 +184,82 @@ describe("AuthProvider", () => {
     });
 
     expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  // Backstop for the case where WebBrowser.openAuthSessionAsync's own promise
+  // never resolves on Android (see AuthProvider.tsx's comment) -- these cover
+  // the independent Linking-based redirect listener that exchanges the code
+  // regardless.
+  describe("OAuth redirect backstop (Linking listener)", () => {
+    it("exchanges a code found in the initial URL on mount", async () => {
+      mockGetInitialURL.mockResolvedValue("fathom://redirect?code=initial-code");
+      mockExchangeCodeForSession.mockResolvedValue({ error: null });
+
+      await renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+      await waitFor(() => expect(mockExchangeCodeForSession).toHaveBeenCalledWith("initial-code"));
+    });
+
+    it("exchanges a code delivered via a later url event", async () => {
+      let capturedHandler: ((event: { url: string }) => void) | undefined;
+      mockAddEventListener.mockImplementation((_type: string, handler: any) => {
+        capturedHandler = handler;
+        return { remove: jest.fn() };
+      });
+      mockExchangeCodeForSession.mockResolvedValue({ error: null });
+
+      await renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(mockAddEventListener).toHaveBeenCalledWith("url", expect.any(Function)));
+
+      await act(async () => {
+        capturedHandler?.({ url: "fathom://redirect?code=later-code" });
+      });
+
+      await waitFor(() => expect(mockExchangeCodeForSession).toHaveBeenCalledWith("later-code"));
+    });
+
+    it("ignores a redirect URL with no code", async () => {
+      mockGetInitialURL.mockResolvedValue("fathom://redirect");
+
+      await renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+      await waitFor(() => expect(mockGetInitialURL).toHaveBeenCalled());
+      expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when there's no initial URL", async () => {
+      await renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+      await waitFor(() => expect(mockGetInitialURL).toHaveBeenCalled());
+      expect(mockExchangeCodeForSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("signInWithGoogle racing the redirect backstop", () => {
+    it("swallows an exchange error when a session already exists (backstop won the race)", async () => {
+      mockSignInWithOAuth.mockResolvedValue({ data: { url: "https://accounts.google.com/auth" }, error: null });
+      mockOpenAuthSessionAsync.mockResolvedValue({ type: "success", url: "fathom://redirect?code=abc123" });
+      mockExchangeCodeForSession.mockResolvedValue({ error: new Error("code already used") });
+      mockGetSession
+        .mockResolvedValueOnce({ data: { session: null } }) // initial load
+        .mockResolvedValueOnce({ data: { session: makeSession() } }); // fallback check below
+
+      const { result } = await renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      await expect(result.current.signInWithGoogle()).resolves.toBeUndefined();
+    });
+
+    it("still throws the exchange error when no session was established", async () => {
+      mockSignInWithOAuth.mockResolvedValue({ data: { url: "https://accounts.google.com/auth" }, error: null });
+      mockOpenAuthSessionAsync.mockResolvedValue({ type: "success", url: "fathom://redirect?code=abc123" });
+      mockExchangeCodeForSession.mockResolvedValue({ error: new Error("exchange broke") });
+      mockGetSession.mockResolvedValue({ data: { session: null } });
+
+      const { result } = await renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      await expect(result.current.signInWithGoogle()).rejects.toThrow("exchange broke");
+    });
   });
 });
