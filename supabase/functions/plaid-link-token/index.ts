@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
 
     const response = await client.linkTokenCreate({
       user: { client_user_id: user.id },
-      client_name: "Fathom",
+      client_name: "fa/thm",
       products: [Products.Transactions, Products.Auth],
       // Balance isn't a Link product — it's fetched on demand for
       // already-linked accounts, so it doesn't go in this list.

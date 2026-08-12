@@ -12,8 +12,8 @@ describe("Sign-in screen", () => {
     await device.launchApp({ newInstance: true, delete: true });
   });
 
-  it("shows the Fathom title and the Google sign-in button", async () => {
-    await expect(element(by.text("Fathom"))).toBeVisible();
+  it("shows the fa/thm title and the Google sign-in button", async () => {
+    await expect(element(by.text("fa/thm"))).toBeVisible();
     await expect(element(by.id("google-signin-button"))).toBeVisible();
   });
 });

@@ -1,4 +1,4 @@
-# Fathom — mobile app (Expo / React Native)
+# fa/thm — mobile app (Expo / React Native)
 
 Native iOS/Android client for the same backend the web app
 ([`../src`](../src)) uses — every screen here talks to the same Supabase

@@ -1,4 +1,4 @@
-# Fathom — personal ledger dashboard
+# fa/thm — personal ledger dashboard
 
 A React + Recharts dashboard over your transaction history. Ask a question in
 plain English; a Supabase Edge Function forwards the question (never your

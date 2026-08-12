@@ -40,7 +40,7 @@ export default function Login() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Fathom</Text>
+      <Text style={styles.title}>fa/thm</Text>
       <Pressable testID="google-signin-button" style={styles.button} onPress={handlePress} disabled={busy}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue with Google</Text>}
       </Pressable>
