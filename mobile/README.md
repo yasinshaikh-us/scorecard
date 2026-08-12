@@ -41,17 +41,17 @@ Simplified vs. the web version, tracked here rather than silently dropped:
 - Category/match-field pickers are a plain bottom-sheet list
   (`components/PickerModal.tsx`), not styled beyond that.
 - App icons: `assets/icon.png` / `splash-icon.png` / `favicon.png` are the
-  real web app icon (copied from `../public/icon-512.png`); Android's
+  real web app icon (copied from `../public/icon-512.png`). Android's
   *adaptive* icon layers (`android-icon-foreground/background/monochrome.png`)
-  are still the Expo template placeholders — those need padding/safe-zone
-  work with real image-editing tools (this environment has neither
-  Pillow nor ImageMagick) before they'll look right, since Android masks
-  the foreground layer into various shapes.
+  are now generated from that same mark too — the cream "F" glyph alone,
+  padded to stay within Android's ~66%-of-canvas safe zone on a solid
+  `#14181D` background layer, since Android masks the foreground into
+  various launcher shapes (circle, squircle, etc.) and would otherwise
+  clip a full-bleed icon.
 
 Still to come:
 
 - [ ] App Store / Play Store metadata (screenshots, descriptions, privacy details)
-- [ ] Proper Android adaptive icon assets
 
 **Still not verified on a real device or simulator** — built and validated
 via `tsc --noEmit`, `npm test` (Jest unit/component tests), and
@@ -428,7 +428,12 @@ UI.
   (`com.fathom.app`) — change these to your own before running an EAS build.
 - You'll need an Apple Developer Program account (iOS, $99/yr) and Google
   Play Console account (Android, $25 one-time) to actually submit.
-- Proper Android adaptive icon assets (see Status above).
 - `eas.json` has `development`/`preview`/`production` build profiles
   scaffolded; none have been run from this sandbox (no EAS account
   configured here).
+- Supabase Auth's **Redirect URLs** allowlist (Dashboard → Authentication →
+  URL Configuration) needs `fathom://*` added, or `signInWithGoogle()`'s
+  callback (`lib/AuthProvider.tsx`) falls back to the project's Site URL
+  instead of bouncing back into the app via the deep link — from the
+  outside this looks like the sign-in flow dropping you on the deployed
+  web app in the system browser instead of returning to native screens.
