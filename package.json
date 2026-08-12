@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:synthetic": "playwright test -c playwright.synthetic.config.js tests/synthetic/canary.spec.js",
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/coverage-v8": "^4.1.10",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"
   }

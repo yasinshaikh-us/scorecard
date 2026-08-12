@@ -1,4 +1,4 @@
-import { FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Modal, Pressable, StyleSheet, Text } from "react-native";
 
 // Minimal single-select picker, standing in for the web's <select> -- RN
 // has no built-in equivalent. Used by CategoryRulesPanel (category /

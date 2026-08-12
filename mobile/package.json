@@ -36,6 +36,7 @@
     "detox": "^20.51.4",
     "jest": "^29.7.0",
     "jest-expo": "^57.0.4",
+    "oxlint": "^1.78.0",
     "react-test-renderer": "^19.2.8",
     "test-renderer": "^1.2.0",
     "typescript": "~7.0.2"
@@ -46,6 +47,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "oxlint .",
     "e2e:build:android": "detox build -c android.release",
     "e2e:test:android": "detox test -c android.release"
   },
@@ -59,6 +62,22 @@
     "testPathIgnorePatterns": [
       "<rootDir>/node_modules/",
       "<rootDir>/e2e/"
-    ]
+    ],
+    "collectCoverageFrom": [
+      "app/**/*.{ts,tsx}",
+      "components/**/*.{ts,tsx}",
+      "lib/**/*.{ts,tsx}",
+      "!**/*.test.{ts,tsx}",
+      "!app/_layout.tsx",
+      "!lib/types.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 87,
+        "branches": 82,
+        "functions": 78,
+        "lines": 89
+      }
+    }
   }
 }

@@ -174,19 +174,32 @@ minutes get spent producing the artifact a human installs.
 no paid resources):
 
 - **Typecheck** — `npx tsc --noEmit`.
+- **Lint** — `npm run lint`, via [oxlint](https://oxc.rs/docs/guide/usage/linter.html)
+  (`.oxlintrc.json`: react-hooks rules, unused vars, empty-assertion tests,
+  etc). Not ESLint/typescript-eslint: that stack hard-refuses to load
+  against this project's TS 7 compiler (see AGENTS.md) since it depends on
+  the old JS Program/TypeChecker API TS 7 no longer ships; oxlint has its
+  own Rust-based parser and isn't affected, and is fast enough to belong
+  in Stage 1.
 - **Unit/component tests** — `npm test`, via Jest (`jest-expo` preset +
   `@testing-library/react-native`). Covers the pure logic
   (`lib/logic.test.ts`, `lib/format.test.ts` — full parity with
-  `../src/logic.test.js`) and the components with real state/interaction
+  `../src/logic.test.js`), the components with real state/interaction
   (`components/TransactionRow.test.tsx`'s inline-edit flow,
   `components/CategoryRulesPanel.test.tsx`'s add/toggle/delete/reapply,
-  `components/PickerModal.test.tsx`'s select/cancel). Supabase calls are
-  mocked at the module boundary (`jest.mock("../lib/supabase")`) rather
-  than hitting a real project. Not yet covered: `AccountBalances`,
-  `QueryCard`, `Chart`, and the screen-level components (`home.tsx`,
-  `ask.tsx`) — those pull in `react-native-plaid-link-sdk` and
-  `react-native-gifted-charts`, native-ish modules that need more setup
-  to mock cleanly; adding as time allows.
+  `components/PickerModal.test.tsx`'s select/cancel, `components/
+  AccountBalances.test.tsx`, `components/QueryCard.test.tsx`'s four card
+  states, `components/Chart.test.tsx`'s pie/line/bar prop-shaping via a
+  mocked `react-native-gifted-charts`), and the screen/layout components
+  (`app/(app)/_layout.test.tsx` -- including the plaid_items check's
+  fail-open error branch, `app/(app)/home.test.tsx`, `app/(app)/
+  ask.test.tsx` -- including the 401 -> forced-sign-out path, `app/
+  login.test.tsx`, `app/index.test.tsx`). Supabase calls are mocked at the
+  module boundary (`jest.mock("../lib/supabase")`) rather than hitting a
+  real project. `npm run test:coverage` runs the same suite with coverage
+  enabled; `package.json`'s `jest.coverageThreshold` fails CI if coverage
+  drops below the checked-in baseline (currently ~91%/86%/83%/92%
+  statements/branches/functions/lines).
 - **Metro bundle** — `npx expo export` for both iOS and Android. Catches
   bad imports/native-module usage that `tsc` alone (types only, no
   bundling) can't see.

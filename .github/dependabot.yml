@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Web app (root package.json) -- Vite/React/Playwright/Vitest, plus the
+  # Deno-based Edge Functions' shared TS helpers, which are still installed
+  # via the root npm tree for Vitest.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # Mobile app (mobile/package.json) -- Expo SDK 57 / React Native 0.86 pin
+  # a lot of interdependent versions tightly (see mobile/AGENTS.md), so
+  # major bumps stay excluded from grouping and land as their own PR to
+  # review individually rather than folded into a batch.
+  - package-ecosystem: npm
+    directory: "/mobile"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions used across ci.yml / mobile-ci.yml / mobile-detox.yml /
+  # mobile-build.yml / synthetic-monitor.yml (actions/checkout,
+  # actions/setup-node, reactivecircus/android-emulator-runner, etc).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

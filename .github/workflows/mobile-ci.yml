@@ -30,6 +30,27 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npx tsc --noEmit
 
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      # oxlint, not eslint/typescript-eslint: typescript-eslint hard-refuses
+      # to run against this project's TS 7 (the new native/Go compiler --
+      # see AGENTS.md), since it depends on the old JS Program/TypeChecker
+      # API that TS 7's `typescript` package no longer ships. oxlint has its
+      # own Rust-based TS/JSX parser, so it isn't affected, and is fast
+      # enough to belong in Stage 1 (see .oxlintrc.json for the rule set).
+      - run: npm run lint
+
   unit-tests:
     runs-on: ubuntu-latest
     defaults:
@@ -43,7 +64,10 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci --legacy-peer-deps
-      - run: npm test -- --ci
+      # --coverage enforces package.json's jest.coverageThreshold -- a
+      # regression that drops coverage below the checked-in baseline fails
+      # this job, not just a silent number nobody looks at.
+      - run: npm test -- --ci --coverage
 
   metro-bundle:
     runs-on: ubuntu-latest
