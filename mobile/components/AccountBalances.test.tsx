@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import AccountBalances from "./AccountBalances";
 
 type SelectResult = { data: any[] | null; error: { message: string } | null };
@@ -175,5 +175,103 @@ describe("AccountBalances", () => {
 
     await fireEvent.press(screen.getByTestId("test-plaid-link-button"));
     expect(await screen.findByText("PLAID_ENV is production, not sandbox")).toBeTruthy();
+  });
+
+  it("useBankLink's onDone callback (real Plaid Link success) refreshes balances and calls onLinked", async () => {
+    const onLinked = jest.fn();
+    let capturedOnDone: (() => void) | undefined;
+    mockUseBankLink.mockImplementation((onLinkedArg?: () => void) => {
+      capturedOnDone = onLinkedArg;
+      return { startLink: mockStartLink, connecting: false, error: null };
+    });
+
+    await render(<AccountBalances onLinked={onLinked} />);
+    await screen.findByText("No linked accounts yet");
+    const callsBeforeRelink = mockAccountsSelect.mock.calls.length;
+
+    await act(async () => {
+      capturedOnDone?.();
+    });
+
+    expect(onLinked).toHaveBeenCalled();
+    await waitFor(() => expect(mockAccountsSelect.mock.calls.length).toBeGreaterThan(callsBeforeRelink));
+  });
+
+  it("disconnecting an account with a sibling on the same item warns it'll go too", async () => {
+    state.accounts = {
+      data: [account({ account_id: "acc-1", item_id: "item-1", name: "Checking", mask: "1234" }), account({ account_id: "acc-2", item_id: "item-1", name: "Savings", mask: "5678" })],
+      error: null,
+    };
+    state.balances = {
+      data: [
+        { account_id: "acc-1", current: 100, available: null },
+        { account_id: "acc-2", current: 200, available: null },
+      ],
+      error: null,
+    };
+    await render(<AccountBalances />);
+    await screen.findByText("Checking ••1234");
+
+    await fireEvent.press(screen.getAllByText("⛓️‍💥")[0]);
+    expect(await screen.findByText(/This will also disconnect Savings ••5678/)).toBeTruthy();
+  });
+
+  it("shows the server's error and stays open (doesn't silently close) when disconnect fails", async () => {
+    state.accounts = { data: [account()], error: null };
+    state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
+    mockFetch.mockResolvedValue({ ok: false, json: () => Promise.resolve({ error: "Plaid item not found" }) });
+
+    await render(<AccountBalances />);
+    await screen.findByText("Checking ••1234");
+
+    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await fireEvent.press(screen.getByText("Continue"));
+    await fireEvent.press(screen.getByText(/Yes, disconnect/));
+
+    expect(await screen.findByText("Plaid item not found")).toBeTruthy();
+    expect(screen.getByText(/Are you absolutely sure/)).toBeTruthy();
+    expect(screen.getByText("Checking ••1234")).toBeTruthy();
+  });
+
+  it("Add bank: Cancel dismisses the banner without starting Link", async () => {
+    await render(<AccountBalances />);
+    await screen.findByText("No linked accounts yet");
+
+    await fireEvent.press(screen.getByText("+ Add bank"));
+    await screen.findByText("Only checking / savings accounts can be connected.");
+    await fireEvent.press(screen.getByText("Cancel"));
+
+    expect(screen.queryByText("Only checking / savings accounts can be connected.")).toBeNull();
+    expect(screen.getByText("+ Add bank")).toBeTruthy();
+    expect(mockStartLink).not.toHaveBeenCalled();
+  });
+
+  it("Disconnect step 1: Cancel dismisses without advancing or calling the API", async () => {
+    state.accounts = { data: [account()], error: null };
+    state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
+    await render(<AccountBalances />);
+    await screen.findByText("Checking ••1234");
+
+    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await screen.findByText(/Disconnect Checking ••1234\?/);
+    await fireEvent.press(screen.getByText("Cancel"));
+
+    expect(screen.queryByText(/Disconnect Checking ••1234\?/)).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("Disconnect step 2: Cancel dismisses without calling the API", async () => {
+    state.accounts = { data: [account()], error: null };
+    state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
+    await render(<AccountBalances />);
+    await screen.findByText("Checking ••1234");
+
+    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await fireEvent.press(screen.getByText("Continue"));
+    await screen.findByText(/Are you absolutely sure/);
+    await fireEvent.press(screen.getByText("Cancel"));
+
+    expect(screen.queryByText(/Are you absolutely sure/)).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

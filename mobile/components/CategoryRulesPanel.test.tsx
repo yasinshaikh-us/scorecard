@@ -164,4 +164,88 @@ describe("CategoryRulesPanel", () => {
     expect(mockDeleteEq).toHaveBeenCalledWith("id", "rule-1");
     expect(mockRpc).toHaveBeenCalledWith("apply_category_rules");
   });
+
+  it("shows the load error instead of the rule list when the initial fetch fails", async () => {
+    state.selectResult = { data: null, error: { message: "network down" } };
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    expect(await screen.findByText("network down")).toBeTruthy();
+    // Never resolved to an empty array, so it's still the loading state, not "No rules yet."
+    expect(screen.queryByText("No rules yet.")).toBeNull();
+  });
+
+  it("shows the server's error and stops (no reapply) when adding a rule fails", async () => {
+    state.insertResult = { error: { message: "insert failed" } };
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText("No rules yet.");
+
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. starbucks"), "chipotle");
+    await fireEvent.changeText(screen.getByPlaceholderText("and payee to (optional)"), "Chipotle");
+    await fireEvent.press(screen.getByText("Add rule"));
+
+    expect(await screen.findByText("insert failed")).toBeTruthy();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's error and stops (no reapply) when toggling a rule fails", async () => {
+    state.selectResult = { data: [makeRule()], error: null };
+    state.updateResult = { error: { message: "update failed" } };
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText(/if payee contains "starbucks"/);
+
+    await fireEvent(screen.getByRole("switch"), "valueChange", false);
+
+    expect(await screen.findByText("update failed")).toBeTruthy();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's error and stops (no reapply) when deleting a rule fails", async () => {
+    state.selectResult = { data: [makeRule()], error: null };
+    state.deleteResult = { error: { message: "delete failed" } };
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText(/if payee contains "starbucks"/);
+
+    await fireEvent.press(screen.getByText("🗑"));
+    await fireEvent.press(screen.getByText("Delete"));
+
+    expect(await screen.findByText("delete failed")).toBeTruthy();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's error (not a crash) when reapply itself fails after a successful add", async () => {
+    state.rpcResult = { data: 0, error: { message: "reapply failed" } };
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText("No rules yet.");
+
+    await fireEvent.changeText(screen.getByPlaceholderText("e.g. starbucks"), "chipotle");
+    await fireEvent.changeText(screen.getByPlaceholderText("and payee to (optional)"), "Chipotle");
+    await fireEvent.press(screen.getByText("Add rule"));
+
+    expect(await screen.findByText("reapply failed")).toBeTruthy();
+    expect(screen.queryByText(/^Applied to/)).toBeNull();
+  });
+
+  it("the 'If' picker switches the match field between payee and category", async () => {
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText("No rules yet.");
+
+    expect(screen.getByTestId("rule-match-field-button")).toHaveTextContent("Payee");
+    await fireEvent.press(screen.getByTestId("rule-match-field-button"));
+    await fireEvent.press(await screen.findByTestId("picker-option-category"));
+
+    expect(screen.getByTestId("rule-match-field-button")).toHaveTextContent("Category");
+  });
+
+  it("the 'set category to' picker sets the target category", async () => {
+    await render(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText("No rules yet.");
+
+    expect(screen.getByTestId("rule-category-select-button")).toHaveTextContent("(no change)");
+    await fireEvent.press(screen.getByTestId("rule-category-select-button"));
+    // "Dining", not a later entry like "Groceries" -- the FlatList's default
+    // initialNumToRender doesn't render the full height-capped, scrollable
+    // list, same reasoning as e2e/appFlows.test.js's identical choice.
+    await fireEvent.press(await screen.findByTestId("picker-option-Dining"));
+
+    expect(screen.getByTestId("rule-category-select-button")).toHaveTextContent("Dining");
+  });
 });

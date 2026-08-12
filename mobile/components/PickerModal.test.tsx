@@ -33,8 +33,15 @@ describe("PickerModal", () => {
     const onSelect = jest.fn();
     const onClose = jest.fn();
     await render(<PickerModal visible={true} title="If" options={OPTIONS} onSelect={onSelect} onClose={onClose} />);
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("picker-cancel-button"));
     expect(onClose).toHaveBeenCalled();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("tapping inside the sheet itself doesn't dismiss it (only the backdrop/Cancel do)", async () => {
+    const onClose = jest.fn();
+    await render(<PickerModal visible={true} title="If" options={OPTIONS} onSelect={jest.fn()} onClose={onClose} />);
+    await fireEvent.press(screen.getByText("If"));
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

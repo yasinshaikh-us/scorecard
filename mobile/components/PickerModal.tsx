@@ -47,7 +47,7 @@ export default function PickerModal({
               </Pressable>
             )}
           />
-          <Pressable style={styles.cancel} onPress={onClose}>
+          <Pressable testID="picker-cancel-button" style={styles.cancel} onPress={onClose}>
             <Text style={styles.cancelText}>Cancel</Text>
           </Pressable>
         </Pressable>
