@@ -90,7 +90,11 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // Cancel first -- confirms dismissing a picker without selecting
     // leaves the prior value alone, not just that selecting one works.
     await element(by.id("picker-cancel-button")).tap();
-    await expect(element(by.id("rule-match-field-button"))).toHaveText("Payee");
+    // toHaveText() needs the actual native TextView -- rule-match-field-
+    // button is the outer Pressable (a View, confirmed by a real run's
+    // failure: "Got: ... ReactViewGroup" instead of a TextView) -- match
+    // the visible label text directly instead.
+    await expect(element(by.text("Payee"))).toBeVisible();
 
     await element(by.id("rule-match-field-button")).tap();
     await element(by.text("Category")).tap();
