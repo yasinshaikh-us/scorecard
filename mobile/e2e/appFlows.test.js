@@ -125,6 +125,12 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
       .scroll(150, "down");
     await element(by.text("Dining")).tap();
 
+    // Not a bare tap: the category PickerModal's own closing animation
+    // (animationType="slide") can still be occluding add-rule-button for
+    // a beat after the "Dining" tap fires onSelect+onClose -- a real run
+    // failed here with "No views in hierarchy found matching... add-rule-
+    // button" while the picker's view hierarchy was still in the dump.
+    await waitFor(element(by.id("add-rule-button"))).toBeVisible().withTimeout(5000);
     await element(by.id("add-rule-button")).tap();
     await waitFor(element(by.id("rule-switch-toggle")).atIndex(0)).toBeVisible().withTimeout(10000);
     await captureScreen("rules-engine-with-rule");
