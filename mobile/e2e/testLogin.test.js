@@ -32,10 +32,17 @@ describe("Test login", () => {
     // SafeAreaView) becoming visible doesn't guarantee the FlatList's
     // ListHeaderComponent -- where this text lives -- has painted in the
     // same frame; a real run showed this as a flat "was null" immediately
-    // after home-screen appeared.
+    // after home-screen appeared. 30s to match home-screen's own wait
+    // above, not 10s: this is the very first cold render of Home in the
+    // whole suite (fresh launch, real auth round-trip, DataProvider's
+    // first fetch all still in flight) -- a real run confirmed 10s isn't
+    // enough headroom here specifically, timing out outright rather than
+    // racing a single frame (contrast appFlows.test.js's pull-to-refresh
+    // test, which hits the identical assertion but against an already-
+    // warm Home and only needs 10s).
     await waitFor(element(by.text("Recent Activity")))
       .toBeVisible()
-      .withTimeout(10000);
+      .withTimeout(30000);
     await captureScreen("home-screen-after-login");
   });
 
