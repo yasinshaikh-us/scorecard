@@ -198,7 +198,7 @@ no paid resources):
   module boundary (`jest.mock("../lib/supabase")`) rather than hitting a
   real project. `npm run test:coverage` runs the same suite with coverage
   enabled; `package.json`'s `jest.coverageThreshold` fails CI if coverage
-  drops below the checked-in baseline (currently ~91%/86%/83%/92%
+  drops below the checked-in baseline (currently ~96%/88%/92%/98%
   statements/branches/functions/lines).
 - **Metro bundle** — `npx expo export` for both iOS and Android. Catches
   bad imports/native-module usage that `tsc` alone (types only, no

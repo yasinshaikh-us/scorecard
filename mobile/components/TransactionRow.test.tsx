@@ -102,4 +102,31 @@ describe("TransactionRow", () => {
     expect(await screen.findByText("network error")).toBeTruthy();
     expect(screen.getByDisplayValue("Chipotle")).toBeTruthy();
   });
+
+  it("the category picker sets the draft category, saved on Save", async () => {
+    const row = makeRow();
+    await render(<TransactionRow row={row} CATS={[]} />);
+    await fireEvent.press(screen.getByText("Chipotle"));
+
+    expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Food:Restaurants");
+    await fireEvent.press(screen.getByTestId("transaction-edit-category-button"));
+    await fireEvent.press(await screen.findByTestId("picker-option-Dining"));
+
+    expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Dining");
+
+    await fireEvent.press(screen.getByText("Save"));
+    await screen.findByText("Dining");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ category: "Dining" }));
+  });
+
+  it("closing the category picker without selecting keeps the previous draft category", async () => {
+    await render(<TransactionRow row={makeRow()} CATS={[]} />);
+    await fireEvent.press(screen.getByText("Chipotle"));
+    await fireEvent.press(screen.getByTestId("transaction-edit-category-button"));
+    await screen.findByTestId("picker-options-list");
+
+    await fireEvent.press(screen.getByTestId("picker-cancel-button"));
+
+    expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Food:Restaurants");
+  });
 });
