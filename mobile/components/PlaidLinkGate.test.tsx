@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
+import { renderWithTheme } from "../lib/testUtils";
 import PlaidLinkGate from "./PlaidLinkGate";
 
 const mockStartLink = jest.fn();
@@ -26,7 +27,7 @@ describe("PlaidLinkGate", () => {
 
   it("renders the title, body, and both actions", async () => {
     const onDone = jest.fn();
-    await render(<PlaidLinkGate onDone={onDone} />);
+    await renderWithTheme(<PlaidLinkGate onDone={onDone} />);
     expect(screen.getByText("Connect your bank")).toBeTruthy();
     expect(await screen.findByTestId("plaid-gate-connect-button")).toBeTruthy();
     expect(screen.getByTestId("plaid-gate-skip-button")).toBeTruthy();
@@ -34,7 +35,7 @@ describe("PlaidLinkGate", () => {
 
   it("Connect a bank account calls startLink", async () => {
     const onDone = jest.fn();
-    await render(<PlaidLinkGate onDone={onDone} />);
+    await renderWithTheme(<PlaidLinkGate onDone={onDone} />);
     await fireEvent.press(screen.getByTestId("plaid-gate-connect-button"));
     expect(mockStartLink).toHaveBeenCalled();
     expect(onDone).not.toHaveBeenCalled();
@@ -42,7 +43,7 @@ describe("PlaidLinkGate", () => {
 
   it("Skip for now calls onDone directly, without starting a link", async () => {
     const onDone = jest.fn();
-    await render(<PlaidLinkGate onDone={onDone} />);
+    await renderWithTheme(<PlaidLinkGate onDone={onDone} />);
     await fireEvent.press(screen.getByTestId("plaid-gate-skip-button"));
     expect(onDone).toHaveBeenCalled();
     expect(mockStartLink).not.toHaveBeenCalled();
@@ -50,13 +51,13 @@ describe("PlaidLinkGate", () => {
 
   it("shows the connecting state and disables the connect button", async () => {
     mockUseBankLink.mockReturnValue({ startLink: mockStartLink, connecting: true, error: null });
-    await render(<PlaidLinkGate onDone={jest.fn()} />);
+    await renderWithTheme(<PlaidLinkGate onDone={jest.fn()} />);
     expect(screen.getByText("Connecting…")).toBeTruthy();
   });
 
   it("shows useBankLink's error", async () => {
     mockUseBankLink.mockReturnValue({ startLink: mockStartLink, connecting: false, error: "Link failed" });
-    await render(<PlaidLinkGate onDone={jest.fn()} />);
+    await renderWithTheme(<PlaidLinkGate onDone={jest.fn()} />);
     expect(await screen.findByText("Link failed")).toBeTruthy();
   });
 });

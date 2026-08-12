@@ -3,9 +3,10 @@ import { BarChart, LineChart, PieChart } from "react-native-gifted-charts";
 import { fmtGroupKey, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { topCategory, type ChartDatum, type QuerySpec } from "../lib/logic";
+import { useTheme } from "../lib/ThemeProvider";
+import { fontFamily } from "../lib/theme";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const ACCENT = "#1a73e8";
 
 // Bar/pie/line chart with tap-to-select, mirroring src/QueryCard.jsx's
 // Recharts version: tapping a bar/slice/point selects it (filters the
@@ -27,6 +28,9 @@ export default function Chart({
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
+  const { colors } = useTheme();
+  const axisLabelStyle = { color: colors.textMuted, fontSize: 10, fontFamily: fontFamily.regular };
+
   if (data.length === 0) return null;
 
   const longLabelChart = spec.groupBy === "payee" || spec.groupBy === "transaction";
@@ -37,7 +41,7 @@ export default function Chart({
       value: d.total,
       color: spec.groupBy === "category" ? catColor(d.key, CATS, topCategory) : undefined,
       text: undefined,
-      strokeColor: selectedKey === d.key ? "#000" : undefined,
+      strokeColor: selectedKey === d.key ? colors.text : undefined,
       strokeWidth: selectedKey === d.key ? 2 : 0,
       onPress: () => onSelect(d.key),
     }));
@@ -52,7 +56,7 @@ export default function Chart({
     const lineData = data.map((d) => ({
       value: d.total,
       label: fmtGroupKey(d.key, spec.groupBy || ""),
-      dataPointColor: selectedKey === d.key ? ACCENT : "#fff",
+      dataPointColor: selectedKey === d.key ? colors.accent : colors.surface,
       dataPointRadius: selectedKey === d.key ? 5 : 4,
       onPress: () => onSelect(d.key),
     }));
@@ -62,11 +66,11 @@ export default function Chart({
           data={lineData}
           width={width}
           height={200}
-          color={ACCENT}
+          color={colors.accent}
           thickness={2}
-          dataPointsColor={ACCENT}
-          xAxisLabelTextStyle={styles.axisLabel}
-          yAxisTextStyle={styles.axisLabel}
+          dataPointsColor={colors.accent}
+          xAxisLabelTextStyle={axisLabelStyle}
+          yAxisTextStyle={axisLabelStyle}
           curved
           isAnimated={false}
         />
@@ -77,7 +81,7 @@ export default function Chart({
   const barData = data.map((d) => ({
     value: d.total,
     label: longLabelChart ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
-    frontColor: spec.groupBy === "category" ? catColor(d.key, CATS, topCategory) : ACCENT,
+    frontColor: spec.groupBy === "category" ? catColor(d.key, CATS, topCategory) : colors.accent,
     opacity: selectedKey && selectedKey !== d.key ? 0.35 : 1,
     onPress: () => onSelect(d.key),
   }));
@@ -91,8 +95,8 @@ export default function Chart({
         horizontal={longLabelChart}
         barWidth={longLabelChart ? 18 : 22}
         spacing={longLabelChart ? 14 : 18}
-        xAxisLabelTextStyle={styles.axisLabel}
-        yAxisTextStyle={styles.axisLabel}
+        xAxisLabelTextStyle={axisLabelStyle}
+        yAxisTextStyle={axisLabelStyle}
         noOfSections={4}
         isAnimated={false}
       />
@@ -108,5 +112,4 @@ export const formatValue = fmtMoney;
 
 const styles = StyleSheet.create({
   wrap: { alignItems: "center", marginBottom: 12 },
-  axisLabel: { color: "#888", fontSize: 10 },
 });

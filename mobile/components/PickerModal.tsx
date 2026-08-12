@@ -1,4 +1,6 @@
 import { FlatList, Modal, Pressable, StyleSheet, Text } from "react-native";
+import { useTheme } from "../lib/ThemeProvider";
+import { fontFamily } from "../lib/theme";
 
 // Minimal single-select picker, standing in for the web's <select> -- RN
 // has no built-in equivalent. Used by CategoryRulesPanel (category /
@@ -24,11 +26,12 @@ export default function PickerModal({
   onSelect: (value: string) => void;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.title}>{title}</Text>
+        <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
+          <Text style={[styles.title, { color: colors.text, fontFamily: fontFamily.semibold }]}>{title}</Text>
           <FlatList
             testID="picker-options-list"
             data={options}
@@ -37,18 +40,18 @@ export default function PickerModal({
             renderItem={({ item }) => (
               <Pressable
                 testID={`picker-option-${item.value}`}
-                style={styles.option}
+                style={[styles.option, { borderBottomColor: colors.borderSubtle }]}
                 onPress={() => {
                   onSelect(item.value);
                   onClose();
                 }}
               >
-                <Text style={styles.optionText}>{item.label}</Text>
+                <Text style={[styles.optionText, { color: colors.text, fontFamily: fontFamily.regular }]}>{item.label}</Text>
               </Pressable>
             )}
           />
           <Pressable testID="picker-cancel-button" style={styles.cancel} onPress={onClose}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={[styles.cancelText, { color: colors.accent, fontFamily: fontFamily.semibold }]}>Cancel</Text>
           </Pressable>
         </Pressable>
       </Pressable>
@@ -58,10 +61,10 @@ export default function PickerModal({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, paddingBottom: 32 },
-  title: { fontSize: 15, fontWeight: "700", marginBottom: 8, textAlign: "center" },
-  option: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#eee" },
+  sheet: { borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, paddingBottom: 32 },
+  title: { fontSize: 15, marginBottom: 8, textAlign: "center" },
+  option: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   optionText: { fontSize: 15, textAlign: "center" },
   cancel: { marginTop: 12, paddingVertical: 10 },
-  cancelText: { textAlign: "center", color: "#1a73e8", fontSize: 15, fontWeight: "600" },
+  cancelText: { textAlign: "center", fontSize: 15 },
 });

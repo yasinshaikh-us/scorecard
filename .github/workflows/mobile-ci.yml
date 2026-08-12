@@ -64,7 +64,7 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci --legacy-peer-deps
-      # --coverage enforces package.json's jest.coverageThreshold -- a
+      # --coverage enforces jest.config.js's coverageThreshold -- a
       # regression that drops coverage below the checked-in baseline fails
       # this job, not just a silent number nobody looks at.
       - run: npm test -- --ci --coverage

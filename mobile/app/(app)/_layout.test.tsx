@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { renderWithTheme } from "../../lib/testUtils";
 import AppLayout from "./_layout";
 
 const mockUseAuth = jest.fn() as jest.Mock<any>;
@@ -63,14 +64,14 @@ describe("AppLayout", () => {
 
   it("renders nothing while the session is still loading", async () => {
     mockUseAuth.mockReturnValue({ session: null, loading: true });
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     expect(screen.toJSON()).toBeNull();
     expect(mockFrom).not.toHaveBeenCalled();
   });
 
   it("redirects to /login when there's no session", async () => {
     mockUseAuth.mockReturnValue({ session: null, loading: false });
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     expect(await screen.findByTestId("redirect")).toHaveTextContent("/login");
     expect(mockFrom).not.toHaveBeenCalled();
   });
@@ -79,7 +80,7 @@ describe("AppLayout", () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
     let resolveLimit!: (v: SelectResult) => void;
     mockLimit.mockImplementationOnce(() => new Promise((resolve) => (resolveLimit = resolve)));
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     expect(screen.toJSON()).toBeNull();
     resolveLimit({ data: [], error: null });
     // Settle the promise before the test (and its render tree) tears down,
@@ -90,7 +91,7 @@ describe("AppLayout", () => {
   it("fails open (shows the Plaid link gate, not a crash or blank screen) when the plaid_items check errors", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
     state.plaidItems = { data: null, error: { message: "boom" } };
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     expect(await screen.findByTestId("mock-plaid-gate-done")).toBeTruthy();
     expect(screen.queryByTestId("data-provider")).toBeNull();
   });
@@ -98,14 +99,14 @@ describe("AppLayout", () => {
   it("shows the Plaid link gate when the user has no linked bank yet", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
     state.plaidItems = { data: [], error: null };
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     expect(await screen.findByTestId("mock-plaid-gate-done")).toBeTruthy();
   });
 
   it("skips the link gate (without re-querying) once its onDone fires, and shows the app", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
     state.plaidItems = { data: [], error: null };
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     await screen.findByTestId("mock-plaid-gate-done");
     const callsBeforeSkip = mockFrom.mock.calls.length;
 
@@ -118,7 +119,7 @@ describe("AppLayout", () => {
   it("renders the app (DataProvider + tabs) directly when a bank is already linked", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
     state.plaidItems = { data: [{ id: "item-1", institution_name: "Chase", status: "active" }], error: null };
-    await render(<AppLayout />);
+    await renderWithTheme(<AppLayout />);
     expect(await screen.findByTestId("data-provider")).toBeTruthy();
     expect(screen.queryByTestId("mock-plaid-gate-done")).toBeNull();
   });
