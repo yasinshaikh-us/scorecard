@@ -238,16 +238,33 @@ emulator needs neither, and exercises Detox's most mature,
 best-supported code path.)
 
 Four spec files, one Gradle build + one emulator boot: `smoke.test.js`
-(signed-out sign-in screen), `testLogin.test.js` / `testPlaidLink.test.js`
-(the two bypasses covered below), and `appFlows.test.js` — everything
-else: the Rules engine (add/toggle/delete a rule), editing a
-transaction's category, the account-management banners' cancel paths
-(real Plaid Link and a real bank disconnect can't be scripted — see
-"Test Plaid Link" below and this spec's own header comment), tab
-navigation, an Ask suggestion round-trip, and sign-out. Deliberately one
-file for all of that rather than one per screen — each `describe`
+(signed-out sign-in screen); `testLogin.test.js` (the test-login bypass,
+plus confirming a signed-in session survives a real app relaunch — see
+below); `testPlaidLink.test.js` (the Plaid Link bypass, covered below);
+and `appFlows.test.js` — everything else: the Rules engine (add/toggle/
+delete a rule, including one that sets payee rather than category, and
+cancelling a picker without selecting), editing a transaction's category
+(both saving and cancelling), the account-management banners' cancel
+paths (real Plaid Link and a real bank disconnect can't be scripted —
+see "Test Plaid Link" below and this spec's own header comment), tab
+navigation, both Ask paths (a suggestion chip and typing a custom
+question), Home's pull-to-refresh gesture, and sign-out. Deliberately
+one file for all of that rather than one per screen — each `describe`
 block's own `device.launchApp` reinstalls the app, which adds up across
 files.
+
+Two things here are only checkable at this stage, not at Stage 1:
+**session persistence across a real relaunch** (`testLogin.test.js`)
+exercises `lib/supabase.ts`'s actual encrypted-storage round-trip
+(`LargeSecureStore`: an AES key in `SecureStore`, the encrypted session
+blob in `AsyncStorage`) — Stage 1 mocks the whole `supabase` module at
+the boundary, so a broken encrypt/decrypt round-trip is invisible there
+(this exact bug class silently broke every real sign-in once before, see
+that file's own comment). **Pull-to-refresh** (`appFlows.test.js`)
+exercises a real swipe gesture against Home's `RefreshControl`; RN
+doesn't preserve a custom `testID` on `RefreshControl` through
+`ScrollView`'s native prop handling in Stage 1's JS test renderer, so
+this could never be targeted there at all.
 
 One thing this needed that earlier stages didn't: **`plugins/
 withDetoxTestBuildType.js`** — an Expo config plugin that injects one
