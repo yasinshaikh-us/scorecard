@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { functionUrl } from "./functionsClient";
@@ -52,6 +53,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.subscription.unsubscribe();
   }, []);
 
+  // Backstop for signInWithGoogle()'s own redirect handling below.
+  // On Android, WebBrowser.openAuthSessionAsync's promise can simply never
+  // resolve when the OS routes Google's consent screen through a separate
+  // installed app (the Gmail/Google app already signed into the account)
+  // instead of keeping it inside the Custom Tab that opened it -- a known
+  // platform quirk (github.com/expo/expo/issues/27500). The "fathom://"
+  // redirect still reaches this app either way (Android delivers it via
+  // the normal deep-link path regardless of which flow "owns" it), but
+  // when the promise hangs, signInWithGoogle()'s own exchangeCodeForSession
+  // call never runs -- leaving the user bounced back to the sign-in screen
+  // with no session and no error. This listens for that same incoming
+  // redirect independently and exchanges the code itself, so sign-in
+  // completes even when the Custom Tab promise never settles. On the
+  // happy path (openAuthSessionAsync resolves and already exchanged the
+  // code first) this is a no-op: exchanging an already-used code just
+  // errors, which is swallowed here since signInWithGoogle()'s own error
+  // handling covers the real failure case.
+  useEffect(() => {
+    function tryExchange(url: string | null) {
+      if (!url) return;
+      const code = new URL(url).searchParams.get("code");
+      if (!code) return;
+      supabase.auth.exchangeCodeForSession(code).catch(() => {});
+    }
+
+    Linking.getInitialURL().then(tryExchange);
+    const subscription = Linking.addEventListener("url", ({ url }) => tryExchange(url));
+    return () => subscription.remove();
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -73,7 +104,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!code) throw new Error("No authorization code in the OAuth redirect");
 
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        if (exchangeError) throw exchangeError;
+        if (exchangeError) {
+          // The backstop Linking listener above may have already consumed
+          // this same code first (Android can deliver the redirect to both
+          // -- see that listener's comment); if so we already have a
+          // session and this "code already used" error is expected noise,
+          // not a real failure.
+          const { data: sessionCheck } = await supabase.auth.getSession();
+          if (!sessionCheck.session) throw exchangeError;
+        }
       },
       async signInWithTestAccount() {
         const secret = process.env.EXPO_PUBLIC_TEST_LOGIN_SECRET;
