@@ -43,7 +43,7 @@ export default function Home() {
   return (
     <SafeAreaView testID="home-screen" style={styles.screen} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Fathom</Text>
+        <Text style={styles.headerTitle}>fa/thm</Text>
         <View style={styles.headerActions}>
           <Pressable testID="rules-button" onPress={() => setRulesOpen(true)} hitSlop={8}>
             <Text style={styles.headerAction}>Rules</Text>
