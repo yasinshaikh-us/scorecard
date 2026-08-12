@@ -193,21 +193,31 @@ failure surfaces before the slower browser test ever runs.
 ## Project structure
 
 ```
-├── .github/workflows/
-│   └── ci.yml           # build -> unit tests -> smoke test, on every push/PR
+├── .github/
+│   ├── dependabot.yml    # weekly npm (root + mobile/) + github-actions updates
+│   └── workflows/
+│       ├── ci.yml               # build -> unit tests -> smoke test, on every push/PR
+│       ├── mobile-ci.yml        # mobile/'s Stage 1 (typecheck, lint, unit tests, Metro bundle)
+│       ├── mobile-detox.yml     # mobile/'s Stage 2, real-emulator Detox run, manual-dispatch
+│       ├── mobile-build.yml     # mobile/'s Stage 3, EAS build, manual-dispatch
+│       └── synthetic-monitor.yml # scheduled run of tests/synthetic/ against the live deployment
 ├── supabase/functions/
 │   ├── _shared/
 │   │   ├── requireUser.ts        # recovers the caller's user id from their Supabase JWT
 │   │   ├── cors.ts                # CORS headers for the client-facing functions
 │   │   ├── transactionsData.ts    # fetch/shape helpers, shared by transactions + query
 │   │   ├── transactionsData.test.ts
+│   │   ├── categoryRules.ts       # applies category_rules to a row, shared by the sync path
+│   │   ├── syncItemTransactions.ts # pulls a Plaid Item's transactions into `transactions`
+│   │   ├── refreshAccountBalances.ts # shared by the hourly cron + every sync webhook
+│   │   ├── verifyPlaidWebhook.ts  # validates Plaid's webhook signature
 │   │   ├── plaidExchangeLogic.ts  # pure duplicate-account detection logic
 │   │   ├── plaidExchangeLogic.test.ts
 │   │   ├── querySystemPrompt.ts   # builds the NL-query system prompt
 │   │   ├── plaid.ts               # shared Plaid client (real, Production-configured)
 │   │   ├── plaidSandbox.ts        # dedicated Sandbox-only Plaid client, test-plaid-link only
 │   │   └── supabaseAdmin.ts       # shared service-role Supabase client
-│   ├── transactions/index.ts      # replaces the old api/transactions.js
+│   ├── transactions/index.ts      # replaces the old Vercel api/transactions.js
 │   ├── plaid-link-token/index.ts
 │   ├── plaid-exchange/index.ts
 │   ├── plaid-disconnect/index.ts
@@ -217,22 +227,39 @@ failure surfaces before the slower browser test ever runs.
 │   ├── test-login/index.ts        # mobile testing only -- see mobile/README.md
 │   └── test-plaid-link/index.ts   # mobile testing only -- see mobile/README.md
 ├── src/
-│   ├── App.jsx          # auth gate (Login vs dashboard) + the dashboard itself
-│   ├── Login.jsx        # "Continue with Google" screen
-│   ├── supabaseClient.js # browser Supabase client (anon key)
-│   ├── functionsClient.js # builds Supabase Edge Function URLs
-│   ├── logic.js         # pure filtering/grouping/date-math logic, unit tested
+│   ├── App.jsx               # auth gate (Login vs dashboard) + the authenticated shell/nav
+│   ├── Login.jsx              # "Continue with Google" screen
+│   ├── HomePage.jsx           # recent-activity + account balances
+│   ├── AskPage.jsx            # NL-query feed (renders QueryCard per question)
+│   ├── QueryCard.jsx          # one query's chart + matching transaction list
+│   ├── TransactionRow.jsx     # one transaction, with inline payee/category edit
+│   ├── AccountBalances.jsx    # linked-bank balance chips + add/disconnect flows
+│   ├── PlaidLinkGate.jsx      # first-login "connect a bank" screen, skippable
+│   ├── CategoryRulesPanel.jsx # the Rules engine modal (add/toggle/delete/reapply)
+│   ├── ThemeToggle.jsx        # light/dark switch
+│   ├── categoryIcons.js       # icon + the closed 19-category set
+│   ├── dataStore.js           # module-level shared transaction data (Home + Ask)
+│   ├── useBankLink.js         # shared Plaid Link hook (PlaidLinkGate + AccountBalances)
+│   ├── supabaseClient.js      # browser Supabase client (anon key)
+│   ├── functionsClient.js     # builds Supabase Edge Function URLs
+│   ├── logic.js               # pure filtering/grouping/date-math logic, unit tested
 │   ├── logic.test.js
-│   ├── styles.js        # shared inline-style objects for App.jsx
-│   └── main.jsx         # React entry point
-├── tests/e2e/
-│   └── dashboard.spec.js  # Playwright smoke test
+│   ├── styles.js               # shared inline-style objects
+│   ├── theme.css               # design tokens, light/dark
+│   └── main.jsx                # React entry point
+├── mobile/                # Expo/React Native client -- see mobile/README.md
+├── tests/
+│   ├── e2e/
+│   │   └── dashboard.spec.js  # Playwright, ~18 test cases against the built app, mocked APIs
+│   └── synthetic/          # scheduled checks against the live deployment -- see synthetic-monitor.yml
 ├── public/
 │   ├── manifest.json    # PWA config
 │   └── icon-*.png       # app icons
 ├── playwright.config.js
+├── playwright.synthetic.config.js
 ├── index.html
 ├── package.json
-├── vite.config.js       # includes Vitest's `test` config block
-└── vercel.json          # static SPA hosting only — no serverless functions
+├── vite.config.js       # includes Vitest's `test` + `test.coverage` config blocks
+├── SCHEMA.md             # full database schema reference
+└── vercel.json           # static SPA hosting only — no serverless functions
 ```
