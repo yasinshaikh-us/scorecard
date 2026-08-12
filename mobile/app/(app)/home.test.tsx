@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
+import { renderWithTheme } from "../../lib/testUtils";
 import Home from "./home";
 import type { Transaction } from "../../lib/types";
 
@@ -75,20 +76,20 @@ describe("Home", () => {
 
   it("shows a loading placeholder while data isn't ready yet", async () => {
     mockUseData.mockReturnValue({ transactions: [], dataStatus: "loading", CATS: [], refresh: jest.fn() });
-    await render(<Home />);
+    await renderWithTheme(<Home />);
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(screen.queryByTestId("tx-row")).toBeNull();
   });
 
   it("shows an error message when the data fetch failed", async () => {
     mockUseData.mockReturnValue({ transactions: [], dataStatus: "error", CATS: [], refresh: jest.fn() });
-    await render(<Home />);
+    await renderWithTheme(<Home />);
     expect(screen.getByText("Couldn't load transaction data")).toBeTruthy();
   });
 
   it("shows a distinct empty state for a ledger with no transactions at all", async () => {
     ready({ transactions: [] });
-    await render(<Home />);
+    await renderWithTheme(<Home />);
     expect(screen.getByText("No transactions yet")).toBeTruthy();
   });
 
@@ -101,7 +102,7 @@ describe("Home", () => {
         tx({ Id: 4, Date: "2026-01-12", Payee: "Middle" }),
       ],
     });
-    await render(<Home />);
+    await renderWithTheme(<Home />);
 
     const rows = screen.getAllByTestId("tx-row");
     expect(rows.map((r) => r.props.children)).toEqual(["Latest", "Middle", "Boundary in"]);
@@ -110,14 +111,14 @@ describe("Home", () => {
 
   it("Sign out calls AuthProvider's signOut", async () => {
     ready();
-    await render(<Home />);
+    await renderWithTheme(<Home />);
     await fireEvent.press(screen.getByTestId("sign-out-button"));
     expect(mockSignOut).toHaveBeenCalled();
   });
 
   it("Rules opens the rules panel, which closes back to Home", async () => {
     ready();
-    await render(<Home />);
+    await renderWithTheme(<Home />);
     expect(screen.queryByText("rules panel")).toBeNull();
 
     await fireEvent.press(screen.getByTestId("rules-button"));
@@ -129,7 +130,7 @@ describe("Home", () => {
 
   it("renders account balances above the recent-activity list", async () => {
     ready({ transactions: [tx()] });
-    await render(<Home />);
+    await renderWithTheme(<Home />);
     expect(screen.getByTestId("account-balances")).toBeTruthy();
     expect(screen.getByText("Recent Activity")).toBeTruthy();
   });

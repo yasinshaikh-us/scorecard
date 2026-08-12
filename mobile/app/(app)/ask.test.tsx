@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
+import { renderWithTheme } from "../../lib/testUtils";
 import Ask from "./ask";
 
 const mockSignOut = jest.fn() as jest.Mock<any>;
@@ -12,6 +13,18 @@ const mockUseData = jest.fn() as jest.Mock<any>;
 jest.mock("../../lib/DataProvider", () => ({
   useData: () => mockUseData(),
 }));
+
+jest.mock("../../components/CategoryRulesPanel", () => {
+  const { Text: RNText, Pressable: RNPressable } = require("react-native");
+  return function MockCategoryRulesPanel({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+    if (!visible) return null;
+    return (
+      <RNPressable testID="rules-panel-close" onPress={onClose}>
+        <RNText>rules panel</RNText>
+      </RNPressable>
+    );
+  };
+});
 
 jest.mock("../../components/QueryCard", () => {
   const { Text: RNText, View: RNView, Pressable: RNPressable } = require("react-native");
@@ -51,7 +64,7 @@ describe("Ask", () => {
 
   it("does nothing when the input is empty", async () => {
     readySession();
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.press(screen.getByTestId("ask-button"));
     expect(mockFetch).not.toHaveBeenCalled();
     expect(screen.queryByTestId("query-card")).toBeNull();
@@ -60,7 +73,7 @@ describe("Ask", () => {
   it("disables the input and button while data isn't ready, and pressing Ask does nothing", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok-1" }, signOut: mockSignOut });
     mockUseData.mockReturnValue({ transactions: [], dataStatus: "loading", CATS: [], refresh: jest.fn() });
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
 
     expect(screen.getByTestId("ask-input").props.editable).toBe(false);
     await fireEvent.changeText(screen.getByTestId("ask-input"), "how much on dining");
@@ -79,7 +92,7 @@ describe("Ask", () => {
         }),
     });
 
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.changeText(screen.getByTestId("ask-input"), "how much on groceries?");
     await fireEvent.press(screen.getByTestId("ask-button"));
 
@@ -105,7 +118,7 @@ describe("Ask", () => {
       json: () => Promise.resolve({ content: [{ type: "text", text: JSON.stringify({ isLedgerQuery: false }) }] }),
     });
 
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.changeText(screen.getByTestId("ask-input"), "what's the weather?");
     await fireEvent.press(screen.getByTestId("ask-button"));
 
@@ -116,7 +129,7 @@ describe("Ask", () => {
     readySession();
     mockFetch.mockResolvedValue({ status: 401, ok: false, json: () => Promise.resolve({}) });
 
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.changeText(screen.getByTestId("ask-input"), "how much on dining?");
     await fireEvent.press(screen.getByTestId("ask-button"));
 
@@ -129,7 +142,7 @@ describe("Ask", () => {
     readySession();
     mockFetch.mockRejectedValue(new Error("Network request failed"));
 
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.changeText(screen.getByTestId("ask-input"), "how much on dining?");
     await fireEvent.press(screen.getByTestId("ask-button"));
 
@@ -145,7 +158,7 @@ describe("Ask", () => {
         Promise.resolve({ content: [{ type: "text", text: JSON.stringify({ isLedgerQuery: true, title: "Dining" }) }] }),
     });
 
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.press(screen.getAllByTestId("ask-suggestion")[0]);
 
     expect(await screen.findByTestId("query-card-title")).toHaveTextContent("Dining");
@@ -160,12 +173,24 @@ describe("Ask", () => {
         Promise.resolve({ content: [{ type: "text", text: JSON.stringify({ isLedgerQuery: true, title: "Dining" }) }] }),
     });
 
-    await render(<Ask />);
+    await renderWithTheme(<Ask />);
     await fireEvent.changeText(screen.getByTestId("ask-input"), "how much on dining?");
     await fireEvent.press(screen.getByTestId("ask-button"));
     await screen.findByTestId("query-card");
 
     await fireEvent.press(screen.getByTestId("query-card-remove"));
     expect(screen.queryByTestId("query-card")).toBeNull();
+  });
+
+  it("Rules opens the rules panel, which closes back to Ask", async () => {
+    readySession();
+    await renderWithTheme(<Ask />);
+    expect(screen.queryByText("rules panel")).toBeNull();
+
+    await fireEvent.press(screen.getByTestId("rules-button"));
+    expect(screen.getByText("rules panel")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("rules-panel-close"));
+    expect(screen.queryByText("rules panel")).toBeNull();
   });
 });

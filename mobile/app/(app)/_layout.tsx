@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text } from "react-native";
+import { Pressable } from "react-native";
 import { Redirect, Tabs } from "expo-router";
+import { Home as HomeIcon, MessageCircleQuestion } from "lucide-react-native";
 import { useAuth } from "../../lib/AuthProvider";
+import { useTheme } from "../../lib/ThemeProvider";
+import { fontFamily } from "../../lib/theme";
 import { DataProvider } from "../../lib/DataProvider";
 import { supabase } from "../../lib/supabase";
 import PlaidLinkGate from "../../components/PlaidLinkGate";
@@ -13,6 +16,7 @@ import PlaidLinkGate from "../../components/PlaidLinkGate";
 // only when the user has no plaid_items row yet.
 export default function AppLayout() {
   const { session, loading } = useAuth();
+  const { colors } = useTheme();
   // undefined = checking, null = no linked bank yet, object = at least one row
   const [plaidItem, setPlaidItem] = useState<{ id: string } | null | undefined>(undefined);
   const [skippedLink, setSkippedLink] = useState(false);
@@ -48,12 +52,20 @@ export default function AppLayout() {
 
   return (
     <DataProvider>
-      <Tabs screenOptions={{ headerShown: false }}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: colors.text,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+          tabBarLabelStyle: { fontFamily: fontFamily.medium, fontSize: 11 },
+        }}
+      >
         <Tabs.Screen
           name="home"
           options={{
             title: "Home",
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🏠</Text>,
+            tabBarIcon: ({ color }) => <HomeIcon size={20} color={color} />,
             // Default tab labels ("Home") collide with visible in-screen text
             // elsewhere (e.g. Ask's own "Ask" button) -- a stable testID on
             // the tab button itself, via this standard react-navigation
@@ -66,7 +78,7 @@ export default function AppLayout() {
           name="ask"
           options={{
             title: "Ask",
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>💬</Text>,
+            tabBarIcon: ({ color }) => <MessageCircleQuestion size={20} color={color} />,
             tabBarButton: ({ ref: _ref, ...props }) => <Pressable {...props} testID="tab-ask-button" />,
           }}
         />

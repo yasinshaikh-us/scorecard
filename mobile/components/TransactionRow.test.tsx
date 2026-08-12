@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
+import { renderWithTheme } from "../lib/testUtils";
 import TransactionRow from "./TransactionRow";
 import type { Transaction } from "../lib/types";
 
@@ -34,7 +35,7 @@ describe("TransactionRow", () => {
   });
 
   it("renders payee, category, date, and amount", async () => {
-    await render(<TransactionRow row={makeRow()} CATS={["Food"]} />);
+    await renderWithTheme(<TransactionRow row={makeRow()} CATS={["Food"]} />);
     expect(screen.getByText("Chipotle")).toBeTruthy();
     expect(screen.getByText("Food:Restaurants")).toBeTruthy();
     expect(screen.getByText("22 Jul 26")).toBeTruthy();
@@ -42,13 +43,13 @@ describe("TransactionRow", () => {
   });
 
   it("is not pressable when the row has no Id (synthetic row)", async () => {
-    await render(<TransactionRow row={makeRow({ Id: undefined as unknown as number })} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={makeRow({ Id: undefined as unknown as number })} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     expect(screen.queryByDisplayValue("Chipotle")).toBeNull();
   });
 
   it("tapping a row enters edit mode with the current payee prefilled", async () => {
-    await render(<TransactionRow row={makeRow()} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     expect(screen.getByDisplayValue("Chipotle")).toBeTruthy();
     expect(screen.getByText("Save")).toBeTruthy();
@@ -56,7 +57,7 @@ describe("TransactionRow", () => {
   });
 
   it("cancel exits edit mode without saving", async () => {
-    await render(<TransactionRow row={makeRow()} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.press(screen.getByText("Cancel"));
     expect(screen.queryByDisplayValue("Chipotle")).toBeNull();
@@ -66,7 +67,7 @@ describe("TransactionRow", () => {
   it("save sends the trimmed payee/category with manually_edited:true, scoped to the row's id", async () => {
     const row = makeRow();
     const onEdited = jest.fn();
-    await render(<TransactionRow row={row} CATS={[]} onEdited={onEdited} />);
+    await renderWithTheme(<TransactionRow row={row} CATS={[]} onEdited={onEdited} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.changeText(screen.getByDisplayValue("Chipotle"), "  Chipotle Mexican Grill  ");
     await fireEvent.press(screen.getByText("Save"));
@@ -84,7 +85,7 @@ describe("TransactionRow", () => {
   });
 
   it("rejects an empty payee without calling supabase", async () => {
-    await render(<TransactionRow row={makeRow()} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.changeText(screen.getByDisplayValue("Chipotle"), "   ");
     await fireEvent.press(screen.getByText("Save"));
@@ -95,7 +96,7 @@ describe("TransactionRow", () => {
 
   it("shows the update error and stays in edit mode when the save fails", async () => {
     mockEq.mockImplementationOnce(() => Promise.resolve({ error: { message: "network error" } }));
-    await render(<TransactionRow row={makeRow()} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.press(screen.getByText("Save"));
 
@@ -105,7 +106,7 @@ describe("TransactionRow", () => {
 
   it("the category picker sets the draft category, saved on Save", async () => {
     const row = makeRow();
-    await render(<TransactionRow row={row} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={row} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
 
     expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Food:Restaurants");
@@ -120,7 +121,7 @@ describe("TransactionRow", () => {
   });
 
   it("closing the category picker without selecting keeps the previous draft category", async () => {
-    await render(<TransactionRow row={makeRow()} CATS={[]} />);
+    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.press(screen.getByTestId("transaction-edit-category-button"));
     await screen.findByTestId("picker-options-list");

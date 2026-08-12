@@ -1,5 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { render, screen } from "@testing-library/react-native";
+import { screen } from "@testing-library/react-native";
+import { renderWithTheme } from "../lib/testUtils";
+import { lightColors } from "../lib/theme";
 import Chart from "./Chart";
 import type { ChartDatum, QuerySpec } from "../lib/logic";
 
@@ -31,7 +33,7 @@ describe("Chart", () => {
 
   it("renders nothing when there's no data", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
-    await render(<Chart data={[]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+    await renderWithTheme(<Chart data={[]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
     expect(screen.toJSON()).toBeNull();
     expect(mockBarChart).not.toHaveBeenCalled();
   });
@@ -39,7 +41,7 @@ describe("Chart", () => {
   it("renders a PieChart for chartType 'pie', coloring by category", async () => {
     const spec: QuerySpec = { chartType: "pie", groupBy: "category" };
     const data = [datum({ key: "Groceries" }), datum({ key: "Dining", total: 10 })];
-    await render(<Chart data={data} spec={spec} CATS={CATS} selectedKey="Groceries" onSelect={jest.fn()} />);
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey="Groceries" onSelect={jest.fn()} />);
 
     expect(mockPieChart).toHaveBeenCalledTimes(1);
     const props = mockPieChart.mock.calls[0][0];
@@ -54,7 +56,7 @@ describe("Chart", () => {
   it("PieChart selection calls onSelect with that slice's key", async () => {
     const spec: QuerySpec = { chartType: "pie", groupBy: "category" };
     const onSelect = jest.fn();
-    await render(<Chart data={[datum({ key: "Groceries" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={onSelect} />);
+    await renderWithTheme(<Chart data={[datum({ key: "Groceries" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={onSelect} />);
     mockPieChart.mock.calls[0][0].data[0].onPress();
     expect(onSelect).toHaveBeenCalledWith("Groceries");
   });
@@ -62,7 +64,7 @@ describe("Chart", () => {
   it("renders a LineChart for chartType 'line', with formatted labels", async () => {
     const spec: QuerySpec = { chartType: "line", groupBy: "month" };
     const data = [datum({ key: "2026-01" }), datum({ key: "2026-02" })];
-    await render(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
 
     expect(mockLineChart).toHaveBeenCalledTimes(1);
     const props = mockLineChart.mock.calls[0][0];
@@ -72,7 +74,7 @@ describe("Chart", () => {
 
   it("renders a vertical BarChart with per-item labels for a short-label grouping (category)", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
-    await render(
+    await renderWithTheme(
       <Chart data={[datum({ key: "Groceries" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />
     );
 
@@ -85,7 +87,7 @@ describe("Chart", () => {
   it("renders a horizontal BarChart with no per-item labels for long-label groupings (payee/transaction)", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
     const data = [datum({ key: "A Very Long Merchant Name" }), datum({ key: "Another One" })];
-    await render(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
 
     const props = mockBarChart.mock.calls[0][0];
     expect(props.horizontal).toBe(true);
@@ -97,7 +99,7 @@ describe("Chart", () => {
   it("dims non-selected bars once a key is selected", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
     const data = [datum({ key: "Groceries" }), datum({ key: "Dining" })];
-    await render(<Chart data={data} spec={spec} CATS={CATS} selectedKey="Groceries" onSelect={jest.fn()} />);
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey="Groceries" onSelect={jest.fn()} />);
 
     const props = mockBarChart.mock.calls[0][0];
     expect(props.data[0].opacity).toBe(1);
@@ -107,15 +109,15 @@ describe("Chart", () => {
   it("BarChart selection calls onSelect with that bar's key", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
     const onSelect = jest.fn();
-    await render(<Chart data={[datum({ key: "Groceries" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={onSelect} />);
+    await renderWithTheme(<Chart data={[datum({ key: "Groceries" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={onSelect} />);
     mockBarChart.mock.calls[0][0].data[0].onPress();
     expect(onSelect).toHaveBeenCalledWith("Groceries");
   });
 
   it("colors bars by category only when grouped by category, not other groupings", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
-    await render(<Chart data={[datum({ key: "2026-01-01" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+    await renderWithTheme(<Chart data={[datum({ key: "2026-01-01" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
     const props = mockBarChart.mock.calls[0][0];
-    expect(props.data[0].frontColor).toBe("#1a73e8");
+    expect(props.data[0].frontColor).toBe(lightColors.accent);
   });
 });

@@ -1,19 +1,15 @@
 import { useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../lib/AuthProvider";
 import { useData } from "../../lib/DataProvider";
+import { useTheme } from "../../lib/ThemeProvider";
+import { fontFamily } from "../../lib/theme";
 import { functionUrl } from "../../lib/functionsClient";
 import { parseQueryResponse, type QueryResult } from "../../lib/logic";
 import QueryCard from "../../components/QueryCard";
+import ScreenHeader from "../../components/ScreenHeader";
+import CategoryRulesPanel from "../../components/CategoryRulesPanel";
 
 // Same idle-state suggestions as src/AskPage.jsx, minus the floating CSS
 // animation (no straightforward RN equivalent without pulling in
@@ -41,10 +37,12 @@ type Card = { id: number; question: string; pending?: boolean } & Partial<QueryR
 export default function Ask() {
   const { session, signOut } = useAuth();
   const { transactions, dataStatus, CATS, refresh } = useData();
+  const { colors } = useTheme();
 
   const [input, setInput] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const nextId = useRef(0);
 
   async function runQuery(question: string) {
@@ -83,11 +81,14 @@ export default function Ask() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.queryBar}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.bg }]} edges={["top"]}>
+      <ScreenHeader onOpenRules={() => setRulesOpen(true)} />
+
+      <View style={[styles.queryBar]}>
         <TextInput
           testID="ask-input"
-          style={styles.input}
+          style={[styles.input, { borderColor: colors.border, color: colors.text, fontFamily: fontFamily.regular }]}
+          placeholderTextColor={colors.textFaint}
           value={input}
           onChangeText={setInput}
           placeholder={dataStatus === "ready" ? "Ask about your spending…" : "Loading…"}
@@ -97,11 +98,15 @@ export default function Ask() {
         />
         <Pressable
           testID="ask-button"
-          style={[styles.askBtn, (loading || dataStatus !== "ready") && styles.askBtnDisabled]}
+          style={[styles.askBtn, { backgroundColor: colors.accent }, (loading || dataStatus !== "ready") && styles.askBtnDisabled]}
           onPress={() => runQuery(input)}
           disabled={loading || dataStatus !== "ready"}
         >
-          {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.askBtnText}>Ask</Text>}
+          {loading ? (
+            <ActivityIndicator color={colors.bg} size="small" />
+          ) : (
+            <Text style={[styles.askBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>Ask</Text>
+          )}
         </Pressable>
       </View>
 
@@ -116,7 +121,7 @@ export default function Ask() {
                 disabled={dataStatus !== "ready"}
                 onPress={() => runQuery(s)}
               >
-                <Text style={styles.suggestionText}>{s}</Text>
+                <Text style={[styles.suggestionText, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>{s}</Text>
               </Pressable>
             ))}
           </View>
@@ -133,24 +138,24 @@ export default function Ask() {
           />
         ))}
       </ScrollView>
+
+      <CategoryRulesPanel visible={rulesOpen} onClose={() => setRulesOpen(false)} onApplied={refresh} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#fff" },
+  screen: { flex: 1 },
   queryBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 8 },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
   },
   askBtn: {
-    backgroundColor: "#1a73e8",
     borderRadius: 10,
     paddingHorizontal: 18,
     paddingVertical: 10,
@@ -159,9 +164,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   askBtnDisabled: { opacity: 0.4 },
-  askBtnText: { color: "#fff", fontWeight: "600" },
+  askBtnText: { fontSize: 14 },
   feed: { paddingBottom: 24 },
   suggestions: { paddingHorizontal: 16, paddingTop: 8, gap: 10 },
   suggestion: { paddingVertical: 6 },
-  suggestionText: { color: "#999", fontSize: 14, fontStyle: "italic" },
+  suggestionText: { fontSize: 14, fontStyle: "italic" },
 });

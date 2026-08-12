@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { render, screen } from "@testing-library/react-native";
+import { screen } from "@testing-library/react-native";
+import { renderWithTheme } from "../lib/testUtils";
 import Index from "./index";
 
 const mockUseAuth = jest.fn() as jest.Mock<any>;
@@ -24,19 +25,19 @@ describe("Index", () => {
 
   it("shows a spinner (no redirect yet) while the session is still restoring", async () => {
     mockUseAuth.mockReturnValue({ session: null, loading: true });
-    await render(<Index />);
+    await renderWithTheme(<Index />);
     expect(screen.queryByTestId("redirect")).toBeNull();
   });
 
   it("redirects to /home once loading finishes with a session", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
-    await render(<Index />);
+    await renderWithTheme(<Index />);
     expect(await screen.findByTestId("redirect")).toHaveTextContent("/home");
   });
 
   it("redirects to /login once loading finishes with no session", async () => {
     mockUseAuth.mockReturnValue({ session: null, loading: false });
-    await render(<Index />);
+    await renderWithTheme(<Index />);
     expect(await screen.findByTestId("redirect")).toHaveTextContent("/login");
   });
 });

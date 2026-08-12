@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { renderWithTheme } from "../lib/testUtils";
 import AccountBalances from "./AccountBalances";
 
 type SelectResult = { data: any[] | null; error: { message: string } | null };
@@ -64,14 +65,14 @@ describe("AccountBalances", () => {
   });
 
   it("shows the empty state with no linked accounts", async () => {
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     expect(await screen.findByText("No linked accounts yet")).toBeTruthy();
   });
 
   it("prefers the current balance over available when both are present", async () => {
     state.accounts = { data: [account()], error: null };
     state.balances = { data: [{ account_id: "acc-1", current: 100.5, available: 90 }], error: null };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     expect(await screen.findByText("Checking ••1234")).toBeTruthy();
     expect(screen.getByText("$100.50")).toBeTruthy();
   });
@@ -79,28 +80,28 @@ describe("AccountBalances", () => {
   it("falls back to the available balance when current is null", async () => {
     state.accounts = { data: [account()], error: null };
     state.balances = { data: [{ account_id: "acc-1", current: null, available: 42 }], error: null };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     expect(await screen.findByText("$42.00")).toBeTruthy();
   });
 
   it("skips an account whose balance hasn't loaded at all", async () => {
     state.accounts = { data: [account()], error: null };
     state.balances = { data: [{ account_id: "acc-1", current: null, available: null }], error: null };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     expect(await screen.findByText("No linked accounts yet")).toBeTruthy();
   });
 
   it("shows the empty state (not a crash) when the accounts query errors", async () => {
     state.accounts = { data: null, error: { message: "boom" } };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     expect(await screen.findByText("No linked accounts yet")).toBeTruthy();
   });
 
   it("Add bank: shows a confirmation banner, then calls startLink on Proceed", async () => {
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");
 
-    await fireEvent.press(screen.getByText("+ Add bank"));
+    await fireEvent.press(screen.getByTestId("add-bank-button"));
     expect(await screen.findByText("Only checking / savings accounts can be connected.")).toBeTruthy();
     expect(mockStartLink).not.toHaveBeenCalled();
 
@@ -113,10 +114,10 @@ describe("AccountBalances", () => {
     state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
     mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
 
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("Checking ••1234");
 
-    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await fireEvent.press(screen.getByTestId("disconnect-button"));
     expect(await screen.findByText(/Disconnect Checking ••1234\?/)).toBeTruthy();
     expect(global.fetch).not.toHaveBeenCalled();
 
@@ -135,7 +136,7 @@ describe("AccountBalances", () => {
 
   it("doesn't render the test-plaid-link button in a build without test login enabled", async () => {
     mockAuthProviderState.TEST_LOGIN_ENABLED = false;
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");
     expect(screen.queryByTestId("test-plaid-link-button")).toBeNull();
   });
@@ -146,7 +147,7 @@ describe("AccountBalances", () => {
     const onLinked = jest.fn();
     mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
 
-    await render(<AccountBalances onLinked={onLinked} />);
+    await renderWithTheme(<AccountBalances onLinked={onLinked} />);
     await screen.findByText("No linked accounts yet");
 
     await fireEvent.press(screen.getByTestId("test-plaid-link-button"));
@@ -170,7 +171,7 @@ describe("AccountBalances", () => {
       json: () => Promise.resolve({ error: "PLAID_ENV is production, not sandbox" }),
     });
 
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");
 
     await fireEvent.press(screen.getByTestId("test-plaid-link-button"));
@@ -185,7 +186,7 @@ describe("AccountBalances", () => {
       return { startLink: mockStartLink, connecting: false, error: null };
     });
 
-    await render(<AccountBalances onLinked={onLinked} />);
+    await renderWithTheme(<AccountBalances onLinked={onLinked} />);
     await screen.findByText("No linked accounts yet");
     const callsBeforeRelink = mockAccountsSelect.mock.calls.length;
 
@@ -209,10 +210,10 @@ describe("AccountBalances", () => {
       ],
       error: null,
     };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("Checking ••1234");
 
-    await fireEvent.press(screen.getAllByText("⛓️‍💥")[0]);
+    await fireEvent.press(screen.getAllByTestId("disconnect-button")[0]);
     expect(await screen.findByText(/This will also disconnect Savings ••5678/)).toBeTruthy();
   });
 
@@ -221,10 +222,10 @@ describe("AccountBalances", () => {
     state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
     mockFetch.mockResolvedValue({ ok: false, json: () => Promise.resolve({ error: "Plaid item not found" }) });
 
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("Checking ••1234");
 
-    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await fireEvent.press(screen.getByTestId("disconnect-button"));
     await fireEvent.press(screen.getByText("Continue"));
     await fireEvent.press(screen.getByText(/Yes, disconnect/));
 
@@ -234,25 +235,25 @@ describe("AccountBalances", () => {
   });
 
   it("Add bank: Cancel dismisses the banner without starting Link", async () => {
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");
 
-    await fireEvent.press(screen.getByText("+ Add bank"));
+    await fireEvent.press(screen.getByTestId("add-bank-button"));
     await screen.findByText("Only checking / savings accounts can be connected.");
     await fireEvent.press(screen.getByText("Cancel"));
 
     expect(screen.queryByText("Only checking / savings accounts can be connected.")).toBeNull();
-    expect(screen.getByText("+ Add bank")).toBeTruthy();
+    expect(screen.getByTestId("add-bank-button")).toBeTruthy();
     expect(mockStartLink).not.toHaveBeenCalled();
   });
 
   it("Disconnect step 1: Cancel dismisses without advancing or calling the API", async () => {
     state.accounts = { data: [account()], error: null };
     state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("Checking ••1234");
 
-    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await fireEvent.press(screen.getByTestId("disconnect-button"));
     await screen.findByText(/Disconnect Checking ••1234\?/);
     await fireEvent.press(screen.getByText("Cancel"));
 
@@ -263,10 +264,10 @@ describe("AccountBalances", () => {
   it("Disconnect step 2: Cancel dismisses without calling the API", async () => {
     state.accounts = { data: [account()], error: null };
     state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
-    await render(<AccountBalances />);
+    await renderWithTheme(<AccountBalances />);
     await screen.findByText("Checking ••1234");
 
-    await fireEvent.press(screen.getByText("⛓️‍💥"));
+    await fireEvent.press(screen.getByTestId("disconnect-button"));
     await fireEvent.press(screen.getByText("Continue"));
     await screen.findByText(/Are you absolutely sure/);
     await fireEvent.press(screen.getByText("Cancel"));

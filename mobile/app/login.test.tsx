@@ -1,5 +1,6 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { renderWithTheme } from "../lib/testUtils";
 import Login from "./login";
 
 const mockSignInWithGoogle = jest.fn() as jest.Mock<any>;
@@ -38,14 +39,14 @@ describe("Login", () => {
 
   it("redirects to /home when already signed in, instead of showing the login screen", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, signInWithGoogle: mockSignInWithGoogle, signInWithTestAccount: mockSignInWithTestAccount });
-    await render(<Login />);
+    await renderWithTheme(<Login />);
     expect(await screen.findByTestId("redirect")).toHaveTextContent("/home");
     expect(screen.queryByTestId("google-signin-button")).toBeNull();
   });
 
   it("hides the test-login button in a build without test login enabled", async () => {
     notSignedIn();
-    await render(<Login />);
+    await renderWithTheme(<Login />);
     expect(screen.getByTestId("google-signin-button")).toBeTruthy();
     expect(screen.queryByTestId("test-signin-button")).toBeNull();
   });
@@ -53,14 +54,14 @@ describe("Login", () => {
   it("shows the test-login button when test login is enabled", async () => {
     authState.TEST_LOGIN_ENABLED = true;
     notSignedIn();
-    await render(<Login />);
+    await renderWithTheme(<Login />);
     expect(screen.getByTestId("test-signin-button")).toBeTruthy();
   });
 
   it("Continue with Google calls signInWithGoogle and shows its error on failure", async () => {
     notSignedIn();
     mockSignInWithGoogle.mockRejectedValue(new Error("popup closed"));
-    await render(<Login />);
+    await renderWithTheme(<Login />);
 
     await fireEvent.press(screen.getByTestId("google-signin-button"));
     expect(mockSignInWithGoogle).toHaveBeenCalled();
@@ -70,7 +71,7 @@ describe("Login", () => {
   it("shows a fallback message when signInWithGoogle throws a non-Error", async () => {
     notSignedIn();
     mockSignInWithGoogle.mockRejectedValue("weird failure");
-    await render(<Login />);
+    await renderWithTheme(<Login />);
 
     await fireEvent.press(screen.getByTestId("google-signin-button"));
     expect(await screen.findByText("Couldn't sign in — try again")).toBeTruthy();
@@ -80,7 +81,7 @@ describe("Login", () => {
     authState.TEST_LOGIN_ENABLED = true;
     notSignedIn();
     mockSignInWithTestAccount.mockRejectedValue(new Error("bad secret"));
-    await render(<Login />);
+    await renderWithTheme(<Login />);
 
     await fireEvent.press(screen.getByTestId("test-signin-button"));
     expect(mockSignInWithTestAccount).toHaveBeenCalled();
@@ -90,7 +91,7 @@ describe("Login", () => {
   it("clears a previous error on a fresh attempt", async () => {
     notSignedIn();
     mockSignInWithGoogle.mockRejectedValueOnce(new Error("first failure"));
-    await render(<Login />);
+    await renderWithTheme(<Login />);
 
     await fireEvent.press(screen.getByTestId("google-signin-button"));
     await screen.findByText("first failure");

@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Landmark, Unlink } from "lucide-react-native";
 import { useAuth, TEST_LOGIN_ENABLED } from "../lib/AuthProvider";
+import { useTheme } from "../lib/ThemeProvider";
+import { fontFamily } from "../lib/theme";
 import { supabase } from "../lib/supabase";
 import { functionUrl } from "../lib/functionsClient";
 import { fmtMoney } from "../lib/format";
 import { useBankLink } from "../lib/useBankLink";
+import IconButton from "./IconButton";
 
 type Balance = { id: string; itemId: string; label: string; amount: number };
 type DisconnectState = { itemId: string; label: string; siblingLabels: string[]; step: 1 | 2; submitting: boolean; error: string | null };
@@ -21,6 +25,7 @@ type DisconnectState = { itemId: string; label: string; siblingLabels: string[];
 // history for good.
 export default function AccountBalances({ onLinked }: { onLinked?: () => void }) {
   const { session } = useAuth();
+  const { colors } = useTheme();
   const [balances, setBalances] = useState<Balance[] | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -64,7 +69,7 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
     onLinked?.();
   });
 
-  if (!balances) return <ActivityIndicator style={styles.loading} />;
+  if (!balances) return <ActivityIndicator style={styles.loading} color={colors.accent} />;
 
   function startDisconnect(account: Balance) {
     const siblingLabels = (balances || [])
@@ -130,7 +135,10 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
-        <Text style={styles.headerLabel}>Banks</Text>
+        <View style={styles.headerLabelRow}>
+          <Landmark size={14} color={colors.textMuted} />
+          <Text style={[styles.headerLabel, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}>Banks</Text>
+        </View>
         <View style={styles.headerButtons}>
           {TEST_LOGIN_ENABLED ? (
             <Pressable
@@ -140,13 +148,25 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
               hitSlop={6}
               style={styles.testLinkBtn}
             >
-              <Text style={styles.testLinkBtnText}>{testLinking ? "Linking…" : "Link test bank"}</Text>
+              <Text style={[styles.testLinkBtnText, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
+                {testLinking ? "Linking…" : "Link test bank"}
+              </Text>
             </Pressable>
           ) : null}
           {!showConfirm && !disconnect && (
-            <Pressable testID="add-bank-button" onPress={() => setShowConfirm(true)} disabled={connecting} style={styles.addBtn}>
-              <Text style={styles.addBtnText}>{connecting ? "Connecting…" : "+ Add bank"}</Text>
-            </Pressable>
+            <IconButton
+              testID="add-bank-button"
+              onPress={() => setShowConfirm(true)}
+              disabled={connecting}
+              size={28}
+              accessibilityLabel="Add bank"
+            >
+              {connecting ? (
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              ) : (
+                <Text style={[styles.addBtnText, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}>+</Text>
+              )}
+            </IconButton>
           )}
         </View>
       </View>
@@ -154,29 +174,42 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
       {balances.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.row}>
           {balances.map((b) => (
-            <View key={b.id} testID="linked-account-chip" style={styles.chip}>
+            <View key={b.id} testID="linked-account-chip" style={[styles.chip, { backgroundColor: colors.surfaceRecessed }]}>
               <View style={styles.chipTopRow}>
-                <Text style={styles.chipLabel} numberOfLines={1}>
+                <Text style={[styles.chipLabel, { color: colors.textMuted, fontFamily: fontFamily.regular }]} numberOfLines={1}>
                   {b.label}
                 </Text>
                 <Pressable testID="disconnect-button" onPress={() => startDisconnect(b)} hitSlop={6}>
-                  <Text style={styles.disconnectIcon}>⛓️‍💥</Text>
+                  <Unlink size={14} color={colors.danger} />
                 </Pressable>
               </View>
-              <Text style={[styles.chipAmount, b.amount < 0 && styles.negative]}>{fmtMoney(b.amount)}</Text>
+              <Text
+                style={[
+                  styles.chipAmount,
+                  { color: b.amount < 0 ? colors.danger : colors.text, fontFamily: fontFamily.mono },
+                ]}
+              >
+                {fmtMoney(b.amount)}
+              </Text>
             </View>
           ))}
         </ScrollView>
       ) : (
-        <Text style={styles.empty}>No linked accounts yet</Text>
+        <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>No linked accounts yet</Text>
       )}
 
       {showConfirm && (
-        <View style={styles.confirmBanner}>
-          <Text style={styles.confirmText}>Only checking / savings accounts can be connected.</Text>
+        <View style={[styles.confirmBanner, { backgroundColor: colors.surfaceRecessed, borderColor: colors.border }]}>
+          <Text style={[styles.confirmText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
+            Only checking / savings accounts can be connected.
+          </Text>
           <View style={styles.confirmActions}>
-            <Pressable testID="add-bank-cancel-button" onPress={() => setShowConfirm(false)} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+            <Pressable
+              testID="add-bank-cancel-button"
+              onPress={() => setShowConfirm(false)}
+              style={[styles.cancelBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
             </Pressable>
             <Pressable
               testID="add-bank-proceed-button"
@@ -185,17 +218,19 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
                 startLink();
               }}
               disabled={connecting}
-              style={styles.proceedBtn}
+              style={[styles.proceedBtn, { backgroundColor: colors.accent }]}
             >
-              <Text style={styles.proceedBtnText}>{connecting ? "Connecting…" : "Proceed"}</Text>
+              <Text style={[styles.proceedBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>
+                {connecting ? "Connecting…" : "Proceed"}
+              </Text>
             </Pressable>
           </View>
         </View>
       )}
 
       {disconnect && disconnect.step === 1 && (
-        <View style={styles.confirmBanner}>
-          <Text style={styles.confirmText}>
+        <View style={[styles.confirmBanner, { backgroundColor: colors.surfaceRecessed, borderColor: colors.border }]}>
+          <Text style={[styles.confirmText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
             Disconnect {disconnect.label}? This stops new transactions from syncing.
             {disconnect.siblingLabels.length > 0
               ? ` This will also disconnect ${disconnect.siblingLabels.join(", ")}, since they share the same bank connection.`
@@ -203,47 +238,61 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             Existing transaction history is kept for 90 days in case you reconnect, then permanently deleted.
           </Text>
           <View style={styles.confirmActions}>
-            <Pressable testID="disconnect-cancel-button" onPress={() => setDisconnect(null)} style={styles.cancelBtn}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+            <Pressable
+              testID="disconnect-cancel-button"
+              onPress={() => setDisconnect(null)}
+              style={[styles.cancelBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
             </Pressable>
             <Pressable
               testID="disconnect-continue-button"
               onPress={() => setDisconnect((d) => (d ? { ...d, step: 2 } : d))}
-              style={styles.proceedBtn}
+              style={[styles.proceedBtn, { backgroundColor: colors.accent }]}
             >
-              <Text style={styles.proceedBtnText}>Continue</Text>
+              <Text style={[styles.proceedBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>Continue</Text>
             </Pressable>
           </View>
         </View>
       )}
 
       {disconnect && disconnect.step === 2 && (
-        <View style={styles.confirmBannerFinal}>
-          <Text style={styles.confirmText}>
-            <Text style={{ fontWeight: "700" }}>Are you absolutely sure?</Text> This can't be undone from the app — you'd need
-            to reconnect {disconnect.siblingLabels.length > 0 ? "these accounts" : "this account"} through Plaid to restore
-            access, and after 90 days any transaction history that isn't reconnected is gone for good.
+        <View style={[styles.confirmBannerFinal, { backgroundColor: colors.surfaceRecessed, borderColor: colors.danger }]}>
+          <Text style={[styles.confirmText, { color: colors.text, fontFamily: fontFamily.regular }]}>
+            <Text style={{ fontFamily: fontFamily.bold }}>Are you absolutely sure?</Text> This can't be undone from the
+            app — you'd need to reconnect {disconnect.siblingLabels.length > 0 ? "these accounts" : "this account"}{" "}
+            through Plaid to restore access, and after 90 days any transaction history that isn't reconnected is gone
+            for good.
           </Text>
           <View style={styles.confirmActions}>
             <Pressable
               testID="disconnect-final-cancel-button"
               onPress={() => setDisconnect(null)}
               disabled={disconnect.submitting}
-              style={styles.cancelBtn}
+              style={[styles.cancelBtn, { borderColor: colors.border }]}
             >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+              <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
             </Pressable>
-            <Pressable testID="disconnect-confirm-button" onPress={confirmDisconnect} disabled={disconnect.submitting} style={styles.deleteBtn}>
-              <Text style={styles.deleteBtnText}>
+            <Pressable
+              testID="disconnect-confirm-button"
+              onPress={confirmDisconnect}
+              disabled={disconnect.submitting}
+              style={[styles.deleteBtn, { backgroundColor: colors.danger }]}
+            >
+              <Text style={[styles.deleteBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>
                 {disconnect.submitting ? "Disconnecting…" : `Yes, disconnect ${disconnect.label}`}
               </Text>
             </Pressable>
           </View>
-          {disconnect.error ? <Text style={styles.error}>{disconnect.error}</Text> : null}
+          {disconnect.error ? (
+            <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{disconnect.error}</Text>
+          ) : null}
         </View>
       )}
-      {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
-      {testLinkError ? <Text style={styles.error}>{testLinkError}</Text> : null}
+      {linkError ? <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{linkError}</Text> : null}
+      {testLinkError ? (
+        <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{testLinkError}</Text>
+      ) : null}
     </View>
   );
 }
@@ -252,29 +301,27 @@ const styles = StyleSheet.create({
   wrap: { marginBottom: 16 },
   loading: { marginVertical: 20 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginBottom: 8 },
-  headerLabel: { fontSize: 12, fontWeight: "700", color: "#999", textTransform: "uppercase" },
+  headerLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  headerLabel: { fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 },
   headerButtons: { flexDirection: "row", alignItems: "center", gap: 12 },
-  addBtn: {},
-  addBtnText: { color: "#1a73e8", fontSize: 13, fontWeight: "600" },
+  addBtnText: { fontSize: 16, lineHeight: 18 },
   testLinkBtn: {},
-  testLinkBtnText: { color: "#999", fontSize: 12, textDecorationLine: "underline" },
+  testLinkBtnText: { fontSize: 12, textDecorationLine: "underline" },
   row: { paddingLeft: 16 },
-  empty: { paddingHorizontal: 16, color: "#888" },
-  chip: { backgroundColor: "#f2f2f2", borderRadius: 12, padding: 12, marginRight: 10, minWidth: 150 },
+  empty: { paddingHorizontal: 16 },
+  chip: { borderRadius: 12, padding: 12, marginRight: 10, minWidth: 150 },
   chipTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  chipLabel: { fontSize: 12, color: "#666", flex: 1, marginRight: 6 },
-  disconnectIcon: { fontSize: 12 },
+  chipLabel: { fontSize: 12, flex: 1, marginRight: 6 },
   chipAmount: { fontSize: 18, fontWeight: "700" },
-  negative: { color: "#d33" },
-  confirmBanner: { backgroundColor: "#fff8e1", borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
-  confirmBannerFinal: { backgroundColor: "#fdecea", borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
-  confirmText: { fontSize: 13, color: "#444", lineHeight: 18 },
+  confirmBanner: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
+  confirmBannerFinal: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
+  confirmText: { fontSize: 13, lineHeight: 18 },
   confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 10 },
-  cancelBtn: { paddingVertical: 6, paddingHorizontal: 12 },
-  cancelBtnText: { color: "#666", fontSize: 13 },
-  proceedBtn: { backgroundColor: "#1a73e8", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
-  proceedBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  deleteBtn: { backgroundColor: "#d33", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
-  deleteBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  error: { color: "#d33", fontSize: 12, marginTop: 8, paddingHorizontal: 16 },
+  cancelBtn: { paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderRadius: 7 },
+  cancelBtnText: { fontSize: 13 },
+  proceedBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
+  proceedBtnText: { fontSize: 13 },
+  deleteBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
+  deleteBtnText: { fontSize: 13 },
+  error: { fontSize: 12, marginTop: 8, paddingHorizontal: 16 },
 });

@@ -3,6 +3,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import Chart from "./Chart";
 import TransactionRow from "./TransactionRow";
 import { buildChartData, filterTransactions, groupKeyOf, type QueryResult } from "../lib/logic";
+import { useTheme } from "../lib/ThemeProvider";
+import { fontFamily } from "../lib/theme";
 import type { Transaction } from "../lib/types";
 
 type Card = { id: number; question: string; pending?: boolean } & Partial<QueryResult>;
@@ -23,6 +25,7 @@ export default function QueryCard({
   onRemove: () => void;
   onTransactionEdited?: () => void;
 }) {
+  const { colors } = useTheme();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const spec = "spec" in card ? card.spec : undefined;
@@ -46,38 +49,40 @@ export default function QueryCard({
 
   if (card.pending) {
     return (
-      <View style={styles.card}>
-        <Text style={styles.question}>"{card.question}"</Text>
-        <Text style={styles.thinking}>thinking…</Text>
-        <ActivityIndicator style={{ marginTop: 4 }} />
+      <View style={[styles.card, { backgroundColor: colors.surface }]}>
+        <Text style={[styles.question, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>"{card.question}"</Text>
+        <Text style={[styles.thinking, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>thinking…</Text>
+        <ActivityIndicator style={{ marginTop: 4 }} color={colors.accent} />
       </View>
     );
   }
 
   if ("error" in card && card.error) {
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: colors.surface }]}>
         <View style={styles.headerRow}>
-          <Text style={styles.question}>"{card.question}"</Text>
+          <Text style={[styles.question, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>"{card.question}"</Text>
           <Pressable testID="query-card-close-button" onPress={onRemove} hitSlop={8}>
-            <Text style={styles.close}>×</Text>
+            <Text style={[styles.close, { color: colors.textMuted }]}>×</Text>
           </Pressable>
         </View>
-        <Text style={styles.error}>Couldn't parse that one — try rephrasing. ({card.error})</Text>
+        <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>
+          Couldn't parse that one — try rephrasing. ({card.error})
+        </Text>
       </View>
     );
   }
 
   if ("offTopic" in card && card.offTopic) {
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: colors.surface }]}>
         <View style={styles.headerRow}>
-          <Text style={styles.question}>"{card.question}"</Text>
+          <Text style={[styles.question, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>"{card.question}"</Text>
           <Pressable testID="query-card-close-button" onPress={onRemove} hitSlop={8}>
-            <Text style={styles.close}>×</Text>
+            <Text style={[styles.close, { color: colors.textMuted }]}>×</Text>
           </Pressable>
         </View>
-        <Text style={styles.muted}>
+        <Text style={[styles.muted, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
           This app only answers questions about your own bank-transaction ledger — try something like "how much did
           I spend on groceries last month?"
         </Text>
@@ -88,14 +93,14 @@ export default function QueryCard({
   if (!spec) return null;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.surface }]}>
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.question}>"{card.question}"</Text>
-          <Text style={styles.title}>{spec.title}</Text>
+          <Text style={[styles.question, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>"{card.question}"</Text>
+          <Text style={[styles.title, { color: colors.text, fontFamily: fontFamily.semibold }]}>{spec.title}</Text>
         </View>
         <Pressable testID="query-card-close-button" onPress={onRemove} hitSlop={8}>
-          <Text style={styles.close}>×</Text>
+          <Text style={[styles.close, { color: colors.textMuted }]}>×</Text>
         </Pressable>
       </View>
 
@@ -103,9 +108,9 @@ export default function QueryCard({
         <>
           <Chart data={chartData} spec={spec} CATS={CATS} selectedKey={selectedKey} onSelect={toggleSelect} />
           {selectedKey && (
-            <Pressable style={styles.filterChip} onPress={() => setSelectedKey(null)}>
-              <Text style={styles.filterChipText}>
-                filtered to <Text style={{ fontWeight: "700" }}>{selectedKey}</Text> ×
+            <Pressable style={[styles.filterChip, { backgroundColor: colors.surfaceRecessed }]} onPress={() => setSelectedKey(null)}>
+              <Text style={[styles.filterChipText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
+                filtered to <Text style={{ fontFamily: fontFamily.bold }}>{selectedKey}</Text> ×
               </Text>
             </Pressable>
           )}
@@ -116,7 +121,9 @@ export default function QueryCard({
         {sortedRows.map((d, i) => (
           <TransactionRow key={d.Id ?? i} row={d} CATS={CATS} onEdited={onTransactionEdited} />
         ))}
-        {sortedRows.length === 0 && <Text style={styles.empty}>No matching transactions</Text>}
+        {sortedRows.length === 0 ? (
+          <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>No matching transactions</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -124,7 +131,6 @@ export default function QueryCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#fff",
     borderRadius: 12,
     marginHorizontal: 16,
     marginBottom: 16,
@@ -136,20 +142,19 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   headerRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 },
-  question: { fontSize: 12, color: "#888", fontStyle: "italic" },
-  title: { fontSize: 16, fontWeight: "700", marginTop: 2 },
-  close: { fontSize: 20, color: "#888", paddingHorizontal: 4 },
-  thinking: { fontSize: 13, color: "#aaa", marginTop: 4 },
-  error: { fontSize: 13, color: "#d33" },
-  muted: { fontSize: 13, color: "#888" },
-  empty: { textAlign: "center", color: "#888", paddingVertical: 16 },
+  question: { fontSize: 12, fontStyle: "italic" },
+  title: { fontSize: 16, marginTop: 2 },
+  close: { fontSize: 20, paddingHorizontal: 4 },
+  thinking: { fontSize: 13, marginTop: 4 },
+  error: { fontSize: 13 },
+  muted: { fontSize: 13 },
+  empty: { textAlign: "center", paddingVertical: 16 },
   filterChip: {
     alignSelf: "center",
-    backgroundColor: "#f2f2f2",
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 4,
     marginBottom: 8,
   },
-  filterChipText: { fontSize: 12, color: "#555" },
+  filterChipText: { fontSize: 12 },
 });

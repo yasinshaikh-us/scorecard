@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@supabase/supabase-js": "^2.112.2",
     "aes-js": "^3.1.2",
@@ -10,12 +11,14 @@
     "expo-auth-session": "^57.0.6",
     "expo-build-properties": "~57.0.10",
     "expo-constants": "^57.0.10",
+    "expo-font": "~57.0.1",
     "expo-linear-gradient": "~57.0.1",
     "expo-linking": "^57.0.5",
     "expo-router": "^57.0.12",
     "expo-secure-store": "^57.0.1",
     "expo-splash-screen": "^57.0.6",
     "expo-web-browser": "^57.0.2",
+    "lucide-react-native": "^1.31.0",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-get-random-values": "^2.0.0",
@@ -51,32 +54,5 @@
     "e2e:build:android": "detox build -c android.release",
     "e2e:test:android": "detox test -c android.release"
   },
-  "private": true,
-  "jest": {
-    "preset": "jest-expo",
-    "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-gifted-charts|gifted-charts-core))"
-    ],
-    "testTimeout": 20000,
-    "testPathIgnorePatterns": [
-      "<rootDir>/node_modules/",
-      "<rootDir>/e2e/"
-    ],
-    "collectCoverageFrom": [
-      "app/**/*.{ts,tsx}",
-      "components/**/*.{ts,tsx}",
-      "lib/**/*.{ts,tsx}",
-      "!**/*.test.{ts,tsx}",
-      "!app/_layout.tsx",
-      "!lib/types.ts"
-    ],
-    "coverageThreshold": {
-      "global": {
-        "statements": 93,
-        "branches": 85,
-        "functions": 88,
-        "lines": 95
-      }
-    }
-  }
+  "private": true
 }

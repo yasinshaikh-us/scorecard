@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuth } from "../../lib/AuthProvider";
 import { useData } from "../../lib/DataProvider";
+import { useTheme } from "../../lib/ThemeProvider";
+import { fontFamily } from "../../lib/theme";
 import { daysBefore } from "../../lib/format";
 import TransactionRow from "../../components/TransactionRow";
 import AccountBalances from "../../components/AccountBalances";
 import CategoryRulesPanel from "../../components/CategoryRulesPanel";
+import ScreenHeader from "../../components/ScreenHeader";
 
 const RECENT_DAYS = 7;
 
@@ -16,8 +18,8 @@ const RECENT_DAYS = 7;
 // device "now" -- see daysBefore's comment in the web app). Transaction
 // data comes from DataProvider (shared with the Ask screen).
 export default function Home() {
-  const { signOut } = useAuth();
   const { transactions, dataStatus, CATS, refresh } = useData();
+  const { colors } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -41,43 +43,39 @@ export default function Home() {
     : [];
 
   return (
-    <SafeAreaView testID="home-screen" style={styles.screen} edges={["top"]}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>fa/thm</Text>
-        <View style={styles.headerActions}>
-          <Pressable testID="rules-button" onPress={() => setRulesOpen(true)} hitSlop={8}>
-            <Text style={styles.headerAction}>Rules</Text>
-          </Pressable>
-          <Pressable testID="sign-out-button" onPress={() => signOut()} hitSlop={8}>
-            <Text style={styles.headerAction}>Sign out</Text>
-          </Pressable>
-        </View>
-      </View>
+    <SafeAreaView testID="home-screen" style={[styles.screen, { backgroundColor: colors.bg }]} edges={["top"]}>
+      <ScreenHeader onOpenRules={() => setRulesOpen(true)} />
 
       <FlatList
         testID="home-transaction-list"
         data={recent}
         keyExtractor={(item, i) => String(item.Id ?? i)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
             <AccountBalances onLinked={refresh} />
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}>
+              Recent Activity
+            </Text>
           </>
         }
         renderItem={({ item }) => <TransactionRow row={item} CATS={CATS} onEdited={refresh} />}
         ListEmptyComponent={
-          <Text style={styles.empty}>
+          <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
             {!ready ? "Loading…" : transactions.length === 0 ? "No transactions yet" : "Nothing in the last week"}
           </Text>
         }
       />
 
-      {dataStatus === "error" ? <Text style={styles.error}>Couldn't load transaction data</Text> : null}
+      {dataStatus === "error" ? (
+        <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>
+          Couldn't load transaction data
+        </Text>
+      ) : null}
       {!ready && dataStatus !== "error" ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator />
+          <ActivityIndicator color={colors.accent} />
         </View>
       ) : null}
 
@@ -87,21 +85,17 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-  },
-  headerTitle: { fontSize: 22, fontWeight: "700" },
-  headerActions: { flexDirection: "row", gap: 16 },
-  headerAction: { color: "#1a73e8", fontSize: 14 },
+  screen: { flex: 1 },
   listContent: { paddingBottom: 24 },
-  sectionTitle: { fontSize: 14, fontWeight: "600", color: "#666", paddingHorizontal: 16, marginBottom: 8 },
-  empty: { textAlign: "center", color: "#888", marginTop: 24 },
-  error: { color: "#d33", textAlign: "center", padding: 12 },
+  sectionTitle: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  empty: { textAlign: "center", marginTop: 24 },
+  error: { textAlign: "center", padding: 12 },
   loadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
 });

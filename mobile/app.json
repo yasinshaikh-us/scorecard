@@ -16,7 +16,11 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#F7F4EC",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#14181D"
+          }
         }
       ],
       "./plugins/withDetoxTestBuildType.js",
@@ -30,7 +34,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "ios": {
       "supportsTablet": true,
