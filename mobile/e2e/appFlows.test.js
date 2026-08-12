@@ -212,6 +212,10 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
     await element(by.id("transaction-edit-payee-input")).clearText();
     await element(by.id("transaction-edit-payee-input")).typeText("Should Not Save");
+    // tapReturnKey() first -- same keyboard-eats-the-next-tap issue as
+    // every other input-then-button sequence in this file (confirmed by a
+    // real run: Cancel's tap silently missed, leaving the editor open).
+    await element(by.id("transaction-edit-payee-input")).tapReturnKey();
     await element(by.id("transaction-edit-cancel-button")).tap();
 
     // Back to display mode (the editor itself is gone) and the discarded
@@ -270,6 +274,15 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await captureScreen("ask-screen-custom-question");
     await element(by.id("query-card-close-button")).tap();
 
+    // ask-input keeps focus (and the software keyboard) up through the
+    // whole exchange -- nothing here ever blurs it. A real run confirmed
+    // the keyboard was still covering the bottom tab bar at this point
+    // ("Couldn't click at: 269.5,2140.5 ... Tried 3 times" on
+    // tab-home-button, and the view hierarchy dump from that failure
+    // showed ask-input still focused="true"). tapReturnKey() dismisses it
+    // -- input is already "" by now (runQuery clears it on dispatch), so
+    // this doesn't re-submit anything.
+    await element(by.id("ask-input")).tapReturnKey();
     await element(by.id("tab-home-button")).tap();
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
