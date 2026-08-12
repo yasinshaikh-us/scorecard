@@ -303,7 +303,11 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await element(by.id("home-transaction-list")).swipe("down", "fast", 0.8);
 
     await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(10000);
-    await expect(element(by.text("Recent Activity"))).toBeVisible();
+    // A separate waitFor, not a bare expect -- see testLogin.test.js's
+    // identical fix: home-screen becoming visible doesn't guarantee the
+    // FlatList's ListHeaderComponent, where this text lives, has
+    // repainted in the same frame after the pull-to-refresh swipe.
+    await waitFor(element(by.text("Recent Activity"))).toBeVisible().withTimeout(10000);
   });
 
   it("Sign out returns to the login screen", async () => {
