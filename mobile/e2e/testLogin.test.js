@@ -28,7 +28,14 @@ describe("Test login", () => {
     await waitFor(element(by.id("home-screen")))
       .toBeVisible()
       .withTimeout(30000);
-    await expect(element(by.text("Recent Activity"))).toBeVisible();
+    // A separate waitFor, not a bare expect: "home-screen" (the root
+    // SafeAreaView) becoming visible doesn't guarantee the FlatList's
+    // ListHeaderComponent -- where this text lives -- has painted in the
+    // same frame; a real run showed this as a flat "was null" immediately
+    // after home-screen appeared.
+    await waitFor(element(by.text("Recent Activity")))
+      .toBeVisible()
+      .withTimeout(10000);
     await captureScreen("home-screen-after-login");
   });
 
