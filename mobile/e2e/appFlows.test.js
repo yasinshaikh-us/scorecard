@@ -87,6 +87,16 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.text("Rules Engine"))).toBeVisible();
 
     await element(by.id("rule-match-field-button")).tap();
+    // Cancel first -- confirms dismissing a picker without selecting
+    // leaves the prior value alone, not just that selecting one works.
+    await element(by.id("picker-cancel-button")).tap();
+    // toHaveText() needs the actual native TextView -- rule-match-field-
+    // button is the outer Pressable (a View, confirmed by a real run's
+    // failure: "Got: ... ReactViewGroup" instead of a TextView) -- match
+    // the visible label text directly instead.
+    await expect(element(by.text("Payee"))).toBeVisible();
+
+    await element(by.id("rule-match-field-button")).tap();
     await element(by.text("Category")).tap();
 
     await element(by.id("rule-match-value-input")).typeText("e2e-test-rule");
@@ -138,6 +148,34 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
+  it("Rules engine: a rule that sets payee (not just category)", async () => {
+    // Only category-setting rules were ever exercised here before --
+    // set_payee is a real, separate column (see SCHEMA.md's category_rules
+    // table) with its own " → payee X" rendering branch in
+    // CategoryRulesPanel.tsx, untested anywhere on a real device.
+    await element(by.id("rules-button")).tap();
+    await expect(element(by.text("Rules Engine"))).toBeVisible();
+
+    // match_field defaults to "payee" -- no picker needed for this one.
+    await element(by.id("rule-match-value-input")).typeText("e2e-payee-rule");
+    await element(by.id("rule-match-value-input")).tapReturnKey();
+    await element(by.id("rule-set-payee-input")).typeText("E2E Renamed Payee");
+    await element(by.id("rule-set-payee-input")).tapReturnKey();
+
+    await element(by.id("add-rule-button")).tap();
+    await waitFor(element(by.text('if payee contains "e2e-payee-rule" → payee E2E Renamed Payee')))
+      .toBeVisible()
+      .withTimeout(10000);
+    await captureScreen("rules-engine-payee-rule");
+
+    await element(by.id("rule-delete-button")).atIndex(0).tap();
+    await element(by.id("rule-delete-confirm-button")).tap();
+    await waitFor(element(by.text("No rules yet."))).toBeVisible().withTimeout(10000);
+
+    await element(by.id("rules-close-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
   it("Transaction row: edit and save a category change", async () => {
     await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
     await element(by.id("transaction-row")).atIndex(0).tap();
@@ -166,6 +204,24 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
       .toHaveText("Miscellaneous")
       .withTimeout(10000);
     await captureScreen("transaction-edited");
+  });
+
+  it("Transaction row: Cancel discards edits without saving", async () => {
+    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
+    await element(by.id("transaction-row")).atIndex(0).tap();
+
+    await element(by.id("transaction-edit-payee-input")).clearText();
+    await element(by.id("transaction-edit-payee-input")).typeText("Should Not Save");
+    // tapReturnKey() first -- same keyboard-eats-the-next-tap issue as
+    // every other input-then-button sequence in this file (confirmed by a
+    // real run: Cancel's tap silently missed, leaving the editor open).
+    await element(by.id("transaction-edit-payee-input")).tapReturnKey();
+    await element(by.id("transaction-edit-cancel-button")).tap();
+
+    // Back to display mode (the editor itself is gone) and the discarded
+    // draft text never made it into the saved row.
+    await expect(element(by.id("transaction-edit-payee-input"))).not.toExist();
+    await expect(element(by.text("Should Not Save"))).not.toExist();
   });
 
   it("Account management: add-bank and disconnect banners can be cancelled", async () => {
@@ -204,6 +260,44 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
     await element(by.id("tab-home-button")).tap();
     await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
+  it("Ask: typing a custom question and pressing Ask produces a result", async () => {
+    // The suggestion-chip test above only exercises the canned shortcut
+    // path -- ask-button (the actual Send control) was never tapped
+    // anywhere in Stage 2 before this.
+    await element(by.id("tab-ask-button")).tap();
+    await element(by.id("ask-input")).typeText("How much have I spent this month?");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await captureScreen("ask-screen-custom-question");
+    await element(by.id("query-card-close-button")).tap();
+
+    // ask-input keeps focus (and the software keyboard) up through the
+    // whole exchange -- nothing here ever blurs it. A real run confirmed
+    // the keyboard was still covering the bottom tab bar at this point
+    // ("Couldn't click at: 269.5,2140.5 ... Tried 3 times" on
+    // tab-home-button, and the view hierarchy dump from that failure
+    // showed ask-input still focused="true"). tapReturnKey() dismisses it
+    // -- input is already "" by now (runQuery clears it on dispatch), so
+    // this doesn't re-submit anything.
+    await element(by.id("ask-input")).tapReturnKey();
+    await element(by.id("tab-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
+  it("Home: pull-to-refresh doesn't crash and content survives", async () => {
+    // Only testable here -- RN's RefreshControl doesn't preserve custom
+    // testIDs through ScrollView's native prop handling in Stage 1's JS
+    // test renderer (confirmed while building Stage 1's own Home tests),
+    // so a real swipe gesture on a real device is the only way to
+    // exercise this at all.
+    await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(10000);
+    await element(by.id("home-transaction-list")).swipe("down", "fast", 0.8);
+
+    await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(10000);
+    await expect(element(by.text("Recent Activity"))).toBeVisible();
   });
 
   it("Sign out returns to the login screen", async () => {

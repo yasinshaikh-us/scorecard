@@ -55,6 +55,7 @@ export default function Home() {
       </View>
 
       <FlatList
+        testID="home-transaction-list"
         data={recent}
         keyExtractor={(item, i) => String(item.Id ?? i)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}

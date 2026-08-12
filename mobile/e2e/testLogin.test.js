@@ -31,4 +31,24 @@ describe("Test login", () => {
     await expect(element(by.text("Recent Activity"))).toBeVisible();
     await captureScreen("home-screen-after-login");
   });
+
+  it("session persists across a real app relaunch, not just in-memory state", async () => {
+    // newInstance: true without delete: true -- kills and restarts the app
+    // process (clearing all in-memory JS state) while leaving the already-
+    // installed app's on-disk storage alone, so this genuinely exercises
+    // the real encrypted session round-trip: lib/supabase.ts's
+    // LargeSecureStore decrypts the AsyncStorage-held session blob using
+    // an AES key read back from SecureStore. Stage 1 mocks the whole
+    // supabase module at the boundary, so a broken encrypt/decrypt round
+    // trip is invisible there -- this exact class of bug silently broke
+    // every real sign-in once before (see LargeSecureStore's own comment
+    // in lib/supabase.ts), and nothing anywhere in the pyramid has
+    // regression-tested it since.
+    await device.launchApp({ newInstance: true });
+    await waitFor(element(by.id("home-screen")))
+      .toBeVisible()
+      .withTimeout(30000);
+    await expect(element(by.id("google-signin-button"))).not.toExist();
+    await captureScreen("home-screen-after-relaunch");
+  });
 });
