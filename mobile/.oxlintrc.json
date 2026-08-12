@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/react-in-jsx-scope": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["e2e/artifacts/**", ".expo/**", "android/**", "ios/**"],
+  "overrides": [
+    {
+      "files": ["e2e/**"],
+      "rules": {
+        // Detox specs assert via `waitFor(...).toBeVisible()/.toHaveText()`,
+        // not a literal `expect(...)` call -- this rule doesn't recognize
+        // that idiom as an assertion, so it false-positives on every spec
+        // that only waits for an element instead of also calling expect().
+        "jest/expect-expect": "off"
+      }
+    }
+  ]
+}

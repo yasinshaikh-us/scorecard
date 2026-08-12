@@ -166,8 +166,9 @@ zero rows until transactions are written with their `user_id`.
 ## Running tests
 
 ```bash
-npm test          # unit tests (Vitest) — pure logic + Edge Function shared helpers
-npm run test:e2e   # one end-to-end smoke test (Playwright), mocked APIs, no real credentials needed
+npm test              # unit tests (Vitest) — pure logic + Edge Function shared helpers
+npm run test:coverage # same, with coverage (enforces vite.config.js's thresholds)
+npm run test:e2e      # end-to-end tests (Playwright), mocked APIs, no real credentials needed
 ```
 
 `npm test` is fast (no browser) and covers `src/logic.js`
@@ -179,7 +180,11 @@ Vitest — it depends on `Deno.serve`/`Deno.env` and `npm:` imports that only
 resolve under the Deno runtime, same as the pre-existing `plaid-webhook` and
 `plaid-balance-refresh` functions. `npm run test:e2e` builds the app, serves
 it locally, and drives it in a real browser with the Edge Function calls
-mocked at the network layer.
+mocked at the network layer — despite the script name, this is ~18 test
+cases in `tests/e2e/dashboard.spec.js` (auth gate, Ask query rendering and
+chart-click filtering, off-topic rejection, Plaid link/disconnect
+confirmation flows, the Rules engine, inline transaction editing,
+navigation), not a single smoke check.
 
 Both run in CI (`.github/workflows/ci.yml`) on every push/PR, gated in order:
 build → unit tests → smoke test, so a broken build or a fast unit-test

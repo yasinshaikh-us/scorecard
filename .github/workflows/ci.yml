@@ -27,7 +27,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm test
+      # --coverage enforces vite.config.js's test.coverage.thresholds -- a
+      # regression that drops coverage below the checked-in baseline fails
+      # this job, not just a silent number nobody looks at.
+      - run: npm test -- --coverage
 
   smoke-test:
     needs: unit-tests
