@@ -67,17 +67,20 @@ export default defineConfig({
       //     deployed-function integration tests, not Vitest.
       //   * plaid.ts / plaidSandbox.ts / supabaseAdmin.ts are thin
       //     Deno.env-reading client factories, same problem.
-      //   * syncItemTransactions.ts (243 lines, the whole Plaid ingest
-      //     path) is testable in principle but imports its Plaid and
-      //     Supabase clients as VALUES. Switching those to injected
-      //     parameters -- the shape refreshAccountBalances.ts already
-      //     uses -- would make it testable and is the single biggest
-      //     available win here. Deliberately deferred, not forgotten.
+      //   * requireUser.ts reads Deno.env directly.
+      //
+      // syncItemTransactions.ts used to be listed here as untestable for
+      // the same reason. It no longer is: its Plaid and Supabase clients
+      // are now injected parameters rather than value imports, which took
+      // the whole Plaid ingest path from 0% to ~98% and roughly doubled
+      // the project-wide numbers below. The same treatment is what would
+      // unlock each function's index.ts, if their Deno.serve entry points
+      // were ever split from their handler bodies.
       thresholds: {
-        statements: 19,
-        branches: 12,
-        functions: 31,
-        lines: 19,
+        statements: 32,
+        branches: 25,
+        functions: 45,
+        lines: 32,
       },
     },
   },

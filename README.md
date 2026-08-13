@@ -165,11 +165,16 @@ npm run test:coverage # same, with coverage (enforces vitest.config.js's thresho
 ```
 
 Covers `_shared/`'s `categoryRules.ts`, `cors.ts`, `plaidExchangeLogic.ts`,
-`querySystemPrompt.ts`, `refreshAccountBalances.ts`, `transactionsData.ts`
-and `verifyPlaidWebhook.ts`. The last of those is worth calling out: it is
+`querySystemPrompt.ts`, `refreshAccountBalances.ts`, `syncItemTransactions.ts`,
+`transactionsData.ts` and `verifyPlaidWebhook.ts`. Two are worth calling
+out. `syncItemTransactions.ts` is the Plaid ingest path — every
+transaction that reaches a ledger from a linked bank goes through it, and
+its failure modes (the amount sign flip, the duplicate-account filter, the
+manually-edited guard, the relink boundary dedup) corrupt data silently
+rather than erroring. `verifyPlaidWebhook.ts` is
 the JWT signature check on Plaid's webhook, and since `plaid-webhook` is
 deployed `--no-verify-jwt`, it is the *only* thing authenticating that
-endpoint. Its tests use real ES256 keypairs and real signed tokens rather
+endpoint; its tests use real ES256 keypairs and real signed tokens rather
 than mocking the crypto, so "a forged webhook is rejected" is actually
 demonstrated.
 
