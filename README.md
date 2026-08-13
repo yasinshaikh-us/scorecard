@@ -153,9 +153,9 @@ zero rows until transactions are written with their `user_id`.
 
 ## Running tests
 
-Two independent suites, one per half of the project.
+Three suites: backend logic, the database schema itself, and the app.
 
-**Backend (this directory)** — the portable, Node-runnable logic inside
+**Backend logic (this directory)** — the portable, Node-runnable parts of
 the Edge Functions:
 
 ```bash
@@ -164,12 +164,69 @@ npm test              # Vitest
 npm run test:coverage # same, with coverage (enforces vitest.config.js's thresholds)
 ```
 
-This covers `supabase/functions/_shared/transactionsData.ts` and
-`plaidExchangeLogic.ts`. The Deno-only glue in each function's `index.ts`
-(and in `_shared/plaid.ts` / `_shared/supabaseAdmin.ts`) isn't covered by
-Vitest — it depends on `Deno.serve`/`Deno.env` and `npm:` imports that only
-resolve under the Deno runtime. Runs in CI (`.github/workflows/ci.yml`) on
-every push/PR.
+Covers `_shared/`'s `categoryRules.ts`, `cors.ts`, `plaidExchangeLogic.ts`,
+`querySystemPrompt.ts`, `refreshAccountBalances.ts`, `transactionsData.ts`
+and `verifyPlaidWebhook.ts`. The last of those is worth calling out: it is
+the JWT signature check on Plaid's webhook, and since `plaid-webhook` is
+deployed `--no-verify-jwt`, it is the *only* thing authenticating that
+endpoint. Its tests use real ES256 keypairs and real signed tokens rather
+than mocking the crypto, so "a forged webhook is rejected" is actually
+demonstrated.
+
+**Read the coverage numbers with the config's note in hand.** They are
+deliberately low: `all: true` measures the whole of `supabase/functions/`
+(≈688 statements), including the ~1,156 lines of Deno-only glue in each
+function's `index.ts` that cannot execute under Node at all. The gate
+exists to catch regressions, not as a score. `vitest.config.js` lists
+exactly what is out of reach and why.
+
+**Database (`supabase/tests/`)** — the schema, its RLS policies, and the
+column-level grants, tested against a real Postgres:
+
+```bash
+docker run -d --name pg -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=scorecard_test -p 55432:5432 postgres:15
+
+export DATABASE_URL=postgres://postgres:postgres@localhost:55432/scorecard_test
+supabase/tests/run.sh                                    # migrations + SQL/RLS tests
+npx vitest run supabase/tests/categoryRulesParity.test.ts # TS <-> SQL parity
+```
+
+`run.sh` applies `supabase/migrations/` to an empty database and runs
+`supabase/tests/sql/`. Two things come out of that:
+
+- **The RLS policies are tested as the security boundary they're claimed
+  to be.** Tests run as the real `authenticated`/`anon` roles with a real
+  `auth.uid()`, exactly as PostgREST runs a signed-in request — so "user A
+  cannot read user B's rows", "`plaid_items.access_token` is unreadable by
+  any client", and "no INSERT/DELETE policy means no client can wipe a
+  ledger" are demonstrated rather than assumed.
+- **The parity test pins the category engine's two implementations
+  together.** `categoryRules.ts` (live, per-transaction, during Plaid sync)
+  and `apply_category_rules()`/`clean_payee()` (retroactive, bulk, when a
+  rule changes) implement the same semantics in two languages. The test
+  runs identical inputs through both and asserts identical output —
+  without it, the two can drift and the same merchant ends up categorized
+  differently in old rows and new ones, with no error anywhere.
+
+`supabase/tests/bootstrap.sql` supplies the Supabase platform primitives
+that stock Postgres lacks (the `auth` schema, `auth.uid()`, the three
+roles, the default grants on `public`). The policies and grants under test
+are the real ones from `supabase/migrations/`; only the platform beneath
+them is reconstructed. That file documents precisely what this does and
+doesn't prove.
+
+> **Known gap:** `supabase/migrations/` is not self-contained — the oldest
+> migration does `alter table public.transactions add column ...` against a
+> table that was created by hand before migrations existed, and a later one
+> drops two indexes by name that were never created by a migration.
+> `bootstrap.sql` reconstructs that pre-migration baseline so the tests can
+> run, but it means the schema cannot currently be rebuilt from this repo
+> alone. The fix is a baseline migration; it would rewrite migration
+> history against the live project, so it's flagged rather than done.
+
+Both suites run in CI (`.github/workflows/ci.yml`) on every push/PR, as
+the `edge-function-tests` and `database-tests` jobs.
 
 **App (`mobile/`)** — a three-stage pyramid, from a few seconds to a real
 Android emulator to an installable APK. See
@@ -220,8 +277,13 @@ GitHub Actions workflows, not local commands.
 │   ├── plaid-balance-refresh/index.ts  # hourly pg_cron job
 │   ├── test-login/index.ts       # mobile testing only -- see mobile/README.md
 │   └── test-plaid-link/index.ts  # mobile testing only -- see mobile/README.md
-├── supabase/migrations/     # schema history
-├── package.json             # Vitest only -- runs the Edge Function tests above
+├── supabase/migrations/     # schema history (see the "known gap" note above)
+├── supabase/tests/
+│   ├── bootstrap.sql        # Supabase platform primitives on stock Postgres
+│   ├── run.sh               # applies migrations to an empty DB, runs sql/
+│   ├── sql/                 # RLS + column-grant tests, per table
+│   └── categoryRulesParity.test.ts  # TypeScript <-> SQL category-engine parity
+├── package.json             # Vitest only -- runs the backend tests above
 ├── vitest.config.js
 ├── SCHEMA.md                # full database schema reference
 └── CLAUDE.md                # standing instructions for Claude Code sessions
