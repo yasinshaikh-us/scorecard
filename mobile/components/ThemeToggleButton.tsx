@@ -2,8 +2,8 @@ import { Moon, Sun } from "lucide-react-native";
 import { useTheme } from "../lib/ThemeProvider";
 import IconButton from "./IconButton";
 
-// Mirrors src/ThemeToggle.jsx: same circular icon-button shape, same
-// sun/moon swap, same "shows the icon for the theme you'd switch to."
+// Circular icon-button with a sun/moon swap -- shows the icon for the
+// theme you'd switch to, not the one you're in.
 export default function ThemeToggleButton() {
   const { mode, colors, toggleTheme } = useTheme();
   return (

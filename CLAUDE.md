@@ -9,13 +9,17 @@ needing to be re-granted each time.
 Claude may merge its own pull requests into `main` without asking for
 confirmation first, once ALL of the following hold:
 
-- Every required status check on the PR is green. Today that means the
-  Vercel deployment check succeeds (build passes); if a GitHub Actions
-  workflow or other CI is added to this repo later, its checks count too.
+- Every required status check on the PR is green. Today that means
+  `ci.yml`'s `edge-function-tests` job, plus `mobile-ci.yml`'s four jobs
+  on any PR touching `mobile/`. (This used to name a Vercel deployment
+  check — there is no web app or Vercel deployment any more.) Any CI
+  added to this repo later counts too.
 - If the repo has an automated test suite at merge time, it passes.
-- Claude has done its own sanity check on the change before merging:
-  `npm run build` succeeds locally, and the diff actually matches what
-  the PR description claims it does.
+- Claude has done its own sanity check on the change before merging: the
+  tests covering what the change touched pass locally (`npm test` at the
+  root for Edge Function changes, `npm test` in `mobile/` for app
+  changes), and the diff actually matches what the PR description claims
+  it does.
 
 If any check is red, pending, or missing — don't merge. Report the
 blocker instead and wait for direction.
@@ -62,9 +66,10 @@ change, not an optional follow-up.
 
 GitHub webhooks reliably push CI *failures* into the conversation, but not
 CI *success* — so catching the moment a PR goes green still requires
-polling, not just waiting for a notification. This repo's CI pipeline
-(build -> unit-tests -> smoke-test) typically finishes in well under two
-minutes end-to-end, so poll roughly once a minute after opening a PR,
+polling, not just waiting for a notification. This repo's automatic
+checks (`ci.yml`'s Edge Function tests, and `mobile-ci.yml`'s typecheck /
+lint / unit-tests / Metro bundle when `mobile/` is touched) finish in
+well under two minutes, so poll roughly once a minute after opening a PR,
 not every 8-10 minutes — merge as soon as the merge-authorization criteria
 above are satisfied instead of leaving a green PR sitting unmerged for
 several extra minutes.

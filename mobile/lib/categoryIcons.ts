@@ -21,11 +21,11 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 
-// Mirrors ../../src/categoryIcons.js -- one icon per category in the
+// One icon per category in the
 // closed 19-category set (see lib/categories.ts and
 // supabase/migrations/20260803040000_closed_category_set.sql). Keys must
 // match those category names exactly; anything unmapped falls back to
-// HelpCircle, same as the web version.
+// HelpCircle.
 export const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Income: Wallet,
   Mortgage: Home,

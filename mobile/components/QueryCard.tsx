@@ -10,8 +10,8 @@ import type { Transaction } from "../lib/types";
 type Card = { id: number; question: string; pending?: boolean } & Partial<QueryResult>;
 
 // One card in the Ask feed: pending "thinking…", an error, an off-topic
-// rejection, or a real result (chart + matching transaction list) --
-// mirrors src/QueryCard.jsx's four states.
+// rejection, or a real result (chart + matching transaction list) -- four
+// states, one component.
 export default function QueryCard({
   card,
   transactions,

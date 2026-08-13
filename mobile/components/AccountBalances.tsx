@@ -13,10 +13,9 @@ import IconButton from "./IconButton";
 type Balance = { id: string; itemId: string; label: string; amount: number };
 type DisconnectState = { itemId: string; label: string; siblingLabels: string[]; step: 1 | 2; submitting: boolean; error: string | null };
 
-// Accounts-summary strip -- ports src/AccountBalances.jsx. Reads
-// plaid_accounts + plaid_account_balances directly via the authenticated
-// Supabase client (RLS-scoped, no Edge Function needed for reads, same as
-// the web version), and owns the add-bank / disconnect flows via
+// Accounts-summary strip. Reads plaid_accounts + plaid_account_balances
+// directly via the authenticated Supabase client (RLS-scoped, so no Edge
+// Function is needed for reads), and owns the add-bank / disconnect flows via
 // plaid-link-token / plaid-exchange (useBankLink) / plaid-disconnect.
 //
 // Disconnecting is a two-step, increasingly-worded confirmation on

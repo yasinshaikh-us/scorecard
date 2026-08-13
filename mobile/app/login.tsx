@@ -7,7 +7,7 @@ import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 import ThemeToggleButton from "../components/ThemeToggleButton";
 
-// Matches the multicolor "G" mark in src/Login.jsx's inline SVG exactly.
+// Google's official multicolor "G" mark, as inline SVG paths.
 function GoogleIcon() {
   return (
     <Svg width={18} height={18} viewBox="0 0 48 48">
@@ -31,10 +31,10 @@ function GoogleIcon() {
   );
 }
 
-// Mobile equivalent of src/Login.jsx. The web version redirects the whole
-// page to Google and back; here signInWithGoogle() (lib/AuthProvider.tsx)
-// opens a system browser tab and catches the redirect via a deep link
-// instead -- there's no "page" to redirect in a native app.
+// The unauthenticated entry point. signInWithGoogle()
+// (lib/AuthProvider.tsx) opens a system browser tab and catches the
+// redirect via a deep link -- there's no "page" to redirect away and back
+// in a native app, the way a browser-based sign-in would.
 export default function Login() {
   const { session, signInWithGoogle, signInWithTestAccount } = useAuth();
   const { colors } = useTheme();

@@ -1,12 +1,26 @@
 name: CI
 
+# Backend checks for the Supabase Edge Functions in supabase/, which the
+# Expo app in mobile/ calls. Runs on every PR and every push to main.
+#
+# This used to be a three-job web pipeline (vite build -> vitest ->
+# Playwright smoke test) for a React web app at the repo root. That app is
+# gone -- this is a mobile-only project now -- but its Vitest job also
+# covered the portable, Node-runnable half of the Edge Functions
+# (supabase/functions/_shared/*.test.ts), which is backend code, not web
+# code, and nothing in mobile/ covers it. So the build and browser jobs
+# were dropped and this one kept.
+#
+# The mobile app has its own pipeline: mobile-ci.yml (Stage 1, automatic),
+# mobile-detox.yml (Stage 2, manual), mobile-build.yml (Stage 3, manual).
+
 on:
   pull_request:
   push:
     branches: [main]
 
 jobs:
-  build:
+  edge-function-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,35 +29,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run build
-
-  unit-tests:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      # --coverage enforces vite.config.js's test.coverage.thresholds -- a
+      # --coverage enforces vitest.config.js's coverage thresholds -- a
       # regression that drops coverage below the checked-in baseline fails
       # this job, not just a silent number nobody looks at.
       - run: npm test -- --coverage
-
-  smoke-test:
-    needs: unit-tests
-    runs-on: ubuntu-latest
-    # Pinned to the exact @playwright/test version in package-lock.json —
-    # Playwright's browser binaries are version-locked to the test runner,
-    # so this tag must be bumped alongside any @playwright/test upgrade.
-    # Ships Chromium/Firefox/WebKit pre-installed, skipping the slowest
-    # step in this job (`playwright install --with-deps`, an apt install
-    # of ~100+ system packages plus the browser download).
-    container:
-      image: mcr.microsoft.com/playwright:v1.62.0-jammy
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm run test:e2e

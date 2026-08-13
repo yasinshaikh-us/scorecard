@@ -6,11 +6,10 @@ import { fontFamily } from "../lib/theme";
 import IconButton from "./IconButton";
 import ThemeToggleButton from "./ThemeToggleButton";
 
-// Mirrors src/App.jsx's persistent header: the brand mark plus the same
-// Rules/Sign-out/theme-toggle icon row on every screen (there, Home and
-// Ask share one header instance; here each top-level tab screen renders
-// its own, since expo-router's Tabs don't share a persistent header slot
-// the way the web shell's AuthedApp does).
+// The persistent header: brand mark plus the Rules/Sign-out/theme-toggle
+// icon row, on every screen. Each top-level tab screen renders its own
+// instance rather than sharing one, since expo-router's Tabs have no
+// persistent header slot to hang a single instance off.
 export default function ScreenHeader({ onOpenRules }: { onOpenRules: () => void }) {
   const { signOut } = useAuth();
   const { colors } = useTheme();

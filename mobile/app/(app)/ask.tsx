@@ -11,10 +11,10 @@ import QueryCard from "../../components/QueryCard";
 import ScreenHeader from "../../components/ScreenHeader";
 import CategoryRulesPanel from "../../components/CategoryRulesPanel";
 
-// Same idle-state suggestions as src/AskPage.jsx, minus the floating CSS
-// animation (no straightforward RN equivalent without pulling in
-// Reanimated) -- shown as a static tappable list instead until that's
-// worth adding.
+// Idle-state suggestions, shown as a static tappable list. These were
+// originally designed as floating/animated chips; there's no
+// straightforward RN equivalent without pulling in Reanimated, so that's
+// deferred (tracked in README.md's Status section).
 const SUGGESTIONS = [
   "How much did I spend on dining last month?",
   "What's my biggest expense this year?",
@@ -28,7 +28,7 @@ const SUGGESTIONS = [
 
 type Card = { id: number; question: string; pending?: boolean } & Partial<QueryResult>;
 
-// Mirrors src/App.jsx's runQuery + src/AskPage.jsx/QueryCard.jsx: a text
+// The Ask flow: a text
 // question goes to the `query` Edge Function (the only place the
 // Anthropic key is used), the response is parsed into a filter/chart
 // spec, and that spec is applied client-side against the already-fetched

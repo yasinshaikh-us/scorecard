@@ -13,10 +13,11 @@ import ScreenHeader from "../../components/ScreenHeader";
 const RECENT_DAYS = 7;
 
 // Home screen: account balances (AccountBalances, own add/disconnect
-// flow) + the last 7 days of transactions -- mirrors src/HomePage.jsx's
-// "recent" windowing (anchored to the ledger's own latest date, not
-// device "now" -- see daysBefore's comment in the web app). Transaction
-// data comes from DataProvider (shared with the Ask screen).
+// flow) + the last 7 days of transactions. The "recent" window is
+// anchored to the ledger's own latest date rather than device "now" --
+// see daysBefore in lib/logic.ts -- so a stale ledger still shows its
+// most recent activity instead of an empty list. Transaction data comes
+// from DataProvider (shared with the Ask screen).
 export default function Home() {
   const { transactions, dataStatus, CATS, refresh } = useData();
   const { colors } = useTheme();

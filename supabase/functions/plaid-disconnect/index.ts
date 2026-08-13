@@ -1,4 +1,4 @@
-// Edge Function, replaces the old Vercel api/plaid-disconnect.js.
+// Edge Function. Called by the Expo app in mobile/ (see mobile/lib/).
 // Fully removes a linked bank: revokes the access token at Plaid via
 // /item/remove, then deletes the plaid_items row (cascades to
 // plaid_accounts, plaid_account_balances, plaid_auth_numbers). Previously

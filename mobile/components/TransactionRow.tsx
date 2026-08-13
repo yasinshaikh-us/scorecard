@@ -11,11 +11,10 @@ import { fontFamily } from "../lib/theme";
 import PickerModal from "./PickerModal";
 import type { Transaction } from "../lib/types";
 
-// Shared by the Home screen's Recent Activity and Ask's QueryCard, same
-// as src/TransactionRow.jsx on the web -- one place for how a row looks
-// (and how an edit is saved) so both lists stay in sync. Payee/category
-// are the only editable fields (amount/date come from the bank), same as
-// the web version -- and only rows with a real Id (linked to a
+// Shared by the Home screen's Recent Activity and Ask's QueryCard -- one
+// place for how a row looks (and how an edit is saved) so both lists stay
+// in sync. Payee/category are the only editable fields (amount/date come
+// from the bank), and only rows with a real Id (linked to a
 // `transactions` row, not a client-side synthetic one) are editable.
 export default function TransactionRow({ row, CATS, onEdited }: { row: Transaction; CATS: string[]; onEdited?: () => void }) {
   const { colors } = useTheme();

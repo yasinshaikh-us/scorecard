@@ -1,4 +1,4 @@
-// Edge Function, replaces the old Vercel api/plaid-link-token.js.
+// Edge Function. Called by the Expo app in mobile/ (see mobile/lib/).
 // Creates a Plaid Link token for the signed-in user so the client can
 // launch the Link flow. PLAID_CLIENT_ID / PLAID_SECRET / PLAID_ENV are
 // set as Supabase Edge Function secrets (see ../_shared/plaid.ts).

@@ -11,9 +11,8 @@ import PlaidLinkGate from "../../components/PlaidLinkGate";
 
 // Everything under (app)/ requires a session -- guarded once here rather
 // than per-screen -- and shares one DataProvider (one transactions fetch)
-// between the Home and Ask tabs, mirroring src/App.jsx's AuthedApp shell.
-// Also mirrors src/App.jsx's first-login Plaid gate: shown once, skippable,
-// only when the user has no plaid_items row yet.
+// between the Home and Ask tabs. Also owns the first-login Plaid gate:
+// shown once, skippable, only when the user has no plaid_items row yet.
 export default function AppLayout() {
   const { session, loading } = useAuth();
   const { colors } = useTheme();

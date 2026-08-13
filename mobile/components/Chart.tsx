@@ -8,13 +8,12 @@ import { fontFamily } from "../lib/theme";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-// Bar/pie/line chart with tap-to-select, mirroring src/QueryCard.jsx's
-// Recharts version: tapping a bar/slice/point selects it (filters the
-// transaction list below to just that group), tapping the same one again
-// deselects. Merchant totals and individual-transaction rankings
-// ("payee"/"transaction" groupBy) use long, variable-width labels, so
-// those render as horizontal bars instead of vertical -- same reasoning
-// as the web version's longLabelChart flag.
+// Bar/pie/line chart with tap-to-select: tapping a bar/slice/point selects
+// it (filters the transaction list below to just that group), tapping the
+// same one again deselects. Merchant totals and individual-transaction
+// rankings ("payee"/"transaction" groupBy) use long, variable-width
+// labels, so those render as horizontal bars instead of vertical -- a
+// vertical axis can't fit them legibly.
 export default function Chart({
   data,
   spec,

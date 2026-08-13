@@ -1,6 +1,5 @@
 // Recovers the caller's user id from their Supabase access token, by
-// asking Supabase's Auth API whether it's still valid -- same pattern the
-// old Vercel middleware.js / api/_plaid.js requireUser used. Edge
+// asking Supabase's Auth API whether it's still valid. Edge
 // Functions get SUPABASE_URL and SUPABASE_ANON_KEY auto-injected by the
 // platform, no manual secret needed for either.
 //

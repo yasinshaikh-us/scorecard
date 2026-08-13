@@ -1,9 +1,9 @@
 // Lets a non-production build (development/preview EAS profiles only)
 // bootstrap a real, valid session for a designated dummy test account
-// without driving Google's OAuth screen -- same reason
-// tests/synthetic/fixtures/monitor-session.js and tests/e2e/dashboard.spec.js
-// inject a session directly on the web side rather than automating
-// Google sign-in (Google actively fights automated logins).
+// without driving Google's OAuth screen, which actively fights automated
+// logins. mobile/e2e/*.test.js (Detox, Stage 2) calls this to get past
+// the sign-in screen; the web app's Playwright suites used to inject a
+// session the same way before that app was removed.
 //
 // Gated by a shared secret (TEST_LOGIN_SECRET, an Edge Function secret --
 // deliberately separate from the account's real password, so leaking
