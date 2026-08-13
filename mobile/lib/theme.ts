@@ -14,9 +14,9 @@ export type ThemeColors = {
   danger: string;
 };
 
-// Same names, same values as ../../src/theme.css's light tokens -- kept
-// in sync by hand since React Native can't read a shared CSS file
-// directly the way the web app and the web app's design tokens can.
+// The design tokens, as plain objects. These began as a hand-copied
+// translation of a CSS custom-property set (React Native can't read a CSS
+// file), and are now the single source of truth for them.
 export const lightColors: ThemeColors = {
   bg: "#F7F4EC",
   surface: "#FFFFFF",

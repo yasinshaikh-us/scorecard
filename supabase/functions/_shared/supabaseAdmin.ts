@@ -1,8 +1,6 @@
 // Service-role Supabase client for Edge Functions. SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are auto-injected by the Supabase platform
-// for every Edge Function — no manual secret needed for these two,
-// unlike the Vercel side where SUPABASE_SERVICE_ROLE_KEY must be set by
-// hand.
+// for every Edge Function — no manual secret needed for these two.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 

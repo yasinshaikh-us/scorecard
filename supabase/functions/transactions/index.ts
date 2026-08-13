@@ -1,4 +1,4 @@
-// Edge Function, replaces the old Vercel api/transactions.js.
+// Edge Function. Called by the Expo app in mobile/ (see mobile/lib/).
 // verify_jwt is enabled (the platform default) -- the gateway already
 // rejects a request with no valid Supabase JWT on Authorization before
 // this code runs; requireUser() recovers *which* user it belongs to.

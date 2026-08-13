@@ -3,8 +3,8 @@
 //
 // Sign convention: Plaid's `amount` is positive for money leaving the
 // account and negative for money coming in. This app stores the opposite
-// (src/App.jsx / src/logic.js treat Amount < 0 as an expense, > 0 as
-// income — see the manually-imported rows), so we negate it on the way in.
+// (mobile/lib/logic.ts treats Amount < 0 as an expense, > 0 as income —
+// see the manually-imported rows), so we negate it on the way in.
 
 import { plaidClient } from "./plaid.ts";
 import { supabaseAdmin } from "./supabaseAdmin.ts";

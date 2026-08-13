@@ -1,11 +1,10 @@
 node_modules/
-dist/
-.vercel
 .env
 .env.local
 .env.*.local
 *.log
 .DS_Store
-playwright-report/
-test-results/
 coverage/
+
+# mobile/ has its own .gitignore covering the Expo/native side
+# (mobile/android, mobile/ios, .expo, Metro, keystores).

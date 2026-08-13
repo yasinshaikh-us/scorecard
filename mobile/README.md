@@ -1,21 +1,21 @@
 # fa/thm — mobile app (Expo / React Native)
 
-Native iOS/Android client for the same backend the web app
-([`../src`](../src)) uses — every screen here talks to the same Supabase
-project (Postgres, Auth, Edge Functions) via the same URLs, just from a
-native shell instead of a browser. See [`../README.md`](../README.md) for
-the backend setup (Supabase project, Edge Function deploy/secrets).
+**This is the app.** Every screen talks to the Supabase project (Postgres,
+Auth, Edge Functions) in [`../supabase`](../supabase); see
+[`../README.md`](../README.md) for the backend setup (Supabase project,
+Edge Function deploy/secrets).
 
-This is a from-scratch build, not a port: React Native doesn't share DOM
-components with the web app, so nothing under `../src` is reused directly,
-though the same pure logic (`../src/logic.js`'s date/money formatting and
-filter/group/chart-data logic) is duplicated in
-[`lib/format.ts`](lib/format.ts) and [`lib/logic.ts`](lib/logic.ts) rather
-than imported, kept behaviorally identical.
+A React web app at the repo root was the original client, and this was
+built from scratch to replace it — not ported, since React Native shares
+no DOM components with it. That web app has since been removed; the pure
+logic it held (date/money formatting, filter/group/chart-data) lives here
+in [`lib/format.ts`](lib/format.ts) and [`lib/logic.ts`](lib/logic.ts),
+which were written as behaviorally identical duplicates of it and are now
+the only copy.
 
 ## Status
 
-Functionally at parity with the web app's core flows:
+Covers the full set of flows this app is meant to have:
 
 - **Auth**: Google sign-in, encrypted session storage.
 - **Home**: account balances, last-7-days transaction list.
@@ -23,25 +23,26 @@ Functionally at parity with the web app's core flows:
   → matching transaction list, via the `query` Edge Function.
 - **Plaid Link**: connect a bank (first-login gate + "+ Add bank" on Home)
   and disconnect one (two-step confirmation), via `react-native-plaid-link-sdk`.
-- **Category rules**: same "if payee/category contains X, set Y" engine as
-  the web app, opened from Home's "Rules" button.
+- **Category rules**: an "if payee/category contains X, set Y" engine,
+  opened from Home's "Rules" button.
 - **Inline transaction editing**: tap a row to edit payee/category, same
-  `manually_edited` flag as the web version so rules/Plaid sync don't
+  `manually_edited` flag the backend respects, so rules/Plaid sync don't
   clobber it.
 
-Simplified vs. the web version, tracked here rather than silently dropped:
+Deliberately simpler than originally designed, tracked here rather than
+silently dropped:
 
-- Idle-state Ask suggestions are a static tappable list, not the web's
-  floating/animated ones (no straightforward RN equivalent without
-  pulling in Reanimated).
+- Idle-state Ask suggestions are a static tappable list, not floating or
+  animated (no straightforward RN equivalent without pulling in
+  Reanimated).
 - No chart tooltip yet (gifted-charts' pointer/tooltip config is a
   separate lift) — tapping a bar/slice/point still filters the list below.
-- No row-detail popover on tap/long-press (web's hover-triggered one has
-  no direct touch equivalent).
+- No row-detail popover on tap/long-press (the original was
+  hover-triggered, which has no direct touch equivalent).
 - Category/match-field pickers are a plain bottom-sheet list
   (`components/PickerModal.tsx`), not styled beyond that.
-- App icons: `assets/icon.png` / `splash-icon.png` / `favicon.png` are the
-  real web app icon (copied from `../public/icon-512.png`). Android's
+- App icons: `assets/icon.png` / `splash-icon.png` / `favicon.png` all use
+  the project's mark. Android's
   *adaptive* icon layers (`android-icon-foreground/background/monochrome.png`)
   are now generated from that same mark too — the cream "F" glyph alone,
   padded to stay within Android's ~66%-of-canvas safe zone on a solid
@@ -67,7 +68,7 @@ cd mobile
 npm install
 cp .env.example .env
 # edit .env with your Supabase project's URL/anon key (same values as
-# the web app's VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)
+# from Supabase: Project Settings -> API Keys)
 ```
 
 ## Run
@@ -131,9 +132,9 @@ review wait.
 
 ## Auth
 
-Google sign-in works differently here than on the web (`../src/Login.jsx`
-redirects the whole page to Google and back — there's no "page" in a
-native app). `lib/AuthProvider.tsx` opens Google's consent screen in a
+Google sign-in works differently in a native app than in a browser: there
+is no "page" to redirect away and back. `lib/AuthProvider.tsx` opens
+Google's consent screen in a
 system browser tab (`expo-web-browser`) and catches the redirect via a
 deep link on the app's `fathom://` scheme (see `app.json`), using PKCE so
 the redirect carries an exchangeable `code` rather than raw tokens. The
@@ -144,10 +145,10 @@ the AES key lives there).
 
 ## Plaid Link
 
-`lib/useBankLink.ts` is the native equivalent of `../src/useBankLink.js`.
+`lib/useBankLink.ts` owns the bank-linking flow.
 `react-native-plaid-link-sdk` v13's API is session-based
-(`createPlaidLinkSession({...}).open()`) rather than the web SDK's
-token-prop/hook pattern, but the three steps are the same: fetch a
+(`createPlaidLinkSession({...}).open()`) rather than the token-prop/hook
+pattern Plaid's browser SDK uses, but the three steps are the same: fetch a
 `link_token` from the `plaid-link-token` Edge Function, open Plaid's
 native Link UI, exchange the `public_token` it returns via
 `plaid-exchange`. The device never sees a real Plaid access token.
@@ -185,8 +186,8 @@ no paid resources):
   in Stage 1.
 - **Unit/component tests** — `npm test`, via Jest (`jest-expo` preset +
   `@testing-library/react-native`). Covers the pure logic
-  (`lib/logic.test.ts`, `lib/format.test.ts` — full parity with
-  `../src/logic.test.js`), the components with real state/interaction
+  (`lib/logic.test.ts`, `lib/format.test.ts`), the components with real
+  state/interaction
   (`components/TransactionRow.test.tsx`'s inline-edit flow,
   `components/CategoryRulesPanel.test.tsx`'s add/toggle/delete/reapply,
   `components/PickerModal.test.tsx`'s select/cancel, `components/
@@ -354,14 +355,11 @@ bug specifically, or anything else Stage 2 doesn't reach.
 ### Test login (skipping Google's sign-in screen)
 
 Every authenticated screen (Home, Ask, Rules, editing) needs a session,
-and Google's OAuth consent screen actively resists automation — the same
-reason the web app's own Playwright tests
-(`../tests/e2e/dashboard.spec.js`, `../tests/synthetic/fixtures/monitor-session.js`)
-never drive real Google sign-in either, injecting a session directly
-instead. `supabase/functions/test-login` is the mobile equivalent: it
-mints a real session for a designated dummy account
-(`synthetic-monitor@scorecard.test` — the same one the web app's
-synthetic monitor already uses) without touching Google at all.
+and Google's OAuth consent screen actively resists automation, so no
+automated suite can drive a real sign-in. `supabase/functions/test-login`
+is the way around that: it mints a real session for a designated dummy
+account (`synthetic-monitor@scorecard.test`) without touching Google at
+all.
 
 - **Gated to non-production builds only.** `eas.json`'s `development`/
   `preview` profiles set `EXPO_PUBLIC_ENABLE_TEST_LOGIN=true` plus a
@@ -471,5 +469,5 @@ UI.
   URL Configuration) needs `fathom://*` added, or `signInWithGoogle()`'s
   callback (`lib/AuthProvider.tsx`) falls back to the project's Site URL
   instead of bouncing back into the app via the deep link — from the
-  outside this looks like the sign-in flow dropping you on the deployed
-  web app in the system browser instead of returning to native screens.
+  outside this looks like the sign-in flow stranding you in the system
+  browser instead of returning to native screens.

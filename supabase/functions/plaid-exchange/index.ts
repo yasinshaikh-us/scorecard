@@ -1,4 +1,4 @@
-// Edge Function, replaces the old Vercel api/plaid-exchange.js.
+// Edge Function. Called by the Expo app in mobile/ (see mobile/lib/).
 // Exchanges a Plaid Link public_token for a permanent access_token, then
 // stores the item/accounts/auth-numbers server-side via the service-role
 // key. The access_token and account/routing numbers never round-trip

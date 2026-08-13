@@ -18,7 +18,7 @@ type Rule = {
 };
 const EMPTY_FORM = { matchField: "payee" as "payee" | "category", matchValue: "", setCategory: "", setPayee: "" };
 
-// Ports src/CategoryRulesPanel.jsx: "if payee/category contains X, set
+// The rules engine UI: "if payee/category contains X, set
 // category/payee to Y" rules, applied both going forward (the Plaid sync
 // path) and retroactively via the apply_category_rules() Postgres
 // function, called after every add/edit/delete/toggle. `priority` is an

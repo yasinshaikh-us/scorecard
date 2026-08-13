@@ -1,6 +1,6 @@
-// Edge Function, replaces the old Vercel api/query.js.
+// Edge Function. Called by the Expo app in mobile/ (see mobile/lib/).
 // Runs server-side only — this is where ANTHROPIC_API_KEY actually
-// lives, set as a Supabase Edge Function secret. The browser never sees
+// lives, set as a Supabase Edge Function secret. The client never sees
 // it. The Anthropic call is I/O wait, not CPU time, so it doesn't count
 // against Edge Functions' 2-second CPU-time cap; it does need to finish
 // within the 150-second request idle timeout, which is generous headroom

@@ -12,10 +12,8 @@ import { ThemeProvider } from "../lib/ThemeProvider";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// Keeps the splash screen up until Inter (the same family the web app
-// loads via index.html's blocking <link>) finishes loading, so there's
-// no flash of the OS default font before switching -- the RN equivalent
-// of the web app never painting text before its font <link> resolves.
+// Keeps the splash screen up until Inter finishes loading, so there's no
+// flash of the OS default font before the real one swaps in.
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
 

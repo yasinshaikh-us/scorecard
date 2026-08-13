@@ -5,7 +5,7 @@ import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
 // Shown once, between sign-in and the dashboard, the first time a user
-// has no linked bank -- mirrors src/PlaidLinkGate.jsx. Skippable, never
+// has no linked bank. Skippable, never
 // blocks access. Banks can also be added later via the "+ Add bank"
 // button on Home, which shares this same useBankLink hook.
 export default function PlaidLinkGate({ onDone }: { onDone: () => void }) {

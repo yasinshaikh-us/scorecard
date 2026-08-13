@@ -1,8 +1,7 @@
 // Shared Plaid client for Edge Functions. PLAID_CLIENT_ID / PLAID_SECRET /
 // PLAID_ENV are set as Supabase Edge Function secrets (Project Settings ->
-// Edge Functions -> Secrets, or `supabase secrets set`) — separate from
-// the same-named vars on Vercel, since these two platforms don't share
-// an environment.
+// Edge Functions -> Secrets, or `supabase secrets set`). They are
+// server-side only and never reach the app bundle — see .env.example.
 
 import { Configuration, PlaidApi, PlaidEnvironments } from "npm:plaid@45";
 

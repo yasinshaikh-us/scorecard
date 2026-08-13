@@ -2,8 +2,8 @@ import { FlatList, Modal, Pressable, StyleSheet, Text } from "react-native";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
-// Minimal single-select picker, standing in for the web's <select> -- RN
-// has no built-in equivalent. Used by CategoryRulesPanel (category /
+// Minimal single-select picker -- RN has no built-in dropdown/select
+// control, so this is it. Used by CategoryRulesPanel (category /
 // match-field pickers) and TransactionRow (category edit).
 //
 // Each option gets its own testID (picker-option-<value>), not just its
