@@ -17,6 +17,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# plaid-webhook is called by Plaid itself and test-login mints a session
+# from a shared secret -- neither can present a Supabase JWT, so both
+# deploy with verification off and do their own authentication in code
+# (verifyPlaidWebhook's signature check; TEST_LOGIN_SECRET). Every other
+# function keeps verify_jwt on.
+env:
+  PROJECT_REF: bidorjtgbhuihppsznkc
+  NO_JWT_FUNCTIONS: "plaid-webhook test-login"
+  JWT_FUNCTIONS: "plaid-balance-refresh plaid-disconnect plaid-exchange plaid-link-token query test-plaid-link transactions"
+
 jobs:
   edge-function-tests:
     runs-on: ubuntu-latest
@@ -77,3 +87,60 @@ jobs:
       # it lives here rather than in the job above.
       - name: Run TypeScript <-> SQL parity tests
         run: npx vitest run supabase/tests/categoryRulesParity.test.ts
+
+  # Deploys supabase/functions/ to the live project after both test jobs
+  # pass on main.
+  #
+  # WHY THIS EXISTS: before it, nothing deployed the Edge Functions at all.
+  # Changes merged to main and simply never reached production -- the
+  # deployed `test-plaid-link` was found sitting on version 3, missing every
+  # backend change made since, including a categoryRules fix that the
+  # TypeScript<->SQL parity test asserts is present. Tests passing on code
+  # that is not the code running in production is a worse signal than no
+  # tests, so this closes that gap.
+  deploy-edge-functions:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [edge-function-tests, database-tests]
+    runs-on: ubuntu-latest
+    # Scoped to this job rather than the workflow: a production deploy
+    # token has no business being in the environment of jobs that execute
+    # test code.
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # A new function directory that nobody adds to the lists below would
+      # silently never deploy -- the same class of invisible drift this job
+      # exists to fix. Fail loudly instead.
+      - name: Assert every function is covered by a deploy list
+        run: |
+          declare -A covered
+          for fn in $NO_JWT_FUNCTIONS $JWT_FUNCTIONS; do covered[$fn]=1; done
+          missing=""
+          for dir in supabase/functions/*/; do
+            fn="$(basename "$dir")"
+            [ "$fn" = "_shared" ] && continue
+            [ -n "${covered[$fn]:-}" ] || missing="$missing $fn"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::These functions are in supabase/functions/ but in neither deploy list:$missing"
+            echo "Add each to NO_JWT_FUNCTIONS or JWT_FUNCTIONS in .github/workflows/ci.yml."
+            exit 1
+          fi
+          echo "All functions are covered."
+
+      # Two invocations, with the JWT posture spelled out per group rather
+      # than hidden in a config file. Getting this backwards is a silent,
+      # high-consequence failure in both directions: verify_jwt ON for
+      # plaid-webhook would 401 every real Plaid webhook (no transactions
+      # would ever sync again, with nothing surfacing it), and verify_jwt
+      # OFF for any of the others would expose an authenticated endpoint.
+      - name: Deploy the unauthenticated-by-design functions
+        run: supabase functions deploy $NO_JWT_FUNCTIONS --no-verify-jwt --project-ref "$PROJECT_REF"
+
+      - name: Deploy the JWT-protected functions
+        run: supabase functions deploy $JWT_FUNCTIONS --project-ref "$PROJECT_REF"

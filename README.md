@@ -77,8 +77,37 @@ supabase functions serve   # needs the Supabase CLI
 
 ## 3. Deploy the Edge Functions
 
+**This is automatic.** `.github/workflows/ci.yml`'s `deploy-edge-functions`
+job deploys everything in `supabase/functions/` on every push to `main`,
+once both test jobs pass. It needs a **`SUPABASE_ACCESS_TOKEN` repo
+secret** (Supabase dashboard → Account → Access Tokens → generate, then
+add it under GitHub → Settings → Secrets and variables → Actions).
+
+> **This job was added after discovering the repo and the live project had
+> silently diverged.** Nothing deployed the Edge Functions before it:
+> backend changes merged to `main` and never reached production, leaving
+> the deployed `test-plaid-link` on version 3, missing every backend
+> change made since — including a `categoryRules.ts` fix that the
+> TypeScript↔SQL parity test asserts is present. Green tests against code
+> that isn't the code running in production are a worse signal than no
+> tests at all.
+
+`plaid-webhook` and `test-login` deploy with `--no-verify-jwt`; every
+other function keeps `verify_jwt` on. The workflow spells that out in two
+explicit lists rather than hiding it in a config file, because getting it
+wrong is silent and serious in both directions — verification *on* for
+`plaid-webhook` would 401 every real Plaid webhook (transactions would
+stop syncing, with nothing surfacing it), and *off* for any other
+function would expose an authenticated endpoint. A guard step fails the
+job if a function directory appears in neither list, so a newly added
+function can't quietly go undeployed.
+
+To deploy by hand instead (e.g. before the secret exists):
+
 ```bash
-supabase functions deploy transactions plaid-link-token plaid-exchange plaid-disconnect query
+supabase functions deploy plaid-webhook test-login --no-verify-jwt --project-ref <ref>
+supabase functions deploy plaid-balance-refresh plaid-disconnect plaid-exchange \
+  plaid-link-token query test-plaid-link transactions --project-ref <ref>
 ```
 
 Set these as Edge Function secrets first (Project Settings → Edge Functions
@@ -96,12 +125,12 @@ exception in this project (deployed with `--no-verify-jwt`, since Plaid
 calls it directly, not a signed-in user) — see
 `supabase/functions/plaid-webhook`.
 
-Two more functions exist purely to support the app's automated testing
-(see `mobile/README.md`'s "Test login" / "Test Plaid Link" sections) and
-aren't needed to run the app normally:
-`supabase functions deploy test-login --no-verify-jwt` and
-`supabase functions deploy test-plaid-link` (this one keeps `verify_jwt`
-enabled, like the five above — it needs a real signed-in user). `test-login`
+Two of the deployed functions exist purely to support the app's automated
+testing (see `mobile/README.md`'s "Test login" / "Test Plaid Link"
+sections) and aren't needed to run the app normally: `test-login` (which
+is why it's in the `--no-verify-jwt` group above — it authenticates via a
+shared secret, not a session) and `test-plaid-link` (which keeps
+`verify_jwt` enabled, since it needs a real signed-in user). `test-login`
 needs its own Edge Function secret (`TEST_LOGIN_SECRET`) set before it'll do
 anything. `test-plaid-link` needs three: `TEST_PLAID_LINK_SECRET`, plus
 `PLAID_SANDBOX_CLIENT_ID` / `PLAID_SANDBOX_SECRET` — dedicated Plaid
