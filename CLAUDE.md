@@ -10,10 +10,14 @@ Claude may merge its own pull requests into `main` without asking for
 confirmation first, once ALL of the following hold:
 
 - Every required status check on the PR is green. Today that means
-  `ci.yml`'s `edge-function-tests` job, plus `mobile-ci.yml`'s four jobs
-  on any PR touching `mobile/`. (This used to name a Vercel deployment
-  check — there is no web app or Vercel deployment any more.) Any CI
-  added to this repo later counts too.
+  `ci.yml`'s `edge-function-tests` job, plus — on any PR touching
+  `mobile/` — `mobile-ci.yml`'s four jobs AND `mobile-detox.yml`'s
+  `detox-android` job, which now runs the Stage 2 smoke subset on such
+  PRs automatically (it used to be manual-dispatch only, so it was never
+  a PR check before; the full Stage 2 suite still runs nightly rather
+  than per-PR). (This used to name a Vercel deployment check — there is
+  no web app or Vercel deployment any more.) Any CI added to this repo
+  later counts too.
 - If the repo has an automated test suite at merge time, it passes.
 - Claude has done its own sanity check on the change before merging: the
   tests covering what the change touched pass locally (`npm test` at the

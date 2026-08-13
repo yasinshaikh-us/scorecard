@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, screen } from "@testing-library/react-native";
+import { act, fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
 import CategoryRulesPanel from "./CategoryRulesPanel";
 
@@ -126,6 +126,33 @@ describe("CategoryRulesPanel", () => {
     expect(mockRpc).toHaveBeenCalledWith("apply_category_rules");
   });
 
+  // Regression test for a real bug Stage 2 surfaced as "flake": the form
+  // inputs used to call setForm({ ...form, x: v }), spreading the `form`
+  // captured in the render closure. Two changes dispatched before React
+  // re-rendered therefore both built on the SAME stale snapshot, and the
+  // second silently discarded the first. On a real device that showed up as
+  // scrambled/dropped characters while typing quickly -- a Detox run caught
+  // it typing "E2E Renamed Payee" and getting "ER2E enamed Payee" back.
+  //
+  // Calling the handlers directly inside one act() is what makes this a
+  // real test: fireEvent.changeText flushes between calls, so it re-renders
+  // in between and would pass against the buggy version too.
+  it("keeps both fields when two inputs change before a re-render (no stale-closure overwrite)", async () => {
+    await renderWithTheme(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
+    await screen.findByText("No rules yet.");
+
+    const matchValueInput = screen.getByPlaceholderText("e.g. starbucks");
+    const setPayeeInput = screen.getByPlaceholderText("and payee to (optional)");
+
+    await act(async () => {
+      matchValueInput.props.onChangeText("chipotle");
+      setPayeeInput.props.onChangeText("Chipotle Mexican Grill");
+    });
+
+    expect(matchValueInput.props.value).toBe("chipotle");
+    expect(setPayeeInput.props.value).toBe("Chipotle Mexican Grill");
+  });
+
   it("toggling a rule's switch updates enabled and reapplies rules", async () => {
     const rule = makeRule({ enabled: true });
     state.selectResult = { data: [rule], error: null };
@@ -144,7 +171,7 @@ describe("CategoryRulesPanel", () => {
     await renderWithTheme(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
     await screen.findByText(/if payee contains "starbucks"/);
 
-    await fireEvent.press(screen.getByTestId("rule-delete-button"));
+    await fireEvent.press(screen.getByTestId("rule-delete-button-starbucks"));
     expect(await screen.findByText("Delete this rule?")).toBeTruthy();
     expect(mockDelete).not.toHaveBeenCalled();
 
@@ -158,7 +185,7 @@ describe("CategoryRulesPanel", () => {
     await renderWithTheme(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
     await screen.findByText(/if payee contains "starbucks"/);
 
-    await fireEvent.press(screen.getByTestId("rule-delete-button"));
+    await fireEvent.press(screen.getByTestId("rule-delete-button-starbucks"));
     await screen.findByText("Delete this rule?");
     await fireEvent.press(screen.getByText("Delete"));
 
@@ -205,7 +232,7 @@ describe("CategoryRulesPanel", () => {
     await renderWithTheme(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
     await screen.findByText(/if payee contains "starbucks"/);
 
-    await fireEvent.press(screen.getByTestId("rule-delete-button"));
+    await fireEvent.press(screen.getByTestId("rule-delete-button-starbucks"));
     await fireEvent.press(screen.getByText("Delete"));
 
     expect(await screen.findByText("delete failed")).toBeTruthy();

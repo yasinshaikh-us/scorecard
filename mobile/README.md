@@ -211,9 +211,11 @@ None of this needs a device, emulator, EAS account, or paid service —
 it's the same kind of check `tsc`/`expo export`/`jest` would give on a
 local machine, just running automatically on every change.
 
-**Stage 2 — scripted UI flows on a real Android emulator, on demand**
-(`.github/workflows/mobile-detox.yml`, manual-dispatch — a real native
-Gradle build plus a real emulator boot): [Detox](https://github.com/wix/Detox)
+**Stage 2 — scripted UI flows on a real Android emulator**
+(`.github/workflows/mobile-detox.yml`: the smoke subset on any PR
+touching `mobile/`, the full suite nightly, and either one on manual
+dispatch — a real native Gradle build plus a real emulator boot):
+[Detox](https://github.com/wix/Detox)
 builds an instrumented Android APK pair (`npx detox build -c
 android.release`, via `.detoxrc.js`), then `detox test` runs the real
 `e2e/*.test.js` files against a hardware-accelerated (KVM) Android
@@ -255,6 +257,51 @@ question), Home's pull-to-refresh gesture, and sign-out. Deliberately
 one file for all of that rather than one per screen — each `describe`
 block's own `device.launchApp` reinstalls the app, which adds up across
 files.
+
+**State hygiene: nothing is assumed, everything is reset.** These specs
+drive one real, shared Supabase account, so anything a run leaves behind
+is the next run's problem. That used to be handled by assumption —
+`appFlows.test.js` opened by asserting the account "has no OTHER
+category_rules of its own at the start of a run", and matched rows
+positionally (`.atIndex(0)`) on the strength of it. The assumption was
+violated by the suite's own failure mode: a spec that died before its
+cleanup orphaned a rule, so the next run's `.atIndex(0)` deleted the
+*leftover* instead of the row it had just created, failed, and orphaned
+another. One flake became a permanently red suite that only a human
+clearing the table by hand could fix.
+
+Four things replace that assumption, and together they are what make a
+shared fixture survivable:
+
+- **`e2e/globalSetup.js`** wipes every leftover `e2e-*` rule before the
+  device boots. It is the only step guaranteed to run — a cancelled job,
+  a crashed emulator, or a spec failing before its own cleanup all skip
+  teardown — and it fails the run outright if it can't, rather than
+  testing against unknown state.
+- **Run-scoped data.** Every rule is named `e2e-<run id>-<...>`
+  (`e2e/testAccount.js`), so two Stage 2 jobs can't collide and a
+  cleanup can target exactly one run's rows.
+- **Identity, not position.** Rows are addressed by
+  `rule-row-…`/`rule-delete-button-…` testIDs built from the rule's own
+  `match_value` (see `CategoryRulesPanel.tsx`), so an unexpected row can
+  no longer misdirect a tap, and assertions say "this rule is gone"
+  rather than "the list is empty".
+- **`afterEach`, not end-of-test.** Cleanup that lives at the end of a
+  test body is skipped by a failing assertion — which is how the first
+  rule got orphaned. `afterEach` runs either way.
+
+**Failures stay contained.** The nine `appFlows` tests share one app
+session (a per-test reinstall costs more wall clock than every
+interaction in the file combined), which used to mean whatever modal a
+failing test died under was still covering the app for every test after
+it — one bad assertion reported as nine red tests. `beforeEach` now
+calls `ensureOnHome()` (`e2e/session.js`), a cheapest-first recovery
+ladder: dismiss any open modal, else tap back to the Home tab, else
+relaunch, else reinstall. `--retries 1` in the workflow then re-runs a
+failed spec file once with a fresh device session — only safe because a
+retry now starts from a known state, and deliberately just one, so a
+single dropped tap doesn't gate a merge while a genuine failure still
+goes red.
 
 Two things here are only checkable at this stage, not at Stage 1:
 **session persistence across a real relaunch** (`testLogin.test.js`)

@@ -7,7 +7,10 @@ module.exports = {
   testMatch: ["<rootDir>/e2e/**/*.test.js"],
   testTimeout: 120000,
   maxWorkers: 1,
-  globalSetup: "detox/runners/jest/globalSetup",
+  // Wraps Detox's own setup to first reset the shared test account to a
+  // known state -- see e2e/globalSetup.js for why "assume it's clean" was
+  // not survivable.
+  globalSetup: "<rootDir>/e2e/globalSetup.js",
   // Wraps Detox's own teardown to also remove the Plaid Sandbox bank the
   // specs link -- see e2e/globalTeardown.js for why a leftover one breaks
   // the hourly balance-refresh cron in production.
