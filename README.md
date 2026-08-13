@@ -279,9 +279,9 @@ GitHub Actions workflows, not local commands.
 
 ```
 ├── .github/
-│   ├── dependabot.yml    # weekly npm (root + mobile/) + github-actions updates
 │   └── workflows/
-│       ├── ci.yml               # Edge Function tests, on every push/PR
+│       ├── ci.yml               # Edge Function tests + deploy, on every push/PR
+│       ├── cache-warm.yml       # keeps the Gradle/AVD caches from expiring (Mon+Thu)
 │       ├── mobile-ci.yml        # mobile/'s Stage 1 (typecheck, lint, unit tests, Metro bundle)
 │       ├── mobile-detox.yml     # mobile/'s Stage 2, real-emulator Detox run, manual-dispatch
 │       └── mobile-build.yml     # mobile/'s Stage 3, APK build on runner, manual-dispatch

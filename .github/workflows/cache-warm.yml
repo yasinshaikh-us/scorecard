@@ -1,0 +1,97 @@
+name: Cache Warm
+
+# Keeps the two expensive caches alive so the Stage 2/3 speedups don't
+# silently decay back to cold-build timings.
+#
+# THE PROBLEM THIS SOLVES
+#
+# GitHub evicts any cache entry not ACCESSED in 7 days. The Gradle
+# dependency/build cache (~1.8 GB, shared by mobile-detox.yml and
+# mobile-build.yml) and the Android AVD boot snapshot (~1.7 GB, used by
+# mobile-detox.yml) are both worth several minutes per run -- but both of
+# those workflows are manual-dispatch. A week without dispatching either
+# one is entirely normal, and the next run after that pays full cold cost:
+# roughly +3 minutes on Stage 3 and +1.5 minutes on Stage 2's emulator
+# boot, on top of losing the warm Gradle build cache.
+#
+# Restoring a cache counts as accessing it, which resets that 7-day clock.
+# So this job just restores both and exits. It builds nothing.
+#
+# Twice weekly rather than weekly: a 7-day schedule against a 7-day
+# eviction window has no margin at all, and a single skipped or delayed
+# run would drop both caches.
+#
+# Scheduled workflows always run on the default branch, which is what's
+# wanted here -- caches saved on main are readable from every branch,
+# while a feature branch's caches are visible only to itself. Warming
+# main's copies benefits every future run wherever it happens.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1,4" # Mondays and Thursdays, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      # cache/restore, NOT cache: the plain action would also try to SAVE
+      # on post-run, re-uploading ~3.5 GB for no reason and churning the
+      # repo's 10 GB cache budget. Restore-only is read-then-exit.
+      #
+      # The Gradle key is a hash of files that only exist after `expo
+      # prebuild`, which this job deliberately doesn't run. Passing a key
+      # that can never match and relying on the restore-keys prefix gets
+      # the most recent gradle- cache regardless of its hash -- which is
+      # exactly what needs its clock reset.
+      - name: Warm the Gradle cache
+        id: gradle
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-warm-probe-never-matches-${{ github.run_id }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # This key is static (it pins the AVD's hardware profile), so it can
+      # be matched exactly -- see mobile-detox.yml's cache step. Keep the
+      # two in sync: a mismatch here would warm nothing while still
+      # reporting success.
+      - name: Warm the AVD snapshot cache
+        id: avd
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ runner.os }}-api30-google_apis-x86_64-pixel_5
+
+      # A silent miss here is the failure mode that matters: the job would
+      # go green while the caches quietly expired anyway. Surfacing both
+      # outcomes means a glance at the run tells you whether the speedups
+      # are still armed.
+      - name: Report what was warmed
+        run: |
+          gradle_key='${{ steps.gradle.outputs.cache-matched-key }}'
+          avd_hit='${{ steps.avd.outputs.cache-hit }}'
+
+          {
+            echo "### Cache warm results"
+            echo ""
+            if [ -n "$gradle_key" ]; then
+              echo "- ✅ **Gradle**: refreshed \`$gradle_key\`"
+            else
+              echo "- ⚠️ **Gradle**: no cache found — the next Stage 2/3 run builds cold (~3 min slower)"
+            fi
+            if [ "$avd_hit" = "true" ]; then
+              echo "- ✅ **AVD snapshot**: refreshed"
+            else
+              echo "- ⚠️ **AVD snapshot**: no cache found — the next Stage 2 run recreates the AVD (~1.5 min slower)"
+            fi
+            echo ""
+            echo "A missing cache is not a failure: the next real run rebuilds and re-saves it."
+            echo "Persistent misses mean something else is evicting them — most likely the"
+            echo "repo's 10 GB cache limit, since several branches each keep their own copy."
+          } >> "$GITHUB_STEP_SUMMARY"
