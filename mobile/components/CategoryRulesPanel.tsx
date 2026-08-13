@@ -135,8 +135,22 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
             <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>No rules yet.</Text>
           )}
 
+          {/* testIDs are suffixed with the rule's own match_value so a test
+              can address one specific row by identity rather than by
+              position. `.atIndex(0)`-style positional matching silently
+              targets the wrong row as soon as the list holds anything the
+              test didn't create -- which is exactly how a leftover row from
+              an earlier Detox run made a later run delete the wrong rule and
+              fail (see mobile/e2e/appFlows.test.js's header). The
+              delete-confirm buttons below stay unsuffixed on purpose: only
+              one row can be in the confirm state at a time (confirmDeleteId
+              is a single id), so they are never ambiguous. */}
           {rules?.map((r) => (
-            <View key={r.id} style={[styles.ruleRow, { borderBottomColor: colors.borderSubtle }]}>
+            <View
+              testID={`rule-row-${r.match_value}`}
+              key={r.id}
+              style={[styles.ruleRow, { borderBottomColor: colors.borderSubtle }]}
+            >
               {confirmDeleteId === r.id ? (
                 <View style={styles.deleteConfirmRow}>
                   <Text style={[styles.deleteConfirmText, { color: colors.text, fontFamily: fontFamily.regular }]}>
@@ -160,7 +174,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
               ) : (
                 <>
                   <Switch
-                    testID="rule-switch-toggle"
+                    testID={`rule-switch-toggle-${r.match_value}`}
                     value={r.enabled}
                     onValueChange={() => toggleRule(r)}
                     trackColor={{ true: colors.accent, false: colors.border }}
@@ -170,7 +184,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
                     {r.set_category ? ` → category ${r.set_category}` : ""}
                     {r.set_payee ? ` → payee ${r.set_payee}` : ""}
                   </Text>
-                  <Pressable testID="rule-delete-button" onPress={() => setConfirmDeleteId(r.id)} hitSlop={8}>
+                  <Pressable testID={`rule-delete-button-${r.match_value}`} onPress={() => setConfirmDeleteId(r.id)} hitSlop={8}>
                     <Trash2 size={15} color={colors.textFaint} />
                   </Pressable>
                 </>
@@ -198,7 +212,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
               placeholder="e.g. starbucks"
               placeholderTextColor={colors.textFaint}
               value={form.matchValue}
-              onChangeText={(v) => setForm({ ...form, matchValue: v })}
+              onChangeText={(v) => setForm((f) => ({ ...f, matchValue: v }))}
             />
 
             <View style={styles.formLine}>
@@ -219,7 +233,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
               placeholder="and payee to (optional)"
               placeholderTextColor={colors.textFaint}
               value={form.setPayee}
-              onChangeText={(v) => setForm({ ...form, setPayee: v })}
+              onChangeText={(v) => setForm((f) => ({ ...f, setPayee: v }))}
             />
 
             <Text style={[styles.hint, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
@@ -253,14 +267,14 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
           { label: "Payee", value: "payee" },
           { label: "Category", value: "category" },
         ]}
-        onSelect={(v) => setForm({ ...form, matchField: v as "payee" | "category" })}
+        onSelect={(v) => setForm((f) => ({ ...f, matchField: v as "payee" | "category" }))}
         onClose={() => setMatchFieldPickerOpen(false)}
       />
       <PickerModal
         visible={categoryPickerOpen}
         title="Set category to"
         options={[{ label: "(no change)", value: "" }, ...CATEGORIES.map((c) => ({ label: c, value: c }))]}
-        onSelect={(v) => setForm({ ...form, setCategory: v })}
+        onSelect={(v) => setForm((f) => ({ ...f, setCategory: v }))}
         onClose={() => setCategoryPickerOpen(false)}
       />
     </Modal>

@@ -35,17 +35,48 @@ name: Mobile Detox (real Android emulator)
 # (Stage 3 builds on this same runner too -- neither stage uses a paid or
 # third-party service.)
 #
-# Manual-dispatch only -- a real Gradle build plus emulator boot is the
-# slowest stage in the pyramid, not something to run on every push.
+# Three triggers, which is the standard split for UI tests too expensive
+# to run on everything: a cheap subset per change, the whole suite on a
+# schedule.
+#
+#   * pull_request (mobile/** only) -- the SMOKE subset: the app boots,
+#     renders, and can sign in. ~1 minute of device time on top of the
+#     build. Deliberately NOT the full suite; nine screens of real-device
+#     interaction is too slow and too flake-prone to gate every review on,
+#     which is why this workflow was manual-only before.
+#   * schedule -- the FULL suite, nightly, so regressions in the screens
+#     smoke doesn't touch surface without anyone remembering to dispatch.
+#   * workflow_dispatch -- either one, on demand, via the `suite` input.
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Which specs to run
+        type: choice
+        options: [full, smoke]
+        default: full
+  schedule:
+    # 07:00 UTC daily.
+    - cron: "0 7 * * *"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-detox.yml"
 
-# Manual-dispatch, but a second dispatch while one is mid-run wants the
-# newer one -- a ~14 minute emulator job is expensive to leave duplicated.
+# One global group, NOT per-ref, and queued rather than cancelled.
+#
+# Every Stage 2 run drives the same real Supabase account and the same
+# Plaid Sandbox item, so two overlapping runs are two runs writing the same
+# rows -- the exact class of interference that made this suite unreliable.
+# Serializing them is what makes a shared fixture safe to keep.
+#
+# cancel-in-progress: false because a queued run is not wasted work (it
+# tests a different commit), and GitHub keeps at most one pending run per
+# group, so this cannot build an unbounded backlog.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: mobile-detox
+  cancel-in-progress: false
 
 jobs:
   detox-android:
@@ -261,6 +292,24 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
+      # Resolved here rather than inline in the emulator step so the choice
+      # is visible in the log. An empty value means "every spec" -- detox
+      # forwards positional args to Jest as test paths.
+      - name: Select which specs to run
+        id: specs
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request) suite=smoke ;;
+            schedule)     suite=full ;;
+            *)            suite="${{ inputs.suite || 'full' }}" ;;
+          esac
+          echo "Running the $suite suite (trigger: ${{ github.event_name }})."
+          if [ "$suite" = smoke ]; then
+            echo "paths=e2e/smoke.test.js e2e/testLogin.test.js" >> "$GITHUB_OUTPUT"
+          else
+            echo "paths=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run Detox tests on a real Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -276,7 +325,19 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: mobile
-          script: npx detox test -c android.release --headless --cleanup --loglevel trace --artifacts-location e2e/artifacts/ --take-screenshots manual --record-videos failing --record-logs failing
+          # --retries 1 re-runs a failed spec FILE with a fresh device
+          # session. This is only worth having now that a re-run starts
+          # from a known state (e2e/globalSetup.js's reset plus
+          # appFlows.test.js's afterEach cleanup) -- retrying into the
+          # debris of the attempt that just failed would only fail the same
+          # way, which is what would have happened before those existed.
+          #
+          # It buys exactly one genuine flake (a dropped tap, a slow
+          # emulator frame) without gating a merge on it. It is not cover
+          # for real failures: a spec that only passes on the retry still
+          # says so in the log, and that is the signal to go fix it rather
+          # than raise this number.
+          script: npx detox test -c android.release --headless --cleanup --retries 1 --loglevel trace --artifacts-location e2e/artifacts/ --take-screenshots manual --record-videos failing --record-logs failing ${{ steps.specs.outputs.paths }}
 
       # Runs even if the test itself failed (`always()`) -- a failure is
       # exactly when seeing the actual screen/log the run ended on

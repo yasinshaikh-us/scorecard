@@ -23,35 +23,38 @@
 // linked bank). The real plaid-disconnect call itself is already covered
 // with a mocked backend by components/AccountBalances.test.tsx (Stage 1).
 //
-// Assumes the shared test account has no OTHER category_rules of its own
-// at the start of a run (a reasonable assumption for a dedicated synthetic
-// account never used for anything else) -- this is what lets the Rules
-// test below target the one rule it creates via `.atIndex(0)` /
-// "No rules yet." rather than needing to disambiguate it from unrelated
-// rows.
+// This file used to ASSUME the shared test account held no other
+// category_rules at the start of a run, and matched rows positionally
+// (`.atIndex(0)`, "No rules yet.") on the strength of that assumption. The
+// assumption was violated by the suite's own failure mode: a spec that
+// died before its cleanup left its rule behind, so the next run's
+// `.atIndex(0)` deleted the LEFTOVER instead of the row it had just
+// created and failed too -- forever, until someone cleared the table by
+// hand. One flake became a permanently red suite (mobile-detox.yml runs 57
+// and 57/attempt-2).
+//
+// Nothing is assumed any more. e2e/globalSetup.js wipes every leftover
+// "e2e-*" rule before the device boots; each rule created here is
+// namespaced to the current run; afterEach removes them even when a test
+// throws; and rows are addressed by identity (`rule-*-${value}` testIDs,
+// see CategoryRulesPanel.tsx) rather than by position, so an unexpected
+// row can no longer misdirect a tap.
 const { captureScreen } = require("./screenshot");
+const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
+const { launchAndSignIn, ensureOnHome } = require("./session");
+
+// Namespaced per run, so a Stage 2 job running concurrently on another ref
+// cannot collide with these and afterEach can delete exactly what this run
+// created -- nothing more.
+const CATEGORY_RULE_VALUE = runScopedRuleValue("cat");
+const PAYEE_RULE_VALUE = runScopedRuleValue("payee");
+const RENAMED_PAYEE = "E2E Renamed Payee";
 
 describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   beforeAll(async () => {
-    await device.launchApp({ newInstance: true, delete: true });
-
-    await element(by.id("test-signin-button")).tap();
-
-    // Normally lands straight on Home (the shared test account already has
-    // a linked bank from a prior run's "Link test bank" call) -- but stays
-    // robust to a genuinely fresh account too, where app/(app)/_layout.tsx
-    // shows PlaidLinkGate first instead.
-    //
-    // 30s, not 8s/10s -- see testLogin.test.js's comment on the identical
-    // wait; a cold install + real Supabase auth round-trip is slower on a
-    // resource-constrained CI emulator than the original budget allowed
-    // for.
-    try {
-      await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(30000);
-    } catch {
-      await element(by.id("plaid-gate-skip-button")).tap();
-      await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(30000);
-    }
+    // Handles every entry state (retained session, login screen, or a
+    // fresh account stopping at PlaidLinkGate) -- see e2e/session.js.
+    await launchAndSignIn({ reinstall: true });
 
     // Guarantees a linked account (for the account-management banners
     // below) and at least one transaction (Home's Recent Activity is
@@ -82,6 +85,31 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await captureScreen("home-with-linked-account");
   });
 
+  // Every test starts from Home regardless of how the previous one ended.
+  // Without this, a test that died with a modal open left that modal
+  // covering the app for every test after it -- one bad assertion reported
+  // as nine failures, which hides the actual cause rather than surfacing
+  // it. See e2e/session.js for the recovery ladder.
+  beforeEach(async () => {
+    await ensureOnHome();
+  });
+
+  // Deliberately here and not at the end of each test body: cleanup that
+  // lives in the body is skipped by a failing assertion, which is exactly
+  // how a rule got orphaned in the first place. afterEach runs either way.
+  //
+  // Non-fatal: a cleanup blip must not turn an otherwise-passing test red
+  // (that would just trade one flake source for another). Anything left
+  // behind is swept by the next run's globalSetup, and nothing here
+  // depends on the table being empty any more.
+  afterEach(async () => {
+    try {
+      await cleanupThisRunsRules();
+    } catch (err) {
+      console.warn(`[e2e-cleanup] could not remove this run's rules -- next run's reset will: ${err}`);
+    }
+  });
+
   it("Rules engine: add, toggle, and delete a rule", async () => {
     await element(by.id("rules-button")).tap();
     await expect(element(by.text("Rules Engine"))).toBeVisible();
@@ -99,7 +127,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await element(by.id("rule-match-field-button")).tap();
     await element(by.text("Category")).tap();
 
-    await element(by.id("rule-match-value-input")).typeText("e2e-test-rule");
+    await element(by.id("rule-match-value-input")).typeText(CATEGORY_RULE_VALUE);
     // tapReturnKey(), not straight into the next tap: a real run (see
     // rules-engine-with-rule's failure video/hierarchy dump from a prior
     // attempt) showed the software keyboard still up and the match-value
@@ -132,23 +160,34 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // button" while the picker's view hierarchy was still in the dump.
     await waitFor(element(by.id("add-rule-button"))).toBeVisible().withTimeout(5000);
     await element(by.id("add-rule-button")).tap();
-    await waitFor(element(by.id("rule-switch-toggle")).atIndex(0)).toBeVisible().withTimeout(10000);
+    // Addressed by this rule's own match_value, not `.atIndex(0)`: the
+    // assertion now proves THIS rule was created, and stays correct no
+    // matter what else is in the list.
+    await waitFor(element(by.id(`rule-switch-toggle-${CATEGORY_RULE_VALUE}`)))
+      .toBeVisible()
+      .withTimeout(10000);
     await captureScreen("rules-engine-with-rule");
 
     // Toggling round-trips through a real DB update + apply_category_rules()
     // RPC -- the "Applied to N transaction(s)." status text is proof both
     // calls actually completed, not just that the tap didn't crash.
-    await element(by.id("rule-switch-toggle")).atIndex(0).tap();
+    await element(by.id(`rule-switch-toggle-${CATEGORY_RULE_VALUE}`)).tap();
     await waitFor(element(by.id("rules-status"))).toBeVisible().withTimeout(10000);
 
-    await element(by.id("rule-delete-button")).atIndex(0).tap();
+    await element(by.id(`rule-delete-button-${CATEGORY_RULE_VALUE}`)).tap();
     await expect(element(by.text("Delete this rule?"))).toBeVisible();
     await element(by.id("rule-delete-cancel-button")).tap();
-    await expect(element(by.id("rule-switch-toggle")).atIndex(0)).toBeVisible();
+    await expect(element(by.id(`rule-switch-toggle-${CATEGORY_RULE_VALUE}`))).toBeVisible();
 
-    await element(by.id("rule-delete-button")).atIndex(0).tap();
+    await element(by.id(`rule-delete-button-${CATEGORY_RULE_VALUE}`)).tap();
     await element(by.id("rule-delete-confirm-button")).tap();
-    await waitFor(element(by.text("No rules yet."))).toBeVisible().withTimeout(10000);
+    // "this row is gone", not "the list is empty" -- the old
+    // "No rules yet." wait asserted something about the whole account
+    // rather than about this test's own rule, so any unrelated row (a
+    // leftover, or a concurrent run's) failed it.
+    await waitFor(element(by.id(`rule-row-${CATEGORY_RULE_VALUE}`)))
+      .not.toExist()
+      .withTimeout(10000);
 
     await element(by.id("rules-close-button")).tap();
     await expect(element(by.id("home-screen"))).toBeVisible();
@@ -163,20 +202,28 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.text("Rules Engine"))).toBeVisible();
 
     // match_field defaults to "payee" -- no picker needed for this one.
-    await element(by.id("rule-match-value-input")).typeText("e2e-payee-rule");
+    await element(by.id("rule-match-value-input")).typeText(PAYEE_RULE_VALUE);
     await element(by.id("rule-match-value-input")).tapReturnKey();
-    await element(by.id("rule-set-payee-input")).typeText("E2E Renamed Payee");
+    await element(by.id("rule-set-payee-input")).typeText(RENAMED_PAYEE);
     await element(by.id("rule-set-payee-input")).tapReturnKey();
 
     await element(by.id("add-rule-button")).tap();
-    await waitFor(element(by.text('if payee contains "e2e-payee-rule" → payee E2E Renamed Payee')))
+    // Still a text assertion, deliberately: this is the one place that
+    // proves the " → payee X" rendering branch itself is correct, which a
+    // testID match would not. It is also the assertion that caught the
+    // stale-closure bug in CategoryRulesPanel's inputs -- a real run typed
+    // "E2E Renamed Payee" and this read back "ER2E enamed Payee" (now
+    // fixed, and covered by a Stage 1 regression test).
+    await waitFor(element(by.text(`if payee contains "${PAYEE_RULE_VALUE}" → payee ${RENAMED_PAYEE}`)))
       .toBeVisible()
       .withTimeout(10000);
     await captureScreen("rules-engine-payee-rule");
 
-    await element(by.id("rule-delete-button")).atIndex(0).tap();
+    await element(by.id(`rule-delete-button-${PAYEE_RULE_VALUE}`)).tap();
     await element(by.id("rule-delete-confirm-button")).tap();
-    await waitFor(element(by.text("No rules yet."))).toBeVisible().withTimeout(10000);
+    await waitFor(element(by.id(`rule-row-${PAYEE_RULE_VALUE}`)))
+      .not.toExist()
+      .withTimeout(10000);
 
     await element(by.id("rules-close-button")).tap();
     await expect(element(by.id("home-screen"))).toBeVisible();
