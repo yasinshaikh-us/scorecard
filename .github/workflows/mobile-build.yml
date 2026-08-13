@@ -119,7 +119,7 @@ jobs:
       # warms the other -- this stage's first run was 13m cold against
       # Stage 2's 6m50s warm, so it is worth roughly 6 minutes.
       - name: Cache Gradle dependencies + build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches

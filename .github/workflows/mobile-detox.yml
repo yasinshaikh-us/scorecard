@@ -136,7 +136,7 @@ jobs:
       # a key miss (e.g. a dependency bump), so a partial/stale cache still
       # beats a fully cold one instead of building from scratch.
       - name: Cache Gradle dependencies + build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
@@ -239,7 +239,7 @@ jobs:
       # and the run step, or the cached snapshot doesn't apply and both the
       # cache and the extra step are wasted.
       - name: Cache the AVD + its boot snapshot
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
