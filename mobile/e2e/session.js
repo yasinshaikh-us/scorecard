@@ -69,6 +69,51 @@ async function settleOnHome(timeoutMs = 30000) {
   await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(15000);
 }
 
+// Enters text into a field in ONE native operation instead of keystroke
+// by keystroke.
+//
+// WHY NOT typeText
+//
+// Detox's typeText sends one key event per character. Against a
+// CONTROLLED TextInput -- which every input in this app is (`value` plus
+// `onChangeText`) -- each keystroke round-trips JS -> native to write the
+// controlled value back, and the next keystroke can land before that
+// write does. Characters then arrive transposed. Two separate real runs
+// caught it on the same field, each a single adjacent swap:
+//
+//   typed     E2E Renamed Payee
+//   run 57    ER2E enamed Payee
+//   run 61    E2ER enamed Payee
+//
+// This is NOT the stale-closure bug fixed in CategoryRulesPanel.tsx.
+// That one discarded whole field values, is a real user-facing bug, and
+// is covered by a Stage 1 regression test. This is the JS<->native
+// ordering race underneath it, which no amount of app-side state
+// discipline can remove -- run 61 still hit it with the closure bug
+// already fixed.
+//
+// replaceText sets the whole string at once, so there is no ordering to
+// get wrong. Nothing is lost by not simulating per-keystroke input here:
+// the onChangeText path is driven directly and deterministically at
+// Stage 1, where it belongs, rather than through a real soft keyboard.
+//
+// The tap/dismiss bracket is deliberate and load-bearing. This file's
+// history is a series of fixes for Android's soft keyboard eating the
+// NEXT tap (see appFlows.test.js's tapReturnKey comments). Tapping first
+// guarantees focus so the dismissal has something to dismiss; the
+// dismissal is tolerant because replaceText does not reliably raise the
+// keyboard at all, and failing to dismiss a keyboard that was never up
+// must not fail a test.
+async function setInputText(testID, text) {
+  await element(by.id(testID)).tap();
+  await element(by.id(testID)).replaceText(text);
+  try {
+    await element(by.id(testID)).tapReturnKey();
+  } catch {
+    // No keyboard to dismiss.
+  }
+}
+
 // Launches the app and gets to Home, tolerating every entry state: a
 // retained session lands on Home (or the gate), a cleared one starts at
 // the login screen.
@@ -113,4 +158,4 @@ async function ensureOnHome() {
   await launchAndSignIn({ reinstall: true });
 }
 
-module.exports = { isVisible, tapIfPresent, settleOnHome, launchAndSignIn, ensureOnHome };
+module.exports = { isVisible, tapIfPresent, setInputText, settleOnHome, launchAndSignIn, ensureOnHome };

@@ -41,7 +41,7 @@
 // row can no longer misdirect a tap.
 const { captureScreen } = require("./screenshot");
 const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
-const { launchAndSignIn, ensureOnHome } = require("./session");
+const { launchAndSignIn, ensureOnHome, setInputText } = require("./session");
 
 // Namespaced per run, so a Stage 2 job running concurrently on another ref
 // cannot collide with these and afterEach can delete exactly what this run
@@ -127,18 +127,17 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await element(by.id("rule-match-field-button")).tap();
     await element(by.text("Category")).tap();
 
-    await element(by.id("rule-match-value-input")).typeText(CATEGORY_RULE_VALUE);
-    // tapReturnKey(), not straight into the next tap: a real run (see
-    // rules-engine-with-rule's failure video/hierarchy dump from a prior
-    // attempt) showed the software keyboard still up and the match-value
-    // text mid-typed at the moment "set category to" was tapped, and the
-    // picker never opened -- Android's real soft keyboard can eat that
-    // first tap as a dismiss rather than passing it through to the
-    // button underneath. A Stage 1 (RNTL) render of this exact tap
-    // sequence confirmed the component's own state logic opens the
-    // picker correctly, so this is a real-device-only keyboard timing
-    // issue, not an app bug.
-    await element(by.id("rule-match-value-input")).tapReturnKey();
+    // setInputText, not typeText + tapReturnKey: it sets the value in one
+    // native operation (no per-keystroke transposition race -- see
+    // e2e/session.js) while keeping the tap-to-focus/dismiss bracket that
+    // this file needs. That bracket is why the keystrokes were split from
+    // the next tap in the first place: a real run showed the soft keyboard
+    // still up and the match-value text mid-typed at the moment "set
+    // category to" was tapped, so Android ate that tap as a dismiss and
+    // the picker never opened. A Stage 1 render of the same tap sequence
+    // confirmed the component's own state logic opens the picker
+    // correctly, so that was real-device keyboard timing, not an app bug.
+    await setInputText("rule-match-value-input", CATEGORY_RULE_VALUE);
     await element(by.id("rule-category-select-button")).tap();
     // "Dining" is real (see lib/categories.ts's 19-category set) but it's
     // the 8th entry in the picker's height-capped, scrollable list -- a
@@ -202,10 +201,10 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.text("Rules Engine"))).toBeVisible();
 
     // match_field defaults to "payee" -- no picker needed for this one.
-    await element(by.id("rule-match-value-input")).typeText(PAYEE_RULE_VALUE);
-    await element(by.id("rule-match-value-input")).tapReturnKey();
-    await element(by.id("rule-set-payee-input")).typeText(RENAMED_PAYEE);
-    await element(by.id("rule-set-payee-input")).tapReturnKey();
+    // rule-set-payee-input is the field that transposed characters under
+    // typeText on two separate runs -- see e2e/session.js's setInputText.
+    await setInputText("rule-match-value-input", PAYEE_RULE_VALUE);
+    await setInputText("rule-set-payee-input", RENAMED_PAYEE);
 
     await element(by.id("add-rule-button")).tap();
     // Still a text assertion, deliberately: this is the one place that
@@ -263,12 +262,19 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
     await element(by.id("transaction-row")).atIndex(0).tap();
 
-    await element(by.id("transaction-edit-payee-input")).clearText();
-    await element(by.id("transaction-edit-payee-input")).typeText("Should Not Save");
-    // tapReturnKey() first -- same keyboard-eats-the-next-tap issue as
-    // every other input-then-button sequence in this file (confirmed by a
-    // real run: Cancel's tap silently missed, leaving the editor open).
-    await element(by.id("transaction-edit-payee-input")).tapReturnKey();
+    // setInputText replaces the field's whole contents, so the separate
+    // clearText() is no longer needed. It also keeps the dismiss-before-
+    // tap bracket this line has always needed: the same
+    // keyboard-eats-the-next-tap issue as every other input-then-button
+    // sequence here (a real run had Cancel's tap silently miss, leaving
+    // the editor open).
+    //
+    // Worth doing even though a scrambled value could not fail the
+    // assertion below (it checks the text is ABSENT, so a transposed
+    // string would pass vacuously) -- that is exactly what makes it worth
+    // fixing: the test would have kept reporting green while no longer
+    // testing what it claims to.
+    await setInputText("transaction-edit-payee-input", "Should Not Save");
     await element(by.id("transaction-edit-cancel-button")).tap();
 
     // Back to display mode (the editor itself is gone) and the discarded
@@ -320,6 +326,14 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // path -- ask-button (the actual Send control) was never tapped
     // anywhere in Stage 2 before this.
     await element(by.id("tab-ask-button")).tap();
+    // Deliberately still typeText, unlike the rule/transaction inputs
+    // above. This spec depends on ask-input keeping focus and the keyboard
+    // staying UP through the whole exchange (see the tapReturnKey comment
+    // at the end of this test), which setInputText's dismiss bracket would
+    // undo. A transposed question here also cannot fail anything -- the
+    // assertion is that a result card comes back, and it would for any
+    // string -- so there is nothing to gain against a real risk of
+    // breaking the keyboard sequencing this test needs.
     await element(by.id("ask-input")).typeText("How much have I spent this month?");
     await element(by.id("ask-button")).tap();
 
