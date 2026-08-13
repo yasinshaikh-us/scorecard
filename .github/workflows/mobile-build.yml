@@ -43,6 +43,12 @@ on:
         type: choice
         options: ["preview", "production"]
 
+# Manual-dispatch, but a second dispatch while one is mid-run wants the
+# newer one -- a full Gradle build is expensive to leave duplicated.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -102,20 +108,25 @@ jobs:
       # recent cache for this OS even on a key miss (e.g. a dependency
       # bump), so a partial/stale cache still beats a fully cold one.
       #
-      # Separate `gradle-apk-` prefix from mobile-detox.yml's `gradle-`
-      # caches on purpose: the two builds compile different ABI sets (see
-      # the build step below), so letting them share one immutable cache
-      # entry would just mean whichever ran first decided what the other
-      # got.
+      # Deliberately the SAME key as mobile-detox.yml (Stage 2). An
+      # earlier version of this workflow used a separate `gradle-apk-`
+      # prefix, reasoning that the two builds' differing ABI sets would
+      # make them fight over one immutable entry. That was over-cautious:
+      # the bulk of ~/.gradle/caches is dependency downloads, which are
+      # identical between the two, and Gradle's build-cache entries are
+      # keyed by task-input hash, so the ABI-specific ones simply miss
+      # rather than colliding. Sharing means whichever stage runs first
+      # warms the other -- this stage's first run was 13m cold against
+      # Stage 2's 6m50s warm, so it is worth roughly 6 minutes.
       - name: Cache Gradle dependencies + build cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-apk-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/build.gradle', 'mobile/android/app/build.gradle') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/build.gradle', 'mobile/android/app/build.gradle') }}
           restore-keys: |
-            gradle-apk-${{ runner.os }}-
+            gradle-${{ runner.os }}-
 
       # Same fix, same reasons, as mobile-detox.yml's equivalent step:
       # Expo prebuild's default gradle.properties caps the daemon at
@@ -136,16 +147,24 @@ jobs:
       # the APK rather than served by Metro -- a standalone binary, not a
       # dev client.
       #
-      # -PreactNativeArchitectures limits native compilation to the ABIs
-      # that can actually run this artifact instead of the default four
-      # (armeabi-v7a, arm64-v8a, x86, x86_64) -- every extra ABI is a full
-      # extra native compile. arm64-v8a covers every 64-bit Android phone
-      # (which, at minSdkVersion 26, is effectively all of them); x86_64
-      # keeps the same APK installable on a desktop emulator. Dropping the
-      # 32-bit ABIs is the one install-compatibility trade-off here: a
-      # genuinely 32-bit-only device won't take this APK.
+      # -PreactNativeArchitectures limits native compilation to one ABI
+      # instead of the default four (armeabi-v7a, arm64-v8a, x86, x86_64).
+      # Every extra ABI is a full extra native compile, and this step is
+      # the bulk of the workflow's wall clock.
+      #
+      # arm64-v8a only, because that is what this artifact is FOR: a human
+      # sideloading it onto a phone. It covers every 64-bit Android phone
+      # (at minSdkVersion 26, effectively all of them) and Apple Silicon
+      # emulators. x86_64 was previously included so the same APK would
+      # also run on a desktop Intel emulator, but Stage 2 already covers
+      # emulator testing on a real x86_64 emulator -- paying for that ABI
+      # again here bought nothing this pipeline doesn't already have.
+      #
+      # The trade-off, stated plainly: this APK will NOT install on an
+      # Intel/AMD Android emulator, nor on a genuinely 32-bit-only device.
+      # Add the ABI back to the flag below if you need either.
       - name: Build release APK
-        run: cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64
+        run: cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 
       # Gradle always names its output app-release.apk. Renaming to
       # something identifiable means the downloaded file is still

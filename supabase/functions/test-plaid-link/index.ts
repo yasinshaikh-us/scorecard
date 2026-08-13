@@ -102,6 +102,27 @@ async function disconnectItem(client: ReturnType<typeof plaidSandboxClient>, db:
   if (deleteError) throw deleteError;
 }
 
+// Disconnects every active item belonging to the test account, returning
+// how many were removed. Used both to start a run from a clean slate and
+// to tear one down afterwards (see the `action: "cleanup"` branch below).
+async function disconnectAllActiveItems(
+  client: ReturnType<typeof plaidSandboxClient>,
+  db: ReturnType<typeof supabaseAdmin>,
+  userId: string
+) {
+  const { data: existingItems, error: existingItemsError } = await db
+    .from("plaid_items")
+    .select("id, access_token, user_id")
+    .eq("user_id", userId)
+    .eq("status", "active");
+  if (existingItemsError) throw existingItemsError;
+
+  for (const item of existingItems || []) {
+    await disconnectItem(client, db, item);
+  }
+  return (existingItems || []).length;
+}
+
 async function fetchAuthNumbers(client: ReturnType<typeof plaidSandboxClient>, accessToken: string, itemId: string) {
   try {
     const authResp = await client.authGet({ access_token: accessToken });
@@ -151,15 +172,25 @@ Deno.serve(async (req) => {
     // Start from a clean slate -- see header comment on why a stale
     // linked account from a prior run would break the duplicate-account
     // detection below.
-    const { data: existingItems, error: existingItemsError } = await db
-      .from("plaid_items")
-      .select("id, access_token, user_id")
-      .eq("user_id", user.id)
-      .eq("status", "active");
-    if (existingItemsError) throw existingItemsError;
+    const disconnected = await disconnectAllActiveItems(client, db, user.id);
 
-    for (const item of existingItems || []) {
-      await disconnectItem(client, db, item);
+    // Cleanup-only mode: disconnect and stop, without seeding a new item.
+    // Called by mobile/e2e/globalTeardown.js once every Detox spec has
+    // finished, so a Sandbox item doesn't outlive the run that created it.
+    //
+    // This matters beyond tidiness. A Sandbox item's access_token was
+    // minted by the Sandbox Plaid client, but the hourly
+    // plaid-balance-refresh cron uses the PRODUCTION client -- so a
+    // leftover item can never have its balances refreshed and fails that
+    // job on every tick, forever, reporting only as a `failed` count in a
+    // JSON body nobody reads.
+    //
+    // The start-of-run cleanup above stays as the safety net for a run
+    // that dies before teardown (a cancelled job, a crashed emulator).
+    if (body?.action === "cleanup") {
+      return new Response(JSON.stringify({ disconnected }), {
+        headers: { ...corsHeaders, "content-type": "application/json" },
+      });
     }
 
     const sandboxToken = await client.sandboxPublicTokenCreate({
