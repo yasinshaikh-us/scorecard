@@ -11,6 +11,19 @@ import { defineConfig } from "vitest/config";
 // build config -- there's no web app any more, so only the test half of it
 // survives, without the vite/React plugin machinery.)
 export default defineConfig({
+  // Deno resolves bare-npm dependencies via `npm:` specifiers, which Node
+  // has no notion of. Mapping them onto the ordinary npm packages of the
+  // same name is what lets a file that imports one still be unit-tested
+  // here -- verifyPlaidWebhook.ts is the case that matters, since it's the
+  // signature check standing between a forged webhook and real writes, and
+  // its `npm:jose@5` import was the only thing making it untestable.
+  //
+  // Keep the pinned major in the alias in sync with the source specifier:
+  // if a function moves to npm:jose@6, this must move with it, or the test
+  // would silently keep exercising the old major.
+  resolve: {
+    alias: [{ find: /^npm:jose@5$/, replacement: "jose" }],
+  },
   test: {
     // Node environment, not jsdom: nothing here renders a UI, and the Edge
     // Function tests need the real Node fetch/crypto rather than jsdom's
@@ -23,6 +36,16 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/mobile/**"],
     coverage: {
       provider: "v8",
+      // `all: true` is the whole point of this block. Without it, v8 only
+      // instruments files the suite actually imports -- so an untested
+      // file contributes nothing at all rather than 0%, and the headline
+      // percentage describes only the code that already has tests. This
+      // repo's numbers read 98/82/100/100 that way while most of
+      // supabase/functions/ had no tests, which is worse than no gate: it
+      // looked like a passing signal.
+      all: true,
+      include: ["supabase/functions/**/*.ts"],
+      exclude: ["**/*.test.ts"],
       // Deliberately no `all: true` / broad `include` -- this only
       // instruments the files the suite actually imports (the portable
       // supabase/functions/_shared/*.ts helpers). The Deno-only glue
@@ -30,19 +53,31 @@ export default defineConfig({
       // at all, so forcing it into the instrumented set would just fail the
       // run instead of reporting real 0%s.
       reporter: ["text", "text-summary"],
-      // Re-baselined when the web app was removed. The old numbers
-      // (95/90/100/100) were an aggregate over src/logic.js *plus* these
-      // helpers; src/logic.js was the better-covered half, so dropping it
-      // moved the aggregate down to what supabase/functions/_shared/ alone
-      // actually achieves (98.27/82.35/100/100 at the time of the removal)
-      // without a single test being deleted. These are set just under that
-      // measured baseline, so the same rule still holds: a regression that
-      // drops coverage below what's checked in fails the run.
+      // These look low because they are now honest. With `all: true` the
+      // denominator is the whole of supabase/functions/ (688 statements),
+      // not just the files that happen to have tests (58 before). The
+      // numbers are the real measured baseline, set a hair under it, so
+      // the gate does the one job it can usefully do: fail if coverage
+      // goes BACKWARDS. It is not a target to admire.
+      //
+      // What's structurally out of reach, and why the ceiling isn't 100:
+      //   * Every function's index.ts (~1,156 lines) is Deno-only --
+      //     Deno.serve/Deno.env and `npm:` specifiers that don't resolve
+      //     under Node. Covering these needs a Deno test runner or real
+      //     deployed-function integration tests, not Vitest.
+      //   * plaid.ts / plaidSandbox.ts / supabaseAdmin.ts are thin
+      //     Deno.env-reading client factories, same problem.
+      //   * syncItemTransactions.ts (243 lines, the whole Plaid ingest
+      //     path) is testable in principle but imports its Plaid and
+      //     Supabase clients as VALUES. Switching those to injected
+      //     parameters -- the shape refreshAccountBalances.ts already
+      //     uses -- would make it testable and is the single biggest
+      //     available win here. Deliberately deferred, not forgotten.
       thresholds: {
-        statements: 98,
-        branches: 82,
-        functions: 100,
-        lines: 100,
+        statements: 19,
+        branches: 12,
+        functions: 31,
+        lines: 19,
       },
     },
   },

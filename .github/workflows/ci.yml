@@ -1,15 +1,8 @@
 name: CI
 
-# Backend checks for the Supabase Edge Functions in supabase/, which the
-# Expo app in mobile/ calls. Runs on every PR and every push to main.
-#
-# This used to be a three-job web pipeline (vite build -> vitest ->
-# Playwright smoke test) for a React web app at the repo root. That app is
-# gone -- this is a mobile-only project now -- but its Vitest job also
-# covered the portable, Node-runnable half of the Edge Functions
-# (supabase/functions/_shared/*.test.ts), which is backend code, not web
-# code, and nothing in mobile/ covers it. So the build and browser jobs
-# were dropped and this one kept.
+# Backend checks for the Supabase Edge Functions and the database schema in
+# supabase/, which the Expo app in mobile/ calls. Runs on every PR and every
+# push to main.
 #
 # The mobile app has its own pipeline: mobile-ci.yml (Stage 1, automatic),
 # mobile-detox.yml (Stage 2, manual), mobile-build.yml (Stage 3, manual).
@@ -18,6 +11,11 @@ on:
   pull_request:
   push:
     branches: [main]
+
+# A superseded run tells you nothing -- cancel it rather than paying for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   edge-function-tests:
@@ -29,7 +27,53 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # --coverage enforces vitest.config.js's coverage thresholds -- a
-      # regression that drops coverage below the checked-in baseline fails
-      # this job, not just a silent number nobody looks at.
+      # --coverage enforces vitest.config.js's thresholds. Those numbers are
+      # low on purpose (see the config): they measure ALL of
+      # supabase/functions/, most of which is Deno-only glue that can't run
+      # under Node, so the gate exists to catch regressions rather than to
+      # be admired.
       - run: npm test -- --coverage
+
+  # The security model this repo documents ("Postgres enforces the
+  # isolation, not app code") is only true if the policies actually say so.
+  # This job applies the real migrations to a real Postgres and tests them.
+  database-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scorecard_test
+        ports: ["5432:5432"]
+        # Without a health check the job races the container's startup and
+        # fails intermittently on connection refused.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/scorecard_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # Applies supabase/migrations/ to an empty database and runs the RLS
+      # tests in supabase/tests/sql/. Applying the migrations at all is
+      # itself a check: it catches a migration that no longer applies to a
+      # fresh database, which is otherwise only discovered during a restore
+      # or when creating a new environment.
+      - name: Apply migrations and run SQL/RLS tests
+        run: supabase/tests/run.sh
+
+      # Runs the same inputs through the TypeScript category engine and its
+      # SQL twin and asserts identical output. Skipped automatically when
+      # DATABASE_URL is unset (e.g. a laptop with no database), which is why
+      # it lives here rather than in the job above.
+      - name: Run TypeScript <-> SQL parity tests
+        run: npx vitest run supabase/tests/categoryRulesParity.test.ts

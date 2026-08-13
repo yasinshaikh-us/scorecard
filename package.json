@@ -9,7 +9,10 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/pg": "^8.21.0",
     "@vitest/coverage-v8": "^4.1.10",
+    "jose": "^5.10.0",
+    "pg": "^8.23.0",
     "vitest": "^4.1.10"
   }
 }

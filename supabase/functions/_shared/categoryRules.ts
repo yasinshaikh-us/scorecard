@@ -61,8 +61,20 @@ export function cleanPayee(raw: string): string {
   return result || raw;
 }
 
+// Must match Postgres initcap() exactly -- the SQL half of this engine
+// (apply_category_rules) title-cases with initcap, and any difference here
+// means the same payee renders differently depending on whether it was
+// last touched by the live sync or by a retroactive rule re-apply.
+//
+// initcap's definition: words are runs of ALPHANUMERIC characters, and
+// everything else separates them. The obvious JS spelling, `\b\w`, is
+// subtly wrong for exactly one character: \w includes underscore, so JS
+// sees no word boundary inside "foo_bar" while Postgres sees two words.
+// That produced "Foo_bar" here against "Foo_Bar" in SQL -- caught by
+// supabase/tests/categoryRulesParity.test.ts, which runs both against the
+// same inputs. Hence the explicit [a-z0-9] class rather than \w.
 function titleCase(str: string): string {
-  return str.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  return str.toLowerCase().replace(/(^|[^a-z0-9])([a-z0-9])/g, (_, separator, char) => separator + char.toUpperCase());
 }
 
 export function applyCategoryRules(rawPayee: string, rawCategory: string, rules: CategoryRule[]) {
