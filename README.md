@@ -199,7 +199,7 @@ failure surfaces before the slower browser test ever runs.
 │       ├── ci.yml               # build -> unit tests -> smoke test, on every push/PR
 │       ├── mobile-ci.yml        # mobile/'s Stage 1 (typecheck, lint, unit tests, Metro bundle)
 │       ├── mobile-detox.yml     # mobile/'s Stage 2, real-emulator Detox run, manual-dispatch
-│       ├── mobile-build.yml     # mobile/'s Stage 3, EAS build, manual-dispatch
+│       ├── mobile-build.yml     # mobile/'s Stage 3, APK build on runner, manual-dispatch
 │       └── synthetic-monitor.yml # scheduled run of tests/synthetic/ against the live deployment
 ├── supabase/functions/
 │   ├── _shared/
