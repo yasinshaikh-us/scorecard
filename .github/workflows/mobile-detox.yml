@@ -71,7 +71,7 @@ jobs:
       # access to any real bank data.
       EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: 231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # GitHub Actions' Ubuntu runners don't expose KVM by default --
       # without it, the emulator falls back to slow software
