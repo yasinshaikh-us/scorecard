@@ -339,7 +339,7 @@ Deno.serve(async (req) => {
     // -- see _shared/syncItemTransactions.ts. Passing the sandbox client
     // explicitly is what keeps this sync scoped to Sandbox, same as every
     // other Plaid call in this function.
-    const syncResult = await syncItemTransactions(itemId, client);
+    const syncResult = await syncItemTransactions(itemId, client, supabaseAdmin());
 
     return new Response(
       JSON.stringify({

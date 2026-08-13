@@ -7,6 +7,7 @@
 import { verifyPlaidWebhook } from "../_shared/verifyPlaidWebhook.ts";
 import { syncItemTransactions } from "../_shared/syncItemTransactions.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import { plaidClient } from "../_shared/plaid.ts";
 
 const TRANSACTIONS_SYNC_CODES = new Set([
   "SYNC_UPDATES_AVAILABLE",
@@ -34,7 +35,7 @@ Deno.serve(async (req) => {
 
   try {
     if (webhook_type === "TRANSACTIONS" && TRANSACTIONS_SYNC_CODES.has(webhook_code)) {
-      const result = await syncItemTransactions(item_id);
+      const result = await syncItemTransactions(item_id, plaidClient(), supabaseAdmin());
       console.log(`Synced item ${item_id}:`, result);
     } else if (webhook_type === "ITEM") {
       const db = supabaseAdmin();

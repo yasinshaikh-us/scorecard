@@ -6,8 +6,20 @@
 // (mobile/lib/logic.ts treats Amount < 0 as an expense, > 0 as income —
 // see the manually-imported rows), so we negate it on the way in.
 
-import { plaidClient } from "./plaid.ts";
-import { supabaseAdmin } from "./supabaseAdmin.ts";
+// The Plaid and Supabase clients are TYPE-only imports and are passed in
+// by the caller, rather than being constructed here. Both factories read
+// Deno.env and pull `npm:` dependencies, so importing either as a value
+// made this entire file -- the whole Plaid ingest path, and the most
+// consequential 240 lines in the backend -- impossible to load under Node
+// and therefore impossible to unit test. This is the same shape
+// refreshAccountBalances.ts already uses.
+//
+// It also removes a real footgun: test-plaid-link deliberately passes a
+// Plaid *Sandbox* client here. When the client was a defaulted argument,
+// forgetting to pass it silently fell back to the production client. Now
+// both dependencies are explicit at every call site.
+import type { plaidClient } from "./plaid.ts";
+import type { supabaseAdmin } from "./supabaseAdmin.ts";
 import { applyCategoryRules, type CategoryRule } from "./categoryRules.ts";
 import { refreshAccountBalances } from "./refreshAccountBalances.ts";
 
@@ -35,9 +47,11 @@ function isTransferFor(tx: any, linkedAccountCount: number) {
   return (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") && linkedAccountCount >= 2;
 }
 
-export async function syncItemTransactions(itemId: string, client: ReturnType<typeof plaidClient> = plaidClient()) {
-  const db = supabaseAdmin();
-
+export async function syncItemTransactions(
+  itemId: string,
+  client: ReturnType<typeof plaidClient>,
+  db: ReturnType<typeof supabaseAdmin>
+) {
   const { data: item, error: itemError } = await db
     .from("plaid_items")
     .select("id, user_id, access_token, cursor")
