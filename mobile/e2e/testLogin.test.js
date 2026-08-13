@@ -28,21 +28,22 @@ describe("Test login", () => {
     await waitFor(element(by.id("home-screen")))
       .toBeVisible()
       .withTimeout(30000);
-    // A separate waitFor, not a bare expect: "home-screen" (the root
-    // SafeAreaView) becoming visible doesn't guarantee the FlatList's
-    // ListHeaderComponent -- where this text lives -- has painted in the
-    // same frame; a real run showed this as a flat "was null" immediately
-    // after home-screen appeared. 30s to match home-screen's own wait
-    // above, not 10s: this is the very first cold render of Home in the
-    // whole suite (fresh launch, real auth round-trip, DataProvider's
-    // first fetch all still in flight) -- a real run confirmed 10s isn't
-    // enough headroom here specifically, timing out outright rather than
-    // racing a single frame (contrast appFlows.test.js's pull-to-refresh
-    // test, which hits the identical assertion but against an already-
-    // warm Home and only needs 10s).
-    await waitFor(element(by.text("Recent Activity")))
+    // Matched by testID, not by.text("Recent Activity") -- text matching
+    // against a TextView inside a FlatList's ListHeaderComponent proved
+    // genuinely unreliable on the real emulator: two separate CI runs
+    // timed out here (10s and even 30s) while a failure screenshot taken
+    // at the exact instant of the timeout showed "Recent Activity" fully
+    // rendered and visible on screen the whole time (confirmed via
+    // Supabase Edge Function / PostgREST logs too -- the underlying data
+    // fetch completed in 150-350ms, long before either timeout). So the
+    // data and the render were both fine; only Espresso's text-content
+    // matcher against the FlatList-hosted TextView was failing to confirm
+    // it. Matching by testID sidesteps that class of RecyclerView/Fabric
+    // text-matching flakiness the same way home-screen's own testID-based
+    // wait above never had this problem.
+    await waitFor(element(by.id("recent-activity-header")))
       .toBeVisible()
-      .withTimeout(30000);
+      .withTimeout(10000);
     await captureScreen("home-screen-after-login");
   });
 
