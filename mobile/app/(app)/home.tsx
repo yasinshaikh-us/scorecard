@@ -55,7 +55,10 @@ export default function Home() {
         ListHeaderComponent={
           <>
             <AccountBalances onLinked={refresh} />
-            <Text style={[styles.sectionTitle, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}>
+            <Text
+              testID="recent-activity-header"
+              style={[styles.sectionTitle, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}
+            >
               Recent Activity
             </Text>
           </>
