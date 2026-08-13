@@ -3,7 +3,7 @@ name: Mobile Detox (real Android emulator)
 # Stage 2 of the mobile testing pyramid: real scripted UI flows (tap,
 # assert, tap again) running against a real Android device -- Stage 1
 # (mobile-ci.yml) only proves the JS is sound; neither it nor Stage 3's
-# EAS build (mobile-build.yml) actually taps through the app.
+# APK build (mobile-build.yml) actually taps through the app.
 #
 # This boots a real, hardware-accelerated (KVM) Android emulator
 # directly on the GitHub Actions runner (reactivecircus/android-
@@ -29,10 +29,11 @@ name: Mobile Detox (real Android emulator)
 # third-party account/credentials; a real local emulator needs neither,
 # and runs Detox's most mature, best-supported code path.
 #
-# Deliberately placed before Stage 3: runs entirely on free GitHub
-# Actions/Android SDK tooling, no paid or third-party service, so it's
-# the gate that has to pass before Stage 3 spends any real EAS build
-# minutes producing the actual human-installable binary.
+# Deliberately placed before Stage 3: this is much faster feedback than
+# Stage 3's full release build, so it's the gate that has to pass before
+# spending that time producing the actual human-installable binary.
+# (Stage 3 builds on this same runner too -- neither stage uses a paid or
+# third-party service.)
 #
 # Manual-dispatch only -- a real Gradle build plus emulator boot is the
 # slowest stage in the pyramid, not something to run on every push.
@@ -103,8 +104,8 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
-      # Generates android/ fresh -- not committed, same reasoning as
-      # mobile-build.yml relying on EAS to do this server-side. The
+      # Generates android/ fresh -- not committed, same as mobile-build.yml
+      # (Stage 3) does for its own release build. The
       # native tweaks this needs (plugins/withDetoxTestBuildType.js,
       # withDetoxAndroidModule.js, withDetoxTestStub.js) are applied
       # automatically as part of this.
@@ -115,8 +116,8 @@ jobs:
       # traffic), which Android blocks by default on the release build
       # type Detox instruments (confirmed via a real run's logcat:
       # DetoxWSClient retrying "at connectToServer" every ~3s, forever).
-      # Deliberately set only here, not in mobile-build.yml's EAS prebuild
-      # -- this override must never reach the real production app.
+      # Deliberately set only here, not in mobile-build.yml's prebuild --
+      # this override must never reach the real production app.
       - run: npx expo prebuild --platform android
         env:
           DETOX_ANDROID_RELEASE_CLEARTEXT: "1"

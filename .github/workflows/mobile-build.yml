@@ -1,60 +1,186 @@
-name: Mobile Build
+name: Mobile Build (APK)
 
 # Stage 3 (final automated stage) of the mobile testing pyramid: produces
-# the actual human-installable binary via EAS Build. Deliberately last --
-# EAS build minutes are the one paid/metered resource in this pyramid, so
-# they're only spent once Stage 1 (fast checks) and Stage 2
-# (mobile-detox.yml's real scripted UI flows on a real Android emulator
-# booted directly on the runner, no paid or third-party service) have
-# already given confidence the app works, rather than packaging a build
-# that might be broken in ways only device-level testing catches.
+# the actual human-installable binary -- an Android APK, uploaded as a
+# GitHub Actions artifact you download and sideload onto a phone.
 #
-# Confirms the app compiles into a real native binary via EAS's own cloud
-# build -- a different toolchain than Stage 2's direct Gradle invocation,
-# with its own project-linking/credential handling that can fail
-# independently of Gradle itself (see mobile/README.md). Runs in Expo's
-# cloud, so this needs no Xcode/Android Studio here, only an EXPO_TOKEN
-# repo secret (see mobile/README.md for how to create one).
+# Built entirely on the GitHub-hosted Linux runner: `expo prebuild`
+# generates android/ and Gradle compiles it right here, the same
+# toolchain Stage 2 (mobile-detox.yml) already drives. No EAS/Expo cloud
+# build, no EXPO_TOKEN, no metered build minutes, and no third-party
+# service in the loop -- which also means the artifact is available from
+# the run itself rather than from a link on expo.dev.
 #
-# Manual-dispatch only -- EAS build minutes aren't unlimited on free
-# tiers, and there's no reason to burn them on every push while the app
-# is under active development. Installing and opening the resulting build
-# is the final human gate (see mobile/README.md's testing pyramid).
+# Two consequences of building locally, both deliberate:
+#
+#   * Android only. GitHub's Linux runners can't build iOS at all (that
+#     needs macOS + Xcode, and a real iOS device build additionally needs
+#     Apple Developer signing credentials). iOS remains an EAS job -- see
+#     mobile/README.md's "Testing on a real iPhone" section.
+#
+#   * The APK is signed with the standard Android *debug* keystore, which
+#     is what Expo's prebuild template wires the `release` build type up
+#     to by default. That's a real, installable, release-mode binary
+#     (JS bundle baked in, no dev client, no Metro connection) -- fine
+#     for sideloading and for the human final gate this stage exists to
+#     feed -- but it is not a
+#     Play-Store-uploadable artifact. Store submission needs a real
+#     upload key; see mobile/README.md's "Before shipping to a store".
+#
+# Manual-dispatch only: a full native Gradle build is slow (~10-20 min
+# cold), and there's no reason to run it on every push while the app is
+# under active development. Still last in the pyramid -- Stages 1 and 2
+# are much faster feedback, so there's no point packaging a binary that
+# might be broken in ways they'd already have caught.
 
 on:
   workflow_dispatch:
     inputs:
-      platform:
-        description: "Platform to build for"
-        required: true
-        default: "android"
-        type: choice
-        options: ["android", "ios", "all"]
       profile:
-        description: "eas.json build profile"
+        description: "Which env gets baked into the APK (preview enables test login)"
         required: true
         default: "preview"
         type: choice
-        options: ["development", "preview", "production"]
+        options: ["preview", "production"]
 
 jobs:
-  build:
+  build-apk:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: mobile
+    env:
+      # Mirrors eas.json's `base` build profile -- with the build running
+      # here instead of on EAS, eas.json's `env` blocks no longer apply,
+      # so the same values have to be set on the job (exactly what
+      # mobile-detox.yml already does for its own Gradle build).
+      EXPO_PUBLIC_SUPABASE_URL: https://bidorjtgbhuihppsznkc.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
+      # Mirrors eas.json's `preview` profile, and gated to it: a
+      # `production` build gets no test-login/test-Plaid path baked in at
+      # all (TEST_LOGIN_ENABLED in lib/AuthProvider.tsx reads this exact
+      # variable, inlined into the bundle at build time). See
+      # mobile/README.md's "Test login" / "Test Plaid Link" sections for
+      # what these are and why they're safe to commit -- each can only
+      # ever act on one hardcoded dummy account, using Plaid Sandbox
+      # credentials with no access to any real bank data.
+      EXPO_PUBLIC_ENABLE_TEST_LOGIN: ${{ inputs.profile == 'preview' && 'true' || 'false' }}
+      EXPO_PUBLIC_TEST_LOGIN_SECRET: ${{ inputs.profile == 'preview' && '0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea' || '' }}
+      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: ${{ inputs.profile == 'preview' && '231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55' || '' }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: mobile/package-lock.json
-      - run: npm ci --legacy-peer-deps
-      - uses: expo/expo-github-action@v8
+      - uses: actions/setup-java@v4
         with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          distribution: temurin
+          java-version: "17"
 
-      - name: EAS build
-        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --wait
+      - run: npm ci --legacy-peer-deps
+
+      # Generates android/ fresh -- not committed, same as Stage 2 (and
+      # same as what EAS used to do server-side for this stage).
+      #
+      # Note what is deliberately NOT set here: Stage 2 sets
+      # DETOX_ANDROID_RELEASE_CLEARTEXT=1 so Detox's plain-ws:// host
+      # bridge can reach the release build it instruments. That override
+      # must never reach a build a human actually installs, so this stage
+      # leaves it unset (see plugins/withDetoxReleaseCleartext.js). The
+      # other Detox plugins in app.json only touch androidTest wiring
+      # (androidTestImplementation, testBuildType) and add nothing to the
+      # app APK itself.
+      - run: npx expo prebuild --platform android
+
+      # android/ only exists after prebuild, so this has to run after it --
+      # both to have something real to hash for the cache key and because
+      # the restored ~/.gradle/caches needs to be in place before the build
+      # below downloads anything into it. Restore key falls back to the most
+      # recent cache for this OS even on a key miss (e.g. a dependency
+      # bump), so a partial/stale cache still beats a fully cold one.
+      #
+      # Separate `gradle-apk-` prefix from mobile-detox.yml's `gradle-`
+      # caches on purpose: the two builds compile different ABI sets (see
+      # the build step below), so letting them share one immutable cache
+      # entry would just mean whichever ran first decided what the other
+      # got.
+      - name: Cache Gradle dependencies + build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-apk-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/build.gradle', 'mobile/android/app/build.gradle') }}
+          restore-keys: |
+            gradle-apk-${{ runner.os }}-
+
+      # Same fix, same reasons, as mobile-detox.yml's equivalent step:
+      # Expo prebuild's default gradle.properties caps the daemon at
+      # -Xmx2048m -XX:MaxMetaspaceSize=512m, which several parallel Kotlin
+      # compile workers can exhaust mid-build (leaving the daemon hung
+      # rather than failing cleanly); ubuntu-latest has 16GB, so there's
+      # ample headroom. org.gradle.caching=true turns on Gradle's own task
+      # output cache, without which a warm ~/.gradle/caches still re-runs
+      # every task from scratch. The `printf '\n...'` is load-bearing:
+      # Expo's generated gradle.properties has no trailing newline, so a
+      # bare `echo >>` would concatenate onto the last property's value.
+      - name: Raise Gradle daemon memory limits + enable build cache
+        run: |
+          sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
+          printf '\norg.gradle.caching=true\n' >> android/gradle.properties
+
+      # The real build: release variant, so the JS bundle is compiled into
+      # the APK rather than served by Metro -- a standalone binary, not a
+      # dev client.
+      #
+      # -PreactNativeArchitectures limits native compilation to the ABIs
+      # that can actually run this artifact instead of the default four
+      # (armeabi-v7a, arm64-v8a, x86, x86_64) -- every extra ABI is a full
+      # extra native compile. arm64-v8a covers every 64-bit Android phone
+      # (which, at minSdkVersion 26, is effectively all of them); x86_64
+      # keeps the same APK installable on a desktop emulator. Dropping the
+      # 32-bit ABIs is the one install-compatibility trade-off here: a
+      # genuinely 32-bit-only device won't take this APK.
+      - name: Build release APK
+        run: cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64
+
+      # Gradle always names its output app-release.apk. Renaming to
+      # something identifiable means the downloaded file is still
+      # self-describing once it's sitting in a Downloads folder next to
+      # every other build.
+      - name: Name the APK after the app version, profile, and run
+        id: apk
+        run: |
+          version=$(node -p "require('./app.json').expo.version")
+          name="fathom-${version}-${{ inputs.profile }}-${{ github.run_number }}.apk"
+          mv android/app/build/outputs/apk/release/app-release.apk "android/app/build/outputs/apk/release/${name}"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "path=mobile/android/app/build/outputs/apk/release/${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ inputs.profile }}
+          path: ${{ steps.apk.outputs.path }}
+          # Longer than Stage 2's 2 days: those artifacts are debugging
+          # aids for one run, this one is the thing a human installs.
+          retention-days: 14
+          # A missing APK here means the build silently produced nothing --
+          # never something to shrug off with a warning.
+          if-no-files-found: error
+
+      - name: Summarize
+        run: |
+          size=$(du -h "android/app/build/outputs/apk/release/${{ steps.apk.outputs.name }}" | cut -f1)
+          {
+            echo "### Android APK built on this runner"
+            echo ""
+            echo "- **File**: \`${{ steps.apk.outputs.name }}\` (${size})"
+            echo "- **Profile**: \`${{ inputs.profile }}\`"
+            echo "- **Artifact**: \`android-apk-${{ inputs.profile }}\` (see this run's Artifacts section)"
+            echo ""
+            echo "Signed with the standard Android debug keystore -- sideload it directly; not a Play Store upload."
+          } >> "$GITHUB_STEP_SUMMARY"

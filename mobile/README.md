@@ -164,10 +164,12 @@ attempted to verify blind.
 
 A three-stage pyramid: the bulk of testing is automated and runs without
 a phone, so a human is only needed at the final gate (installing a real
-build and using it). The one paid/metered stage (EAS build, Stage 3) is
-deliberately last: Stage 2 already proves the app actually works, via
-real scripted device tests on free-tier resources, before any real build
-minutes get spent producing the artifact a human installs.
+build and using it). Every stage runs entirely on GitHub-hosted runners
+— no paid or third-party build service anywhere in the pyramid. The
+slowest stage (Stage 3's full native Gradle build, ~10–20 minutes cold)
+is deliberately last: Stages 1 and 2 give much faster feedback, so
+there's no point packaging a binary that might be broken in ways they'd
+already have caught.
 
 **Stage 1 — cheap and fast, runs on every push/PR that touches `mobile/`**
 (`.github/workflows/mobile-ci.yml`, a few seconds to a couple minutes,
@@ -291,29 +293,54 @@ test, without paying to record every passing run too. That's what lets a
 UI change actually be verified visually, rather than only trusting that
 a `toHaveText`/`toBeVisible` assertion passed.
 
-**Stage 3 — EAS build verification, produces the human-installable binary**
-(`.github/workflows/mobile-build.yml`, manual-dispatch since EAS build
-minutes aren't free): confirms the app compiles into a real native
-binary via EAS's own cloud build — a different toolchain than Stage 2's
-direct Gradle invocation, with its own project-linking/credential
-handling that can fail independently of Gradle itself. Deliberately last: this is the one
-paid/metered stage in the pyramid, so it only runs once Stage 2's real
-device tests already give confidence the app works, rather than
-packaging a build that might be broken in ways only device-level testing
-catches. Needs an `EXPO_TOKEN` repo secret: create one at `expo.dev` →
-account settings → **Access Tokens**, add it as a GitHub Actions secret
-named `EXPO_TOKEN`.
+**Stage 3 — the human-installable Android APK, built on the runner**
+(`.github/workflows/mobile-build.yml`, manual-dispatch since a full
+native build is the slowest thing in the pyramid): `npx expo prebuild
+--platform android` generates `android/`, Gradle's `assembleRelease`
+compiles it, and the resulting APK is uploaded as an
+`android-apk-<profile>` GitHub Actions artifact (`retention-days: 14`)
+— download it from the run's Artifacts section and sideload it onto a
+phone. No EAS/Expo cloud build, no `EXPO_TOKEN`, no metered build
+minutes, no third-party service: the same runner-local toolchain Stage 2
+already drives, and the binary comes back attached to the run rather
+than via a link on `expo.dev`.
 
-Also needs **`mobile/.npmrc`** (`legacy-peer-deps=true`, already
-committed). EAS's remote build workers run their own `npm install` in an
-"Install dependencies" phase, separate from any `npm ci` in this repo's
-own CI steps — without this file, that install fails with a real
-`ERESOLVE` peer-dependency conflict (`react-test-renderer@19.2.8`'s peer
-`react` requirement), surfaced only as a generic "Unknown error. See
-logs of the Install dependencies build phase" until you go check the
-build's own log on `expo.dev`. First hit (and fixed) on the first real
-`mobile-build.yml` run (android/preview) that got past this stage's
-earlier project-linking issues.
+Two things follow from building locally, both deliberate:
+
+- **Android only.** GitHub's Linux runners can't build iOS at all — that
+  needs macOS + Xcode, and a real-device iOS build additionally needs
+  Apple Developer signing credentials. iOS stays an EAS job; see
+  "Testing on a real iPhone (no Mac needed)" above.
+- **The APK is signed with the standard Android debug keystore**, which
+  is what Expo's prebuild template wires the `release` build type up to
+  by default. It's a genuine release-mode binary (JS bundle baked in, no
+  dev client, no Metro connection) and installs fine by sideloading — but
+  it's not a Play Store upload. That needs a real upload key; see
+  "Before shipping to a store" below.
+
+The `profile` input picks what gets baked into the bundle, mirroring the
+`eas.json` profiles it replaces: `preview` (default) enables test login
+and the test Plaid Link path, `production` bakes in neither. `eas.json`
+itself still exists for local/iOS `eas build` runs, but its `env` blocks
+no longer feed this workflow — the equivalent values are set on the job
+in `mobile-build.yml`, the same way `mobile-detox.yml` already does for
+its Gradle build.
+
+The build compiles `arm64-v8a,x86_64` only, rather than the default four
+ABIs — every extra ABI is a full extra native compile, and those two
+cover every 64-bit phone (at `minSdkVersion 26`, effectively all of
+them) plus desktop emulators. The trade-off: a genuinely 32-bit-only
+device won't take this APK.
+
+(**`mobile/.npmrc`** — `legacy-peer-deps=true`, already committed — is
+still what makes a plain `npm install` here resolve at all, and is what
+EAS's own remote "Install dependencies" phase needs for any `eas build`
+you still run for iOS. Without it that install fails with a real
+`ERESOLVE` peer-dependency conflict on `react-test-renderer@19.2.8`'s
+peer `react` requirement, surfaced only as a generic "Unknown error. See
+logs of the Install dependencies build phase" until you go read the
+build's log on `expo.dev`. This repo's own CI steps pass
+`--legacy-peer-deps` explicitly instead.)
 
 **Final gate — a human on a real device, for whatever Stage 2 doesn't
 cover.** Plaid Link's own hosted UI (native WebView content this app
@@ -425,12 +452,21 @@ UI.
 ## Before shipping to a store
 
 - `app.json`'s `ios.bundleIdentifier` / `android.package` are placeholders
-  (`com.fathom.app`) — change these to your own before running an EAS build.
+  (`com.fathom.app`) — change these to your own before running a store build.
 - You'll need an Apple Developer Program account (iOS, $99/yr) and Google
   Play Console account (Android, $25 one-time) to actually submit.
+- **Stage 3's APK can't be uploaded to Play as-is.** It's signed with the
+  standard Android debug keystore (Expo's prebuild default for the
+  `release` build type). A store build needs a real upload key: either
+  let EAS manage credentials (`eas build --profile production --platform
+  android`), or generate a keystore yourself and wire a `release`
+  `signingConfig` into `android/app/build.gradle` — which, since
+  `android/` is generated by prebuild and not committed, means doing it
+  from a config plugin the way `plugins/withDetox*.js` do.
 - `eas.json` has `development`/`preview`/`production` build profiles
   scaffolded; none have been run from this sandbox (no EAS account
-  configured here).
+  configured here). Stage 3 no longer uses them — only iOS and store
+  builds still go through EAS.
 - Supabase Auth's **Redirect URLs** allowlist (Dashboard → Authentication →
   URL Configuration) needs `fathom://*` added, or `signInWithGoogle()`'s
   callback (`lib/AuthProvider.tsx`) falls back to the project's Site URL
