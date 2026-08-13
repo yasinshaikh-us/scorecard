@@ -52,7 +52,9 @@ describe("PlaidLinkGate", () => {
   it("shows the connecting state and disables the connect button", async () => {
     mockUseBankLink.mockReturnValue({ startLink: mockStartLink, connecting: true, error: null });
     await renderWithTheme(<PlaidLinkGate onDone={jest.fn()} />);
-    expect(screen.getByText("Connecting…")).toBeTruthy();
+    // The label is the only thing that still says "connecting" now that
+    // the button is a spinner in a circle.
+    expect(screen.getByTestId("plaid-gate-connect-button").props.accessibilityLabel).toBe("Connecting to your bank");
   });
 
   it("shows useBankLink's error", async () => {

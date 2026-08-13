@@ -45,7 +45,7 @@ export default function Home() {
 
   return (
     <SafeAreaView testID="home-screen" style={[styles.screen, { backgroundColor: colors.bg }]} edges={["top"]}>
-      <ScreenHeader onOpenRules={() => setRulesOpen(true)} />
+      <ScreenHeader onOpenRules={() => setRulesOpen(true)} screen="home" />
 
       <FlatList
         testID="home-transaction-list"

@@ -145,7 +145,7 @@ async function ensureOnHome() {
   if (await isVisible("home-screen")) return;
 
   // 2. Still not Home -- most likely parked on the Ask tab.
-  await tapIfPresent("tab-home-button");
+  await tapIfPresent("nav-home-button");
   if (await isVisible("home-screen", 5000)) return;
 
   // 3. Signed out, crashed, or wedged. A relaunch without `delete` keeps

@@ -2,6 +2,7 @@ import { Dimensions, StyleSheet, View } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-gifted-charts";
 import { fmtGroupKey, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
+import { iconForCategory } from "../lib/categoryIcons";
 import { topCategory, type ChartDatum, type QuerySpec } from "../lib/logic";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
@@ -27,7 +28,7 @@ export default function Chart({
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const axisLabelStyle = { color: colors.textMuted, fontSize: 10, fontFamily: fontFamily.regular };
 
   if (data.length === 0) return null;
@@ -38,7 +39,7 @@ export default function Chart({
   if (spec.chartType === "pie") {
     const pieData = data.map((d) => ({
       value: d.total,
-      color: spec.groupBy === "category" ? catColor(d.key, CATS, topCategory) : undefined,
+      color: spec.groupBy === "category" ? catColor(d.key, CATS, topCategory, mode) : undefined,
       text: undefined,
       strokeColor: selectedKey === d.key ? colors.text : undefined,
       strokeWidth: selectedKey === d.key ? 2 : 0,
@@ -77,13 +78,36 @@ export default function Chart({
     );
   }
 
-  const barData = data.map((d) => ({
-    value: d.total,
-    label: longLabelChart ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
-    frontColor: spec.groupBy === "category" ? catColor(d.key, CATS, topCategory) : colors.accent,
-    opacity: selectedKey && selectedKey !== d.key ? 0.35 : 1,
-    onPress: () => onSelect(d.key),
-  }));
+  // A category axis labels with the category's own icon, not its name.
+  // Names are what made this axis width-bound: eight categories already
+  // truncated to "Entertai…", and the closed set has nineteen. An icon is
+  // a fixed 14px whatever the name's length, so bar count stops competing
+  // with label legibility -- and it's the same glyph, in the same palette
+  // color, that marks the category on every transaction row below.
+  const iconAxis = spec.groupBy === "category" && !longLabelChart;
+
+  const barData = data.map((d) => {
+    const color = spec.groupBy === "category" ? catColor(d.key, CATS, topCategory, mode) : colors.accent;
+    const Icon = iconAxis ? iconForCategory(topCategory(d.key)) : null;
+    return {
+      value: d.total,
+      label: longLabelChart || iconAxis ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
+      labelComponent: Icon
+        ? () => (
+            <View
+              testID={`chart-axis-icon-${topCategory(d.key)}`}
+              accessibilityLabel={topCategory(d.key)}
+              style={styles.axisIcon}
+            >
+              <Icon size={14} color={color} />
+            </View>
+          )
+        : undefined,
+      frontColor: color,
+      opacity: selectedKey && selectedKey !== d.key ? 0.35 : 1,
+      onPress: () => onSelect(d.key),
+    };
+  });
 
   return (
     <View style={styles.wrap}>
@@ -111,4 +135,5 @@ export const formatValue = fmtMoney;
 
 const styles = StyleSheet.create({
   wrap: { alignItems: "center", marginBottom: 12 },
+  axisIcon: { alignItems: "center", justifyContent: "center", paddingTop: 4 },
 });

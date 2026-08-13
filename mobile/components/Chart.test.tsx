@@ -72,7 +72,11 @@ describe("Chart", () => {
     expect(typeof props.data[0].label).toBe("string");
   });
 
-  it("renders a vertical BarChart with per-item labels for a short-label grouping (category)", async () => {
+  // A category axis is labelled with the category's own icon rather than
+  // its name -- names are what made this axis width-bound. So there is no
+  // text label at all; the identity lives in labelComponent, and in the
+  // accessibility label that names the category for a screen reader.
+  it("labels a category BarChart with per-category icons, not names", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
     await renderWithTheme(
       <Chart data={[datum({ key: "Groceries" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />
@@ -80,8 +84,27 @@ describe("Chart", () => {
 
     const props = mockBarChart.mock.calls[0][0];
     expect(props.horizontal).toBe(false);
-    expect(props.data[0].label).toBe("Groceries");
+    expect(props.data[0].label).toBeUndefined();
     expect(props.data[0].frontColor).toBeDefined();
+
+    // Inspected as an element rather than rendered: gifted-charts calls
+    // labelComponent itself, so what matters is the element this returns.
+    const label: any = props.data[0].labelComponent();
+    expect(label.props.testID).toBe("chart-axis-icon-Groceries");
+    expect(label.props.accessibilityLabel).toBe("Groceries");
+  });
+
+  // Non-category groupings have no icon to fall back on, so those keep
+  // their text labels.
+  it("keeps text labels for a non-category vertical grouping", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    await renderWithTheme(
+      <Chart data={[datum({ key: "2026-07" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />
+    );
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(typeof props.data[0].label).toBe("string");
+    expect(props.data[0].labelComponent).toBeUndefined();
   });
 
   it("renders a horizontal BarChart with no per-item labels for long-label groupings (payee/transaction)", async () => {

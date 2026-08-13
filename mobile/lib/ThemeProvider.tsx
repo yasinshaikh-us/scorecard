@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { darkColors, lightColors, type ThemeColors } from "./theme";
+import { darkColors, lightColors, type ThemeColors, type ThemeMode } from "./theme";
 
-type Mode = "light" | "dark";
+type Mode = ThemeMode;
 type ThemeContextValue = {
   mode: Mode;
   colors: ThemeColors;

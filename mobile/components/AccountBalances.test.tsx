@@ -105,7 +105,7 @@ describe("AccountBalances", () => {
     expect(await screen.findByText("Only checking / savings accounts can be connected.")).toBeTruthy();
     expect(mockStartLink).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText("Proceed"));
+    await fireEvent.press(screen.getByTestId("add-bank-proceed-button"));
     expect(mockStartLink).toHaveBeenCalled();
   });
 
@@ -121,8 +121,8 @@ describe("AccountBalances", () => {
     expect(await screen.findByText(/Disconnect Checking ••1234\?/)).toBeTruthy();
     expect(global.fetch).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText("Continue"));
-    await fireEvent.press(screen.getByText(/Yes, disconnect/));
+    await fireEvent.press(screen.getByTestId("disconnect-continue-button"));
+    await fireEvent.press(screen.getByTestId("disconnect-confirm-button"));
 
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/functions/v1/plaid-disconnect"),
@@ -226,8 +226,8 @@ describe("AccountBalances", () => {
     await screen.findByText("Checking ••1234");
 
     await fireEvent.press(screen.getByTestId("disconnect-button"));
-    await fireEvent.press(screen.getByText("Continue"));
-    await fireEvent.press(screen.getByText(/Yes, disconnect/));
+    await fireEvent.press(screen.getByTestId("disconnect-continue-button"));
+    await fireEvent.press(screen.getByTestId("disconnect-confirm-button"));
 
     expect(await screen.findByText("Plaid item not found")).toBeTruthy();
     expect(screen.getByText(/Are you absolutely sure/)).toBeTruthy();
@@ -240,7 +240,7 @@ describe("AccountBalances", () => {
 
     await fireEvent.press(screen.getByTestId("add-bank-button"));
     await screen.findByText("Only checking / savings accounts can be connected.");
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("add-bank-cancel-button"));
 
     expect(screen.queryByText("Only checking / savings accounts can be connected.")).toBeNull();
     expect(screen.getByTestId("add-bank-button")).toBeTruthy();
@@ -255,7 +255,7 @@ describe("AccountBalances", () => {
 
     await fireEvent.press(screen.getByTestId("disconnect-button"));
     await screen.findByText(/Disconnect Checking ••1234\?/);
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("disconnect-cancel-button"));
 
     expect(screen.queryByText(/Disconnect Checking ••1234\?/)).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
@@ -268,9 +268,9 @@ describe("AccountBalances", () => {
     await screen.findByText("Checking ••1234");
 
     await fireEvent.press(screen.getByTestId("disconnect-button"));
-    await fireEvent.press(screen.getByText("Continue"));
+    await fireEvent.press(screen.getByTestId("disconnect-continue-button"));
     await screen.findByText(/Are you absolutely sure/);
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("disconnect-final-cancel-button"));
 
     expect(screen.queryByText(/Are you absolutely sure/)).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();

@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
-import { Pressable } from "react-native";
-import { Redirect, Tabs } from "expo-router";
-import { Home as HomeIcon, MessageCircleQuestion } from "lucide-react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Redirect, Stack } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/AuthProvider";
-import { useTheme } from "../../lib/ThemeProvider";
-import { fontFamily } from "../../lib/theme";
 import { DataProvider } from "../../lib/DataProvider";
 import { supabase } from "../../lib/supabase";
 import PlaidLinkGate from "../../components/PlaidLinkGate";
+
+const SKIPPED_LINK_KEY = "skippedLink";
 
 // Everything under (app)/ requires a session -- guarded once here rather
 // than per-screen -- and shares one DataProvider (one transactions fetch)
@@ -15,10 +14,25 @@ import PlaidLinkGate from "../../components/PlaidLinkGate";
 // shown once, skippable, only when the user has no plaid_items row yet.
 export default function AppLayout() {
   const { session, loading } = useAuth();
-  const { colors } = useTheme();
   // undefined = checking, null = no linked bank yet, object = at least one row
   const [plaidItem, setPlaidItem] = useState<{ id: string } | null | undefined>(undefined);
-  const [skippedLink, setSkippedLink] = useState(false);
+  // undefined until AsyncStorage has been read, so a returning user who
+  // already skipped never sees the gate flash before it resolves.
+  const [skippedLink, setSkippedLink] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SKIPPED_LINK_KEY).then((v) => setSkippedLink(v === "true"));
+  }, []);
+
+  // Skipping used to be in-memory useState, so it lasted exactly as long
+  // as the process: cold-launch the app and the gate was back. It read as
+  // a dismissal but behaved like a snooze. Persisted, "later" means
+  // later. Linking a bank makes the gate's own condition false, so
+  // nothing needs to clear this on success.
+  const skipLink = useCallback(() => {
+    setSkippedLink(true);
+    AsyncStorage.setItem(SKIPPED_LINK_KEY, "true");
+  }, []);
 
   useEffect(() => {
     if (!session) {
@@ -43,45 +57,21 @@ export default function AppLayout() {
 
   if (loading) return null;
   if (!session) return <Redirect href="/login" />;
-  if (plaidItem === undefined) return null; // checking for a linked bank
+  if (plaidItem === undefined || skippedLink === undefined) return null; // still resolving
 
   if (plaidItem === null && !skippedLink) {
-    return <PlaidLinkGate onDone={() => setSkippedLink(true)} />;
+    return <PlaidLinkGate onDone={skipLink} />;
   }
 
+  // A Stack, not Tabs: navigation between the app's two screens now lives
+  // in ScreenHeader's second slot. See that component for why the tab bar
+  // went. Both screens draw their own header, so this one stays hidden.
   return (
     <DataProvider>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: colors.text,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-          tabBarLabelStyle: { fontFamily: fontFamily.medium, fontSize: 11 },
-        }}
-      >
-        <Tabs.Screen
-          name="home"
-          options={{
-            title: "Home",
-            tabBarIcon: ({ color }) => <HomeIcon size={20} color={color} />,
-            // Default tab labels ("Home") collide with visible in-screen text
-            // elsewhere (e.g. Ask's own "Ask" button) -- a stable testID on
-            // the tab button itself, via this standard react-navigation
-            // customization point, is what e2e/appFlows.test.js switches
-            // tabs with instead of matching by text.
-            tabBarButton: ({ ref: _ref, ...props }) => <Pressable {...props} testID="tab-home-button" />,
-          }}
-        />
-        <Tabs.Screen
-          name="ask"
-          options={{
-            title: "Ask",
-            tabBarIcon: ({ color }) => <MessageCircleQuestion size={20} color={color} />,
-            tabBarButton: ({ ref: _ref, ...props }) => <Pressable {...props} testID="tab-ask-button" />,
-          }}
-        />
-      </Tabs>
+      <Stack screenOptions={{ headerShown: false, animation: "none" }}>
+        <Stack.Screen name="home" />
+        <Stack.Screen name="ask" />
+      </Stack>
     </DataProvider>
   );
 }

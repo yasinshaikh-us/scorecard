@@ -99,7 +99,7 @@ describe("CategoryRulesPanel", () => {
   it("rejects adding a rule with no match value", async () => {
     await renderWithTheme(<CategoryRulesPanel visible={true} onClose={jest.fn()} />);
     await screen.findByText("No rules yet.");
-    await fireEvent.press(screen.getByText("Add rule"));
+    await fireEvent.press(screen.getByTestId("add-rule-button"));
     expect(await screen.findByText("Enter a match value and at least one of category/payee to set.")).toBeTruthy();
     expect(mockInsert).not.toHaveBeenCalled();
   });
@@ -111,7 +111,7 @@ describe("CategoryRulesPanel", () => {
 
     await fireEvent.changeText(screen.getByPlaceholderText("e.g. starbucks"), "chipotle");
     await fireEvent.changeText(screen.getByPlaceholderText("and payee to (optional)"), "Chipotle Mexican Grill");
-    await fireEvent.press(screen.getByText("Add rule"));
+    await fireEvent.press(screen.getByTestId("add-rule-button"));
 
     expect(await screen.findByText("Applied to 3 transactions.")).toBeTruthy();
     expect(mockInsert).toHaveBeenCalledWith(
@@ -175,7 +175,7 @@ describe("CategoryRulesPanel", () => {
     expect(await screen.findByText("Delete this rule?")).toBeTruthy();
     expect(mockDelete).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("rule-delete-cancel-button"));
     expect(screen.queryByText("Delete this rule?")).toBeNull();
     expect(mockDelete).not.toHaveBeenCalled();
   });
@@ -187,7 +187,7 @@ describe("CategoryRulesPanel", () => {
 
     await fireEvent.press(screen.getByTestId("rule-delete-button-starbucks"));
     await screen.findByText("Delete this rule?");
-    await fireEvent.press(screen.getByText("Delete"));
+    await fireEvent.press(screen.getByTestId("rule-delete-confirm-button"));
 
     expect(mockDeleteEq).toHaveBeenCalledWith("id", "rule-1");
     expect(mockRpc).toHaveBeenCalledWith("apply_category_rules");
@@ -208,7 +208,7 @@ describe("CategoryRulesPanel", () => {
 
     await fireEvent.changeText(screen.getByPlaceholderText("e.g. starbucks"), "chipotle");
     await fireEvent.changeText(screen.getByPlaceholderText("and payee to (optional)"), "Chipotle");
-    await fireEvent.press(screen.getByText("Add rule"));
+    await fireEvent.press(screen.getByTestId("add-rule-button"));
 
     expect(await screen.findByText("insert failed")).toBeTruthy();
     expect(mockRpc).not.toHaveBeenCalled();
@@ -233,7 +233,7 @@ describe("CategoryRulesPanel", () => {
     await screen.findByText(/if payee contains "starbucks"/);
 
     await fireEvent.press(screen.getByTestId("rule-delete-button-starbucks"));
-    await fireEvent.press(screen.getByText("Delete"));
+    await fireEvent.press(screen.getByTestId("rule-delete-confirm-button"));
 
     expect(await screen.findByText("delete failed")).toBeTruthy();
     expect(mockRpc).not.toHaveBeenCalled();
@@ -246,7 +246,7 @@ describe("CategoryRulesPanel", () => {
 
     await fireEvent.changeText(screen.getByPlaceholderText("e.g. starbucks"), "chipotle");
     await fireEvent.changeText(screen.getByPlaceholderText("and payee to (optional)"), "Chipotle");
-    await fireEvent.press(screen.getByText("Add rule"));
+    await fireEvent.press(screen.getByTestId("add-rule-button"));
 
     expect(await screen.findByText("reapply failed")).toBeTruthy();
     expect(screen.queryByText(/^Applied to/)).toBeNull();

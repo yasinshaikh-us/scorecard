@@ -1,16 +1,27 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { Redirect } from "expo-router";
+import Constants from "expo-constants";
+import { FlaskConical } from "lucide-react-native";
 import { useAuth, TEST_LOGIN_ENABLED } from "../lib/AuthProvider";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
+import IconButton from "../components/IconButton";
 import ThemeToggleButton from "../components/ThemeToggleButton";
 
-// Google's official multicolor "G" mark, as inline SVG paths.
-function GoogleIcon() {
+// Read from app.json rather than hardcoded, so the number on screen can
+// never drift from the one the build was cut with.
+const VERSION = Constants.expoConfig?.version ?? "";
+
+// Google's official multicolor "G" mark, as inline SVG paths. Google
+// publishes an icon-only sign-in button alongside the labelled one, so
+// dropping the wordmark stays inside their branding rules -- but the mark
+// itself may not be recoloured or redrawn, which is why this is the
+// unmodified original in both themes.
+function GoogleIcon({ size = 18 }: { size?: number }) {
   return (
-    <Svg width={18} height={18} viewBox="0 0 48 48">
+    <Svg width={size} height={size} viewBox="0 0 48 48">
       <Path
         fill="#FFC107"
         d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"
@@ -73,51 +84,56 @@ export default function Login() {
         <ThemeToggleButton />
       </View>
 
+      {/* assets/icon.png itself, not a redraw -- the same file the
+          launcher icon is built from. It was already in the repo and
+          unused on any screen. */}
+      <Image source={require("../assets/icon.png")} style={styles.mark} accessibilityIgnoresInvertColors />
       <Text style={[styles.title, { color: colors.text, fontFamily: fontFamily.bold }]}>fa/thm</Text>
-      <Text style={[styles.subtitle, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
-        Sign in to continue
+      <Text style={[styles.tagline, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
+        Navigate your expenses.
       </Text>
 
-      <Pressable
+      <IconButton
         testID="google-signin-button"
-        style={[
-          styles.button,
-          { backgroundColor: colors.surfaceRecessed, borderColor: colors.border, opacity: busy ? 0.5 : 1 },
-        ]}
         onPress={handlePress}
         disabled={busy}
+        size={56}
+        style={{ backgroundColor: colors.surfaceRecessed }}
+        accessibilityLabel="Continue with Google"
       >
-        {busy ? (
-          <ActivityIndicator color={colors.text} />
-        ) : (
-          <>
-            <GoogleIcon />
-            <Text style={[styles.buttonText, { color: colors.text, fontFamily: fontFamily.semibold }]}>
-              Continue with Google
-            </Text>
-          </>
-        )}
-      </Pressable>
+        {busy ? <ActivityIndicator color={colors.text} /> : <GoogleIcon size={26} />}
+      </IconButton>
 
       {/* Only rendered in development/preview builds (see mobile/eas.json)
           -- compiled out of production entirely, not just hidden. Lets a
           test flow (Maestro/Detox, or a human) skip Google's OAuth screen
           by signing in as a designated dummy test account instead. */}
       {TEST_LOGIN_ENABLED ? (
-        <Pressable testID="test-signin-button" onPress={handleTestLoginPress} disabled={busy} hitSlop={8}>
-          <Text style={[styles.testLoginText, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
-            Sign in as test user
-          </Text>
-        </Pressable>
+        <IconButton
+          testID="test-signin-button"
+          onPress={handleTestLoginPress}
+          disabled={busy}
+          size={40}
+          style={styles.testLogin}
+          accessibilityLabel="Sign in as test user"
+        >
+          <FlaskConical size={18} color={colors.textFaint} />
+        </IconButton>
       ) : null}
 
-      {error ? (
-        <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{error}</Text>
-      ) : null}
+      {/* Fixed height so a failed sign-in doesn't shift the button the
+          user is about to press again. */}
+      <View style={styles.errorSlot}>
+        {error ? (
+          <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{error}</Text>
+        ) : null}
+      </View>
 
-      <Text style={[styles.disclaimer, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
-        This gates access to personal transaction data. Once signed in, you can only ever see your own transactions —
-        never anyone else's.
+      {/* Anchored to the bottom rather than added to the centred stack,
+          so it never shifts when the stack grows -- and stays out of the
+          way. */}
+      <Text testID="app-version" style={[styles.version, { color: colors.textFaint, fontFamily: fontFamily.mono }]}>
+        v{VERSION}
       </Text>
     </View>
   );
@@ -126,21 +142,11 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
   themeToggleWrap: { position: "absolute", top: 20, right: 20 },
+  mark: { width: 64, height: 64, borderRadius: 15 },
   title: { fontSize: 32, letterSpacing: -0.5, marginBottom: -6 },
-  subtitle: { fontSize: 13, marginBottom: 8 },
-  button: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    minWidth: 240,
-    justifyContent: "center",
-  },
-  buttonText: { fontSize: 14 },
-  testLoginText: { fontSize: 13, textDecorationLine: "underline" },
+  tagline: { fontSize: 14.5, marginBottom: 8 },
+  testLogin: { borderWidth: 0 },
+  errorSlot: { minHeight: 19, alignItems: "center", justifyContent: "center" },
   error: { textAlign: "center", fontSize: 13 },
-  disclaimer: { textAlign: "center", fontSize: 12, lineHeight: 18, maxWidth: 280, marginTop: 4 },
+  version: { position: "absolute", left: 0, right: 0, bottom: 18, textAlign: "center", fontSize: 10, letterSpacing: 0.4 },
 });

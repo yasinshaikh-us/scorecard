@@ -65,7 +65,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // .atIndex(0), not a bare id match: Plaid Sandbox's "First Platypus
     // Bank" test institution (see test-plaid-link/index.ts) returns its
     // whole account portfolio -- checking, savings, CD, and more --  not
-    // just one account, so several linked-account-chip views are always
+    // just one account, so several linked-account-row views are always
     // on screen at once by design (confirmed via a real run: exactly one
     // plaid_items row, freshly created, with 12 accounts under it -- this
     // is expected Sandbox data, not accumulated cruft from prior runs).
@@ -81,7 +81,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // enough across repeated runs to slow the fetch down.
     await waitFor(element(by.id("test-plaid-link-button"))).toBeVisible().withTimeout(15000);
     await element(by.id("test-plaid-link-button")).tap();
-    await waitFor(element(by.id("linked-account-chip")).atIndex(0)).toBeVisible().withTimeout(30000);
+    await waitFor(element(by.id("linked-account-row")).atIndex(0)).toBeVisible().withTimeout(30000);
     await captureScreen("home-with-linked-account");
   });
 
@@ -301,11 +301,11 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
     // Never taps disconnect-confirm-button -- see this file's header
     // comment on why the real disconnect call is left to Stage 1's mock.
-    await expect(element(by.id("linked-account-chip")).atIndex(0)).toBeVisible();
+    await expect(element(by.id("linked-account-row")).atIndex(0)).toBeVisible();
   });
 
   it("Ask: a suggestion produces a card that can be closed", async () => {
-    await element(by.id("tab-ask-button")).tap();
+    await element(by.id("nav-ask-button")).tap();
     await expect(element(by.id("ask-input"))).toBeVisible();
     await captureScreen("ask-screen-empty");
 
@@ -317,7 +317,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await captureScreen("ask-screen-with-result");
     await element(by.id("query-card-close-button")).tap();
 
-    await element(by.id("tab-home-button")).tap();
+    await element(by.id("nav-home-button")).tap();
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
@@ -325,7 +325,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // The suggestion-chip test above only exercises the canned shortcut
     // path -- ask-button (the actual Send control) was never tapped
     // anywhere in Stage 2 before this.
-    await element(by.id("tab-ask-button")).tap();
+    await element(by.id("nav-ask-button")).tap();
     // Deliberately still typeText, unlike the rule/transaction inputs
     // above. This spec depends on ask-input keeping focus and the keyboard
     // staying UP through the whole exchange (see the tapReturnKey comment
@@ -344,13 +344,16 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // ask-input keeps focus (and the software keyboard) up through the
     // whole exchange -- nothing here ever blurs it. A real run confirmed
     // the keyboard was still covering the bottom tab bar at this point
-    // ("Couldn't click at: 269.5,2140.5 ... Tried 3 times" on
-    // tab-home-button, and the view hierarchy dump from that failure
-    // showed ask-input still focused="true"). tapReturnKey() dismisses it
-    // -- input is already "" by now (runQuery clears it on dispatch), so
-    // this doesn't re-submit anything.
+    // ("Couldn't click at: 269.5,2140.5 ... Tried 3 times" on the
+    // then-bottom Home tab, and the view hierarchy dump from that failure
+    // showed ask-input still focused="true"). The navigation control has
+    // since moved into the header, well clear of any keyboard, so that
+    // specific collision can't recur -- but tapReturnKey() is kept
+    // because leaving a screen with the keyboard still up is what made
+    // the *next* test's first tap land unpredictably. input is already ""
+    // by now (runQuery clears it on dispatch), so this re-submits nothing.
     await element(by.id("ask-input")).tapReturnKey();
-    await element(by.id("tab-home-button")).tap();
+    await element(by.id("nav-home-button")).tap();
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 

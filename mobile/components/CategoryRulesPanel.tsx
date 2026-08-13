@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { Trash2 } from "lucide-react-native";
+import { Plus, Trash2, X } from "lucide-react-native";
 import { supabase } from "../lib/supabase";
 import { CATEGORIES } from "../lib/categories";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
+import IconButton from "./IconButton";
 import PickerModal from "./PickerModal";
 
 type Rule = {
@@ -120,9 +121,9 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
       <View style={[styles.screen, { backgroundColor: colors.bg }]}>
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: colors.text, fontFamily: fontFamily.bold }]}>Rules Engine</Text>
-          <Pressable testID="rules-close-button" onPress={onClose} hitSlop={8}>
-            <Text style={[styles.close, { color: colors.textMuted }]}>×</Text>
-          </Pressable>
+          <IconButton testID="rules-close-button" onPress={onClose} size={28} style={styles.close} accessibilityLabel="Close rules">
+            <X size={19} color={colors.textMuted} />
+          </IconButton>
         </View>
         <Text style={[styles.description, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
           Rules apply automatically to new and existing transactions.
@@ -145,34 +146,45 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
               delete-confirm buttons below stay unsuffixed on purpose: only
               one row can be in the confirm state at a time (confirmDeleteId
               is a single id), so they are never ambiguous. */}
-          {rules?.map((r) => (
+          {rules?.map((r, i) => (
             <View
               testID={`rule-row-${r.match_value}`}
               key={r.id}
               style={[styles.ruleRow, { borderBottomColor: colors.borderSubtle }]}
             >
               {confirmDeleteId === r.id ? (
+                // The question stays in words -- only the two controls
+                // became glyphs. A destructive step with no prose at all
+                // would be a pair of icons and nothing else.
                 <View style={styles.deleteConfirmRow}>
                   <Text style={[styles.deleteConfirmText, { color: colors.text, fontFamily: fontFamily.regular }]}>
                     Delete this rule?
                   </Text>
-                  <Pressable
+                  <IconButton
                     testID="rule-delete-cancel-button"
                     onPress={() => setConfirmDeleteId(null)}
-                    style={[styles.cancelBtn, { borderColor: colors.border }]}
+                    size={32}
+                    accessibilityLabel="Keep this rule"
                   >
-                    <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
+                    <X size={15} color={colors.textMuted} />
+                  </IconButton>
+                  <IconButton
                     testID="rule-delete-confirm-button"
                     onPress={() => deleteRule(r)}
-                    style={[styles.deleteBtn, { backgroundColor: colors.danger }]}
+                    size={32}
+                    variant="danger"
+                    accessibilityLabel={`Delete the rule matching ${r.match_value}`}
                   >
-                    <Text style={[styles.deleteBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>Delete</Text>
-                  </Pressable>
+                    <Trash2 size={15} color={colors.bg} />
+                  </IconButton>
                 </View>
               ) : (
                 <>
+                  {/* Order decides which rule wins a conflict, so it is
+                      shown rather than left to be inferred from the hint
+                      under the form. Mono and faint: there when looked
+                      for, invisible otherwise. */}
+                  <Text style={[styles.ord, { color: colors.textFaint, fontFamily: fontFamily.mono }]}>{i + 1}</Text>
                   <Switch
                     testID={`rule-switch-toggle-${r.match_value}`}
                     value={r.enabled}
@@ -184,9 +196,15 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
                     {r.set_category ? ` → category ${r.set_category}` : ""}
                     {r.set_payee ? ` → payee ${r.set_payee}` : ""}
                   </Text>
-                  <Pressable testID={`rule-delete-button-${r.match_value}`} onPress={() => setConfirmDeleteId(r.id)} hitSlop={8}>
+                  <IconButton
+                    testID={`rule-delete-button-${r.match_value}`}
+                    onPress={() => setConfirmDeleteId(r.id)}
+                    size={28}
+                    style={styles.rowDelete}
+                    accessibilityLabel={`Delete the rule matching ${r.match_value}`}
+                  >
                     <Trash2 size={15} color={colors.textFaint} />
-                  </Pressable>
+                  </IconButton>
                 </>
               )}
             </View>
@@ -239,16 +257,22 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
             <Text style={[styles.hint, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
               New rules are added at the bottom of the list and win any conflict with rules above them.
             </Text>
-            <Pressable
-              testID="add-rule-button"
-              style={[styles.addBtn, { backgroundColor: colors.accent }, saving && styles.disabled]}
-              onPress={addRule}
-              disabled={saving}
-            >
-              <Text style={[styles.addBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>
-                {saving ? "Saving…" : "Add rule"}
-              </Text>
-            </Pressable>
+            {/* The one glyph in the app that doesn't sit beside the thing
+                it acts on -- it submits the fields above it. Centred and
+                accent-filled so it reads as the form's conclusion rather
+                than a stray control. */}
+            <View style={styles.addWrap}>
+              <IconButton
+                testID="add-rule-button"
+                onPress={addRule}
+                disabled={saving}
+                size={40}
+                variant="accent"
+                accessibilityLabel={saving ? "Saving rule" : "Add rule"}
+              >
+                {saving ? <ActivityIndicator size="small" color={colors.bg} /> : <Plus size={19} color={colors.bg} strokeWidth={2.4} />}
+              </IconButton>
+            </View>
           </View>
 
           {status ? (
@@ -285,17 +309,16 @@ const styles = StyleSheet.create({
   screen: { flex: 1, paddingTop: 56, paddingHorizontal: 16 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 18 },
-  close: { fontSize: 24 },
+  close: { borderWidth: 0 },
   description: { fontSize: 13, marginTop: 4, marginBottom: 12 },
   empty: { marginTop: 20, textAlign: "center" },
   ruleRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
+  ord: { flexBasis: 14, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 10 },
+  rowDelete: { borderWidth: 0 },
   ruleText: { flex: 1, fontSize: 13 },
   deleteConfirmRow: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   deleteConfirmText: { flex: 1, fontSize: 13 },
-  cancelBtn: { paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderRadius: 7 },
-  cancelBtnText: { fontSize: 13 },
-  deleteBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10 },
-  deleteBtnText: { fontSize: 13 },
+
   form: { marginTop: 16, gap: 8, borderRadius: 10, padding: 14 },
   formLine: { flexDirection: "row", alignItems: "center", gap: 8 },
   formLabel: { fontSize: 13 },
@@ -303,9 +326,9 @@ const styles = StyleSheet.create({
   selectBtnText: { fontSize: 13 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13 },
   hint: { fontSize: 11 },
-  addBtn: { borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 4 },
+  addWrap: { alignItems: "center", marginTop: 6 },
   disabled: { opacity: 0.5 },
-  addBtnText: { fontSize: 14 },
+
   status: { fontSize: 13, marginTop: 10 },
   error: { fontSize: 13, marginTop: 10, marginBottom: 20 },
 });

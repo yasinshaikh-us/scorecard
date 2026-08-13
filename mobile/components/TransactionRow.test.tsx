@@ -37,9 +37,11 @@ describe("TransactionRow", () => {
   it("renders payee, category, date, and amount", async () => {
     await renderWithTheme(<TransactionRow row={makeRow()} CATS={["Food"]} />);
     expect(screen.getByText("Chipotle")).toBeTruthy();
-    expect(screen.getByText("Food:Restaurants")).toBeTruthy();
     expect(screen.getByText("22 Jul 26")).toBeTruthy();
     expect(screen.getByText("-$12.50")).toBeTruthy();
+    // The category is an icon now, with no visible name -- so the only
+    // thing naming it is the label a screen reader would announce.
+    expect(screen.getByTestId("transaction-category-badge").props.accessibilityLabel).toBe("Category: Food:Restaurants");
   });
 
   it("is not pressable when the row has no Id (synthetic row)", async () => {
@@ -52,14 +54,14 @@ describe("TransactionRow", () => {
     await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     expect(screen.getByDisplayValue("Chipotle")).toBeTruthy();
-    expect(screen.getByText("Save")).toBeTruthy();
-    expect(screen.getByText("Cancel")).toBeTruthy();
+    expect(screen.getByTestId("transaction-edit-save-button")).toBeTruthy();
+    expect(screen.getByTestId("transaction-edit-cancel-button")).toBeTruthy();
   });
 
   it("cancel exits edit mode without saving", async () => {
     await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("transaction-edit-cancel-button"));
     expect(screen.queryByDisplayValue("Chipotle")).toBeNull();
     expect(mockFrom).not.toHaveBeenCalled();
   });
@@ -70,7 +72,7 @@ describe("TransactionRow", () => {
     await renderWithTheme(<TransactionRow row={row} CATS={[]} onEdited={onEdited} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.changeText(screen.getByDisplayValue("Chipotle"), "  Chipotle Mexican Grill  ");
-    await fireEvent.press(screen.getByText("Save"));
+    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
 
     await screen.findByText("Chipotle Mexican Grill");
 
@@ -88,7 +90,7 @@ describe("TransactionRow", () => {
     await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
     await fireEvent.changeText(screen.getByDisplayValue("Chipotle"), "   ");
-    await fireEvent.press(screen.getByText("Save"));
+    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
 
     expect(screen.getByText("Payee can't be empty.")).toBeTruthy();
     expect(mockFrom).not.toHaveBeenCalled();
@@ -98,7 +100,7 @@ describe("TransactionRow", () => {
     mockEq.mockImplementationOnce(() => Promise.resolve({ error: { message: "network error" } }));
     await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
     await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.press(screen.getByText("Save"));
+    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
 
     expect(await screen.findByText("network error")).toBeTruthy();
     expect(screen.getByDisplayValue("Chipotle")).toBeTruthy();
@@ -115,8 +117,8 @@ describe("TransactionRow", () => {
 
     expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Dining");
 
-    await fireEvent.press(screen.getByText("Save"));
-    await screen.findByText("Dining");
+    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
+    await screen.findByText("Chipotle");
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ category: "Dining" }));
   });
 
