@@ -41,6 +41,12 @@ name: Mobile Detox (real Android emulator)
 on:
   workflow_dispatch:
 
+# Manual-dispatch, but a second dispatch while one is mid-run wants the
+# newer one -- a ~14 minute emulator job is expensive to leave duplicated.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   detox-android:
     runs-on: ubuntu-latest
@@ -135,6 +141,14 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+          # Deliberately the SAME key as mobile-build.yml (Stage 3) rather
+          # than a per-workflow one. The two builds compile different ABI
+          # sets, but the bulk of ~/.gradle/caches is dependency downloads,
+          # which are identical; Gradle's build-cache entries are keyed by
+          # task-input hash, so the ones that differ simply miss instead of
+          # colliding. Sharing means whichever stage runs first warms the
+          # other -- worth ~6 minutes on the second one's first run after a
+          # dependency change, versus each paying its own cold start.
           key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/build.gradle', 'mobile/android/app/build.gradle') }}
           restore-keys: |
             gradle-${{ runner.os }}-
@@ -212,6 +226,41 @@ jobs:
       # match for what a real Pixel 5 (or similar modern phone) shows --
       # this doesn't affect whether the app's *logic* is correct, only how
       # representative the screenshots are when eyeballing a UI change.
+      #
+      # The emulator step below was the second-slowest thing in this
+      # workflow (~5m45s on a real run), and most of that was not the tests
+      # -- it was downloading the system image, creating the AVD from
+      # scratch, and cold-booting it, every single run. The two steps that
+      # follow are the action's own documented fix: create the AVD once,
+      # snapshot it, cache it, and reuse the snapshot afterwards.
+      #
+      # The AVD-defining inputs (api-level/target/arch/profile/avd-name)
+      # and emulator-options MUST stay identical between the snapshot step
+      # and the run step, or the cached snapshot doesn't apply and both the
+      # cache and the extra step are wasted.
+      - name: Cache the AVD + its boot snapshot
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ runner.os }}-api30-google_apis-x86_64-pixel_5
+
+      - name: Create the AVD and generate a boot snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          avd-name: Pixel_API_30
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
       - name: Run Detox tests on a real Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -220,6 +269,11 @@ jobs:
           arch: x86_64
           profile: pixel_5
           avd-name: Pixel_API_30
+          # false so an existing (cached) AVD is reused rather than
+          # recreated, and -no-snapshot-save so a test run never writes
+          # back over the clean snapshot the step above produced.
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: mobile
           script: npx detox test -c android.release --headless --cleanup --loglevel trace --artifacts-location e2e/artifacts/ --take-screenshots manual --record-videos failing --record-logs failing

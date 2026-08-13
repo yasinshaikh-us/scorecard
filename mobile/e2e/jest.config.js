@@ -8,7 +8,10 @@ module.exports = {
   testTimeout: 120000,
   maxWorkers: 1,
   globalSetup: "detox/runners/jest/globalSetup",
-  globalTeardown: "detox/runners/jest/globalTeardown",
+  // Wraps Detox's own teardown to also remove the Plaid Sandbox bank the
+  // specs link -- see e2e/globalTeardown.js for why a leftover one breaks
+  // the hourly balance-refresh cron in production.
+  globalTeardown: "<rootDir>/e2e/globalTeardown.js",
   reporters: ["detox/runners/jest/reporter"],
   testEnvironment: "detox/runners/jest/testEnvironment",
   verbose: true,

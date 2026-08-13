@@ -15,6 +15,13 @@ on:
     branches: [main]
     paths: ["mobile/**", ".github/workflows/mobile-ci.yml"]
 
+# A superseded run tells you nothing -- cancel it rather than paying for
+# it. Four jobs per run makes this worth having on a branch that gets
+# pushed to repeatedly.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
@@ -72,6 +79,13 @@ jobs:
 
   metro-bundle:
     runs-on: ubuntu-latest
+    # The two platforms were exported sequentially in one job (~40s each,
+    # the longest job in Stage 1). They share nothing, so running them as
+    # a matrix halves this job's wall clock for one extra runner.
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ios, android]
     defaults:
       run:
         working-directory: mobile
@@ -86,10 +100,12 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci --legacy-peer-deps
-      # Bundles the JS with Metro for both platforms -- catches import
-      # errors, bad native-module usage, and other issues `tsc` can't see
-      # (tsc only checks types, it doesn't resolve/bundle). Doesn't build a
-      # native binary (that's mobile-build.yml's Gradle step); this just
-      # proves the bundle itself is sound.
-      - run: npx expo export --platform ios --output-dir /tmp/export-ios
-      - run: npx expo export --platform android --output-dir /tmp/export-android
+      # Bundles the JS with Metro -- catches import errors, bad
+      # native-module usage, and other issues `tsc` can't see (tsc only
+      # checks types, it doesn't resolve/bundle). Doesn't build a native
+      # binary (that's mobile-build.yml's Gradle step); this just proves
+      # the bundle itself is sound.
+      #
+      # fail-fast: false above so an iOS-only bundling break still reports
+      # whether Android bundles, instead of cancelling it mid-run.
+      - run: npx expo export --platform ${{ matrix.platform }} --output-dir /tmp/export-${{ matrix.platform }}

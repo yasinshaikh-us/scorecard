@@ -327,11 +327,17 @@ no longer feed this workflow — the equivalent values are set on the job
 in `mobile-build.yml`, the same way `mobile-detox.yml` already does for
 its Gradle build.
 
-The build compiles `arm64-v8a,x86_64` only, rather than the default four
-ABIs — every extra ABI is a full extra native compile, and those two
-cover every 64-bit phone (at `minSdkVersion 26`, effectively all of
-them) plus desktop emulators. The trade-off: a genuinely 32-bit-only
-device won't take this APK.
+The build compiles **`arm64-v8a` only**, rather than the default four
+ABIs — every extra ABI is a full extra native compile, and this step is
+the bulk of the workflow's wall clock. That one covers every 64-bit
+Android phone (at `minSdkVersion 26`, effectively all of them) plus
+Apple Silicon emulators, which is exactly what this artifact is for.
+`x86_64` used to be included so the APK would also run on a desktop
+Intel emulator, but Stage 2 already tests on a real x86_64 emulator, so
+it bought nothing. The trade-off, stated plainly: **this APK will not
+install on an Intel/AMD Android emulator**, nor on a genuinely
+32-bit-only device — add the ABI back to `-PreactNativeArchitectures` if
+you need either.
 
 (**`mobile/.npmrc`** — `legacy-peer-deps=true`, already committed — is
 still what makes a plain `npm install` here resolve at all, and is what
@@ -415,6 +421,23 @@ UI.
   function's exchange/cleanup logic is a deliberate, self-contained copy
   of `plaid-exchange`/`plaid-disconnect`'s logic (adapted to the sandbox
   client) rather than a call to those functions, which stay untouched.
+- **Cleaned up when the run ends** (`e2e/globalTeardown.js`). The Edge
+  Function has always cleaned up at the *start* of a run, so
+  duplicate-account detection doesn't trip on a relink — but that left
+  the last run's Sandbox item in the project indefinitely, and that is
+  not merely untidy. A Sandbox item's `access_token` was minted by the
+  Sandbox client, while the hourly `plaid-balance-refresh` cron uses the
+  **Production** client; the two environments don't interoperate, so a
+  leftover item can never refresh and fails that cron on every tick,
+  forever. It fails invisibly, too: the `cron.job_run_details` row reads
+  `succeeded` (pg_net only queues the request), the HTTP status is 200,
+  and the failure appears only as a count inside a JSON response body.
+  This was happening in production before the teardown existed. The
+  teardown signs in via `test-login`, calls `test-plaid-link` with
+  `{"action": "cleanup"}`, and is deliberately non-fatal — a cleanup
+  failure logs loudly rather than reddening an otherwise-green run, and
+  the start-of-run cleanup remains the safety net for a run that never
+  reaches teardown (a cancelled job, a crashed emulator).
 - **Gated the same way as test login**: `eas.json`'s `development`/
   `preview` profiles set a separate `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET`
   (independently rotatable from `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same
