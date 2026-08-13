@@ -229,7 +229,7 @@ jobs:
       # matters most.
       - name: Upload Detox artifacts (screenshots, and video/logs for any failure)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: detox-results
           path: mobile/e2e/artifacts/
