@@ -40,12 +40,41 @@ async function tapIfPresent(testID) {
   }
 }
 
-// Launches the app and gets to Home, tolerating either entry state: a
-// retained session lands straight on Home, a cleared one starts at the
-// login screen, and a genuinely fresh account stops at PlaidLinkGate.
+// Waits for whichever signed-in screen appears and ends on Home.
 //
-// 30s waits throughout, not 8-10s: a cold install plus a real Supabase
-// auth round-trip is slow on a resource-constrained CI emulator (see
+// A signed-in session does NOT reliably land on Home: with no linked bank,
+// app/(app)/_layout.tsx renders PlaidLinkGate instead, and the account has
+// no linked bank most of the time -- globalTeardown.js disconnects the
+// Plaid Sandbox item at the END of every run, so that is the state every
+// run STARTS in. Specs that waited on `home-screen` alone were therefore
+// relying on appFlows/testPlaidLink having run earlier in the same run and
+// re-linked a bank for them. That hidden ordering dependency stayed
+// invisible while the whole suite always ran together, and broke the
+// moment a subset ran on its own.
+//
+// Polls both landings in short slices rather than waiting out a long
+// timeout on one before trying the other, so the common case stays fast.
+async function settleOnHome(timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isVisible("home-screen", 1000)) return;
+    if (await isVisible("plaid-gate-skip-button", 1000)) {
+      await tapIfPresent("plaid-gate-skip-button");
+      break;
+    }
+  }
+  // Also the fall-through when the deadline expires: assert on home-screen
+  // itself so a genuine failure reports the screen it was waiting for
+  // rather than a bare polling timeout.
+  await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(15000);
+}
+
+// Launches the app and gets to Home, tolerating every entry state: a
+// retained session lands on Home (or the gate), a cleared one starts at
+// the login screen.
+//
+// 30s waits, not 8-10s: a cold install plus a real Supabase auth
+// round-trip is slow on a resource-constrained CI emulator (see
 // testLogin.test.js's comment on the same number).
 async function launchAndSignIn({ reinstall = false } = {}) {
   await device.launchApp({ newInstance: true, delete: reinstall });
@@ -53,11 +82,7 @@ async function launchAndSignIn({ reinstall = false } = {}) {
   if (await isVisible("home-screen", 5000)) return;
 
   await tapIfPresent("test-signin-button");
-
-  if (await isVisible("home-screen", 30000)) return;
-
-  await tapIfPresent("plaid-gate-skip-button");
-  await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(30000);
+  await settleOnHome(30000);
 }
 
 // Returns the app to Home from wherever the previous test left it.
@@ -88,4 +113,4 @@ async function ensureOnHome() {
   await launchAndSignIn({ reinstall: true });
 }
 
-module.exports = { isVisible, tapIfPresent, launchAndSignIn, ensureOnHome };
+module.exports = { isVisible, tapIfPresent, settleOnHome, launchAndSignIn, ensureOnHome };

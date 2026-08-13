@@ -10,6 +10,7 @@
 // Function directly, no device to tap the button on) -- this spec is its
 // first real end-to-end check.
 const { captureScreen } = require("./screenshot");
+const { settleOnHome, isVisible, tapIfPresent } = require("./session");
 
 describe("Test login", () => {
   beforeAll(async () => {
@@ -25,9 +26,16 @@ describe("Test login", () => {
     // (confirmed on a real run: testLogin/testPlaidLink both timed out
     // here identically while smoke.test.js, which needs no sign-in,
     // passed comfortably).
-    await waitFor(element(by.id("home-screen")))
-      .toBeVisible()
-      .withTimeout(30000);
+    //
+    // settleOnHome, not a bare wait on home-screen: a signed-in session
+    // lands on PlaidLinkGate rather than Home when the account has no
+    // linked bank, which -- because globalTeardown.js disconnects the
+    // Sandbox item at the end of every run -- is the state every run
+    // begins in. Waiting on home-screen alone quietly depended on
+    // appFlows/testPlaidLink having re-linked a bank earlier in the SAME
+    // run, so this spec passed in the full suite and timed out the first
+    // time it ran as part of a subset. See e2e/session.js.
+    await settleOnHome(30000);
     // Matched by testID, not by.text("Recent Activity") -- text matching
     // against a TextView inside a FlatList's ListHeaderComponent proved
     // genuinely unreliable on the real emulator: two separate CI runs
@@ -60,10 +68,20 @@ describe("Test login", () => {
     // in lib/supabase.ts), and nothing anywhere in the pyramid has
     // regression-tested it since.
     await device.launchApp({ newInstance: true });
-    await waitFor(element(by.id("home-screen")))
-      .toBeVisible()
-      .withTimeout(30000);
+
+    // Reaching ANY signed-in screen is what proves the session survived --
+    // Home, or PlaidLinkGate when the account has no linked bank (see the
+    // first test's comment on why that is the normal state). The absence
+    // of the Google button is the half that proves it: being bounced back
+    // to /login is the failure this test exists to catch.
+    const signedIn = (await isVisible("home-screen", 15000)) || (await isVisible("plaid-gate-skip-button", 15000));
     await expect(element(by.id("google-signin-button"))).not.toExist();
+    if (!signedIn) {
+      throw new Error("Session did not survive the relaunch: neither Home nor PlaidLinkGate appeared");
+    }
+
+    await tapIfPresent("plaid-gate-skip-button");
+    await waitFor(element(by.id("home-screen"))).toBeVisible().withTimeout(30000);
     await captureScreen("home-screen-after-relaunch");
   });
 });

@@ -15,6 +15,7 @@
 // display) end to end, without the fragility of scripting a third-party
 // webview.
 const { captureScreen } = require("./screenshot");
+const { settleOnHome } = require("./session");
 
 describe("Plaid Link (Sandbox, test-seeded)", () => {
   beforeAll(async () => {
@@ -26,9 +27,13 @@ describe("Plaid Link (Sandbox, test-seeded)", () => {
     // 30s, not 15s -- see testLogin.test.js's comment on the identical
     // wait; a cold install + real Supabase auth round-trip is slower on a
     // resource-constrained CI emulator than 15s allowed for.
-    await waitFor(element(by.id("home-screen")))
-      .toBeVisible()
-      .withTimeout(30000);
+    //
+    // settleOnHome, not a bare wait on home-screen: this spec in
+    // particular starts with NO linked bank (that is what it is about),
+    // so a signed-in session lands on PlaidLinkGate. It only ever reached
+    // Home directly because appFlows happened to link a bank earlier in
+    // the same run -- see e2e/session.js.
+    await settleOnHome(30000);
 
     // waitFor, not a bare tap: test-plaid-link-button lives inside
     // AccountBalances, which renders just an ActivityIndicator until its
