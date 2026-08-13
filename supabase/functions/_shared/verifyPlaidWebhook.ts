@@ -8,7 +8,7 @@
 // request body actually received (so this must run on the raw bytes,
 // before any JSON.parse).
 
-import { importJWK, jwtVerify, decodeProtectedHeader } from "npm:jose@5";
+import { importJWK, jwtVerify, decodeProtectedHeader } from "npm:jose@6";
 import { plaidClient } from "./plaid.ts";
 
 const MAX_WEBHOOK_AGE_SECONDS = 5 * 60;

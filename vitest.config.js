@@ -16,13 +16,13 @@ export default defineConfig({
   // same name is what lets a file that imports one still be unit-tested
   // here -- verifyPlaidWebhook.ts is the case that matters, since it's the
   // signature check standing between a forged webhook and real writes, and
-  // its `npm:jose@5` import was the only thing making it untestable.
+  // its `npm:jose@6` import was the only thing making it untestable.
   //
   // Keep the pinned major in the alias in sync with the source specifier:
-  // if a function moves to npm:jose@6, this must move with it, or the test
+  // if a function moves to npm:jose@7, this must move with it, or the test
   // would silently keep exercising the old major.
   resolve: {
-    alias: [{ find: /^npm:jose@5$/, replacement: "jose" }],
+    alias: [{ find: /^npm:jose@6$/, replacement: "jose" }],
   },
   test: {
     // Node environment, not jsdom: nothing here renders a UI, and the Edge

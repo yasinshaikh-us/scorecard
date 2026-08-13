@@ -16,7 +16,7 @@ import { SignJWT, exportJWK, generateKeyPair } from "jose";
 const webhookVerificationKeyGet = vi.fn();
 
 // plaid.ts reads Deno.env and imports npm:plaid, neither of which resolves
-// under Node -- replaced wholesale so it is never loaded. The `npm:jose@5`
+// under Node -- replaced wholesale so it is never loaded. The `npm:jose@6`
 // import inside verifyPlaidWebhook.ts is handled differently, by a real
 // alias to the real jose package (see vitest.config.js), because the
 // signature verification is exactly what's under test here.
