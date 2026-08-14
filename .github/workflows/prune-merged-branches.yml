@@ -1,20 +1,19 @@
-name: Repo housekeeping
+name: Prune merged Claude branches
 
-# Two one-shot chores that can't be driven from a Claude Code session,
-# because the agent proxy refuses both of the API paths they need:
-# ref deletion (403 on `git push --delete` and `DELETE /git/refs/*`) and
-# /actions/secrets + /actions/variables (403 on read). A runner using the
-# workflow's own GITHUB_TOKEN and `secrets` context reaches both.
+# One-shot cleanup for the `claude/*` branches that accumulated before
+# the repo's "Automatically delete head branches" setting was turned on.
+# With that setting now in force, new branches clean themselves up on
+# merge and this workflow has nothing left to do -- it exists to clear
+# the backlog, and should be deleted once it has.
 #
-# Delete this file once the chores are done -- it is not meant to stay.
+# It runs here rather than from a session because Claude Code's agent
+# proxy blocks ref deletion outright (HTTP 403 on both `git push
+# --delete` and `DELETE /git/refs/*`), so the deletion has to happen
+# from a runner using the workflow's own GITHUB_TOKEN.
 
 on:
   workflow_dispatch:
     inputs:
-      prune_branches:
-        description: "Prune merged branches under the prefix"
-        type: boolean
-        default: true
       dry_run:
         description: "Only report what would be deleted"
         type: boolean
@@ -23,31 +22,17 @@ on:
         description: "Only consider branches under this prefix"
         type: string
         default: "claude/"
-      audit_secrets:
-        description: "Report which Actions secrets/variables no code references"
-        type: boolean
-        default: false
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: read
 
 concurrency:
-  group: repo-housekeeping
+  group: prune-merged-branches
   cancel-in-progress: false
 
 jobs:
   prune:
-    # github.event.inputs, not the `inputs` context: dispatched through
-    # the REST API, `inputs` came back empty at job level and both jobs
-    # silently skipped -- the run finished with zero jobs and a
-    # conclusion of action_required, which reads like a permissions
-    # problem and isn't one. github.event.inputs is populated either way,
-    # and always as strings, hence the comparison against 'true'.
-    if: github.event.inputs.prune_branches == 'true'
-    permissions:
-      contents: write
-      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7
@@ -144,102 +129,3 @@ jobs:
             if (failures.length) {
               core.setFailed(`${failures.length} branch(es) could not be deleted`);
             }
-
-  audit:
-    if: github.event.inputs.audit_secrets == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # `toJSON(secrets)` is the only way to enumerate configured secret
-      # names: the REST list endpoint needs a PAT with repo-admin scope,
-      # which GITHUB_TOKEN can never have. Only the KEYS are ever emitted
-      # -- and the JSON reaches the step through the environment rather
-      # than through an interpolated shell string, so a secret containing
-      # a quote can't break out of the command it lands in.
-      - name: Compare configured secrets and variables against references
-        env:
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-          VARS_JSON: ${{ toJSON(vars) }}
-        run: |
-          set -euo pipefail
-
-          # github_token is injected into the context by Actions itself,
-          # not configured by anyone, so it is never a cleanup candidate.
-          jq -r 'keys[]' <<<"$SECRETS_JSON" | grep -vix 'github_token' | sort -u > /tmp/have-secrets
-          jq -r 'keys[]' <<<"$VARS_JSON" | sort -u > /tmp/have-vars
-
-          # Two different questions, and conflating them is how a
-          # live secret gets deleted or a dead one kept:
-          #
-          #   1. Does a workflow consume it? Only `secrets.NAME` in
-          #      .github/workflows makes an Actions secret do anything.
-          #      Nothing else in the tree can read one.
-          #   2. Is the name known to the repo at all? A name can appear
-          #      in .env.example, a script, or the docs while no workflow
-          #      touches it -- typically because the value lives in
-          #      another store (Supabase's function env) and GitHub holds
-          #      a stale copy. Dead here, but worth naming rather than
-          #      silently dropping.
-          #
-          # Bucket 1 is the safety check; bucket 2 is the explanation.
-          classify() {
-            local ctx="$1"
-            while read -r name; do
-              [ -z "$name" ] && continue
-              if grep -rqE "$ctx\\.$name([^A-Za-z0-9_]|$)" .github/workflows; then
-                echo "live $name consumed by a workflow"
-              elif grep -rqF "$name" . --exclude-dir=.git --exclude-dir=.github; then
-                local where
-                where=$(grep -rlF "$name" . --exclude-dir=.git --exclude-dir=.github | head -3 | sed 's|^\./||' | tr '\n' ' ' | sed 's/ $//')
-                echo "dead $name no workflow reads it; name appears in $where"
-              else
-                echo "dead $name referenced nowhere"
-              fi
-            done
-          }
-
-          classify secrets < /tmp/have-secrets > /tmp/secret-report
-          classify vars < /tmp/have-vars > /tmp/var-report
-
-          emit() {
-            local label="$1" file="$2"
-            local dead live
-            dead=$(grep -c '^dead ' "$file" || true)
-            live=$(grep -c '^live ' "$file" || true)
-            {
-              echo "### $label"
-              echo
-              # Deliberately not "safe to delete" flatly: a name here
-              # may still be a live secret in Supabase's function env,
-              # where the app actually reads it. What is dead is the
-              # GitHub *copy*, which nothing can consume.
-              echo "**Inert ($dead)** -- no workflow can read these, so deleting the GitHub copy changes no behaviour. Read the Why column before deleting the value anywhere else:"
-              echo
-              if [ "$dead" -gt 0 ]; then
-                echo "| Name | Why |"
-                echo "| --- | --- |"
-                sed -n 's/^dead \([^ ]*\) \(.*\)$/| `\1` | \2 |/p' "$file"
-              else
-                echo "_None._"
-              fi
-              echo
-              echo "<details><summary>In use ($live)</summary>"
-              echo
-              if [ "$live" -gt 0 ]; then
-                sed -n 's/^live \([^ ]*\) .*$/- `\1`/p' "$file"
-              else
-                echo "_None._"
-              fi
-              echo
-              echo "</details>"
-              echo
-            } >> "$GITHUB_STEP_SUMMARY"
-          }
-
-          emit "Actions secrets" /tmp/secret-report
-          emit "Actions variables" /tmp/var-report
-
-          echo "--- plain-text copy for the run log ---"
-          echo "SECRETS:"; cat /tmp/secret-report
-          echo "VARIABLES:"; cat /tmp/var-report
