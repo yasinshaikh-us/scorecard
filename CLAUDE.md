@@ -1,79 +1,112 @@
 # CLAUDE.md
 
-Standing instructions for Claude Code sessions working in this repository.
-These are durable authorizations — they apply across sessions without
-needing to be re-granted each time.
+Standing instructions for Claude Code sessions in this repository.
+Durable authorizations — they apply across sessions without being
+re-granted.
+
+## Response style
+
+Terse. Lead with the result, not the process.
+
+- No preamble, no restating the request, no summarizing what was just
+  said. Answer, then stop.
+- Prose only where it carries meaning. Tables and short lists over
+  paragraphs.
+- Don't narrate routine tool use ("let me check X", "now I'll run Y").
+  Just do it and report what came back.
+- Report failures and uncertainty plainly and immediately — brevity
+  never means omitting a blocker, a caveat, or a wrong result.
+- Long output is fine when the content genuinely needs it: a design
+  review, a diagnosis with evidence, a decision with real trade-offs.
+  Length should track substance, not effort.
+
+## Blanket authorization
+
+Claude acts without asking for confirmation across normal operations on
+this project. Specifically and non-exhaustively:
+
+**GitHub** — read anything; create/update/merge/close PRs; comment and
+review; create and delete branches; push; trigger, re-run and cancel
+workflows; read logs and download artifacts; manage PR subscriptions.
+
+**Supabase** — read anything; `execute_sql`; `apply_migration`; deploy
+Edge Functions; read logs and advisors; list/inspect projects, tables,
+extensions, migrations; generate types; create/merge/rebase/reset/delete
+development branches.
+
+**Local** — install dependencies; run any test, linter, typechecker or
+build; run `expo`, `detox`, `vitest`, `jest`, `gradle`; read/write files
+in the repo and scratchpad; git add/commit/push/checkout/cherry-pick;
+`curl`; run scripts.
+
+**Judgement calls** — pick the obvious option and say which was picked,
+rather than asking. Ask only when different readings lead to materially
+different work, or when proceeding would be unsafe.
+
+## Still requires confirmation
+
+Short list, everything else is covered above:
+
+- Force-push, hard reset, or history rewrite on `main`
+- Deleting a Supabase project
+- Pausing or restoring a Supabase project
+- `execute_sql` that drops or truncates a table, or issues an unscoped
+  `DELETE`/`UPDATE` against production data (this database holds real
+  transaction history)
+- Anything outward-facing to third parties — publishing to a store,
+  emailing, posting outside this repo
 
 ## Merge authorization
 
-Claude may merge its own pull requests into `main` without asking for
-confirmation first, once ALL of the following hold:
+Merge Claude's own PRs into `main` without asking, once ALL hold:
 
-- Every required status check on the PR is green. Today that means
-  `ci.yml`'s `edge-function-tests` job, plus — on any PR touching
-  `mobile/` — `mobile-ci.yml`'s four jobs AND `mobile-detox.yml`'s
-  `detox-android` job, which now runs the Stage 2 smoke subset on such
-  PRs automatically (it used to be manual-dispatch only, so it was never
-  a PR check before; the full Stage 2 suite still runs nightly rather
-  than per-PR). (This used to name a Vercel deployment check — there is
-  no web app or Vercel deployment any more.) Any CI added to this repo
-  later counts too.
-- If the repo has an automated test suite at merge time, it passes.
-- Claude has done its own sanity check on the change before merging: the
-  tests covering what the change touched pass locally (`npm test` at the
-  root for Edge Function changes, `npm test` in `mobile/` for app
-  changes), and the diff actually matches what the PR description claims
-  it does.
+- Every required check is green: `ci.yml`'s `edge-function-tests`, plus —
+  on any PR touching `mobile/` — `mobile-ci.yml`'s four jobs and
+  `mobile-detox.yml`'s `detox-android`. Any CI added later counts too.
+- The automated suite passes.
+- Claude's own sanity check: tests covering what changed pass locally
+  (`npm test` at root for Edge Functions, `npm test` in `mobile/` for the
+  app), and the diff matches what the PR description claims.
 
-If any check is red, pending, or missing — don't merge. Report the
-blocker instead and wait for direction.
+Red, pending or missing check → don't merge. Report the blocker.
 
-This authorization covers the merge action itself. It does not cover
-other destructive/hard-to-reverse git operations (force-push to `main`,
-history rewrites, branch deletion, etc.) — those still need explicit
-confirmation each time unless separately authorized here.
+## Stage 2 (Detox) visual verification
 
-## No webhook subscription required
-
-Claude does not need to call `subscribe_pr_activity` (or wait for
-`<github-webhook-activity>` events) before checking on or acting on a PR
-it owns. Check PR/CI state directly (e.g. `pull_request_read`) and act
-once the merge criteria above are met — no need to subscribe to or wait
-on GitHub webhook notifications first.
-
-## Stage 2 (Detox real-emulator) visual verification
-
-Whenever a Stage 2 run (`mobile-detox.yml`) follows a UI/screen change,
-passing Detox assertions is not the end of verification — a `toHaveText`/
-`toBeVisible` assertion proves a specific value or element is present, not
-that the screen actually renders/looks correct. Claude owns closing that
-loop itself, not the user. Once the run completes:
+A passing assertion proves an element exists, not that the screen renders
+correctly. After any Stage 2 run tied to a UI change:
 
 1. Confirm the "Run Detox tests on a real Android emulator" step itself
-   succeeded (not just that the job didn't error elsewhere), and that the
-   real instrumentation result shows a nonzero, genuine test count (not
-   an "OK (0 tests)"-shaped false positive — see mobile/README.md's Stage
-   2 section for why that check exists).
-2. Download the run's `detox-results` artifact via the GitHub API
-   (list/download workflow run artifacts) — don't ask the user to look
-   themselves.
-3. Actually view the screenshots from it (the Read tool renders images)
-   and check that the screen(s) the change touched look right.
-4. State an explicit visual verdict in the reply — what was checked and
-   whether it looks correct — before calling the change done. "Tests
-   passed" alone is not a finished verification for a UI change.
+   succeeded, with a genuine nonzero test count — not an "OK (0 tests)"
+   false positive (see `mobile/README.md`).
+2. Download the `detox-results` artifact via the API. Don't ask the user
+   to look.
+3. Actually view the screenshots (the Read tool renders images).
+4. State an explicit visual verdict before calling it done.
 
-This is the required last step of Stage 2 for any run tied to a UI
-change, not an optional follow-up.
+This has repeatedly caught defects that every assertion passed through —
+content under the navigation bar, a Save button drawn on top of the
+system recents button. It is the required last step, not a follow-up.
 
-## CI check-in cadence
+## CI cadence
 
-GitHub webhooks reliably push CI *failures* into the conversation, but not
-CI *success* — so catching the moment a PR goes green still requires
-polling, not just waiting for a notification. This repo's automatic
-checks (`ci.yml`'s Edge Function tests, and `mobile-ci.yml`'s typecheck /
-lint / unit-tests / Metro bundle when `mobile/` is touched) finish in
-well under two minutes, so poll roughly once a minute after opening a PR,
-not every 8-10 minutes — merge as soon as the merge-authorization criteria
-above are satisfied instead of leaving a green PR sitting unmerged for
-several extra minutes.
+Webhooks deliver CI *failures* reliably, not successes — catching green
+needs polling. Stage 1 checks finish in under two minutes; poll about
+once a minute after opening a PR. Stage 2 takes ~18 minutes.
+
+No need to `subscribe_pr_activity` before acting on a PR. Check state
+directly and act.
+
+## Known traps in this repo
+
+- **Detox's AVD snapshot cache was removed deliberately.** Restoring it
+  intermittently boots the emulator into a state where the `input`
+  service hasn't published, killing the step before any test runs. Don't
+  reintroduce it to save the ~4 minutes.
+- **`EXPO_PUBLIC_*` values are inlined into the app bundle** and are
+  extractable from any installed build. They come from repository
+  secrets; never commit one. This repo is public.
+- **Stage 2 drives a shared real account** (`synthetic-monitor@…`) and one
+  Plaid Sandbox item, which is why the workflow serializes runs. Two
+  concurrent runs corrupt each other.
+- **Reduce-motion is always on in CI**, so emulator screenshots exercise
+  the static path of any animation. Motion can't be verified there.
