@@ -8,9 +8,9 @@
 // the app, and that reinstall (not the interactions themselves) is most of
 // what the "Run Detox specs on Firebase Test Lab" step's wall-clock time
 // costs (see mobile-detox.yml's `--timeout 15m`). One shared sign-in +
-// one shared "Link test bank" call, reused across every `it()` below via a
+// one shared Sandbox-bank seed, reused across every `it()` below via a
 // single `beforeAll`, keeps this file's cost close to one more sign-in +
-// one more link on top of testLogin.test.js / testPlaidLink.test.js,
+// one more seed on top of testLogin.test.js / testPlaidLink.test.js,
 // instead of paying that per screen.
 //
 // State hygiene: nothing in this file leaves the shared synthetic test
@@ -40,7 +40,7 @@
 // see CategoryRulesPanel.tsx) rather than by position, so an unexpected
 // row can no longer misdirect a tap.
 const { captureScreen } = require("./screenshot");
-const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
+const { runScopedRuleValue, cleanupThisRunsRules, seedSandboxBank } = require("./testAccount");
 const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require("./session");
 
 // Namespaced per run, so a Stage 2 job running concurrently on another ref
@@ -52,35 +52,37 @@ const RENAMED_PAYEE = "E2E Renamed Payee";
 
 describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   beforeAll(async () => {
-    // Handles every entry state (retained session, login screen, or a
-    // fresh account stopping at PlaidLinkGate) -- see e2e/session.js.
-    await launchAndSignIn({ reinstall: true });
-
     // Guarantees a linked account (for the account-management banners
     // below) and at least one transaction (Home's Recent Activity is
     // anchored to the ledger's OWN latest date, so whatever this seeds is
     // always "recent" -- see app/(app)/home.tsx's daysBefore comment) --
     // regardless of whatever state a previous CI run left behind.
     //
+    // Seeded from this host process, BEFORE the app launches, rather than
+    // by tapping a button in the app: the app no longer carries one, and
+    // should not (see e2e/testAccount.js's seedSandboxBank). Seeding first
+    // also means launchAndSignIn lands straight on Home instead of routing
+    // through PlaidLinkGate.
+    await seedSandboxBank();
+
+    // Handles every entry state (retained session, login screen, or a
+    // fresh account stopping at PlaidLinkGate) -- see e2e/session.js.
+    await launchAndSignIn({ reinstall: true });
+
     // .atIndex(0), not a bare id match: Plaid Sandbox's "First Platypus
     // Bank" test institution (see test-plaid-link/index.ts) returns its
-    // whole account portfolio -- checking, savings, CD, and more --  not
+    // whole account portfolio -- checking, savings, CD, and more -- not
     // just one account, so several linked-account-row views are always
     // on screen at once by design (confirmed via a real run: exactly one
     // plaid_items row, freshly created, with 12 accounts under it -- this
     // is expected Sandbox data, not accumulated cruft from prior runs).
-    // waitFor, not a bare tap: test-plaid-link-button lives inside
-    // AccountBalances, which renders just an ActivityIndicator ("Loading…")
-    // until its own real balances fetch resolves (see AccountBalances.tsx)
-    // -- home-screen itself being visible doesn't mean that fetch has
-    // finished. A real run hit exactly this: "No views in hierarchy found
-    // matching: ... test-plaid-link-button" with the hierarchy dump
-    // showing "Loading…" still on screen. This line never had a wait
-    // before, and simply hadn't been unlucky enough to fail until the
-    // shared test account's dataset (transactions, rules) grew large
-    // enough across repeated runs to slow the fetch down.
-    await waitFor(element(by.id("test-plaid-link-button"))).toBeVisible().withTimeout(15000);
-    await element(by.id("test-plaid-link-button")).tap();
+    //
+    // The 30s wait is not slack. AccountBalances renders just an
+    // ActivityIndicator ("Loading…") until its own real balances fetch
+    // resolves, and home-screen being visible doesn't mean that fetch has
+    // finished -- a real run failed here with the hierarchy dump still
+    // showing "Loading…", once the shared account's dataset had grown
+    // enough across runs to slow that fetch down.
     await waitFor(element(by.id("linked-account-row")).atIndex(0)).toBeVisible().withTimeout(30000);
     await captureScreen("home-with-linked-account");
   });

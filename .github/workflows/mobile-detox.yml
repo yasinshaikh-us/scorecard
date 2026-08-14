@@ -105,7 +105,13 @@ jobs:
       # See mobile/README.md's "Test login" / "Test Plaid Link" sections.
       EXPO_PUBLIC_ENABLE_TEST_LOGIN: "true"
       EXPO_PUBLIC_TEST_LOGIN_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_LOGIN_SECRET }}
-      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET }}
+      # NOT EXPO_PUBLIC_, unlike the two above: the app no longer calls
+      # test-plaid-link at all, so this is read only by Detox's host Node
+      # process (e2e/testAccount.js) and must not be inlined into the
+      # bundle. The repository secret keeps its original name -- renaming
+      # the env var is what matters, and rotating the value out from under
+      # a build is a separate job.
+      TEST_PLAID_LINK_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET }}
     steps:
       - uses: actions/checkout@v4
 

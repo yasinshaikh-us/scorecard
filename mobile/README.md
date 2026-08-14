@@ -514,21 +514,34 @@ UI.
   failure logs loudly rather than reddening an otherwise-green run, and
   the start-of-run cleanup remains the safety net for a run that never
   reaches teardown (a cancelled job, a crashed emulator).
-- **Gated the same way as test login**: a separate
-  `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET` (independently rotatable from
-  `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same reasoning) must match the
-  `TEST_PLAID_LINK_SECRET` Edge Function secret. Sourced from a GitHub
-  repository secret, not committed -- same reasoning as test login
-  above. Even a leaked secret can only ever link a Sandbox test bank
-  using Sandbox-only credentials that have no access to any real bank
-  data.
-- **Idempotent.** Before linking, it disconnects any bank already linked
-  to the test account (mirroring `plaid-disconnect`'s logic against the
-  sandbox client, so Items are properly revoked at Plaid too) -- Plaid's
-  Sandbox test data (including account/routing numbers) is deterministic
-  per institution, so without this a second CI run would look like the
-  exact same real account relinking, and the duplicate-account detection
-  below would reject it.
+- **Gated twice.** A shared secret (`TEST_PLAID_LINK_SECRET`, matching
+  the Edge Function secret of the same name, independently rotatable
+  from the test-login secret) *and* a server-side check that the caller
+  **is** the dummy account, `synthetic-monitor@scorecard.test`. The
+  second gate is what makes "a leaked secret can only ever affect the
+  dummy account" true. Without it the function wrote to whatever
+  `user_id` the JWT carried, and it was reachable from the app: see
+  "Why the app has no test-bank button" below.
+- **Read only by Detox's host process.** The secret is `TEST_PLAID_LINK_SECRET`
+  in CI, deliberately *not* `EXPO_PUBLIC_`-prefixed -- anything with that
+  prefix is inlined into the app bundle and extractable from any
+  installed build. (The GitHub repository secret keeps its older
+  `EXPO_PUBLIC_`-prefixed name; `mobile-detox.yml` maps it onto the new
+  variable.)
+- **Idempotent.** Before linking, it disconnects the Sandbox items *it*
+  previously seeded -- scoped to `ins_109508`, never "every active item"
+  -- mirroring `plaid-disconnect`'s logic against the sandbox client, so
+  Items are properly revoked at Plaid too. Plaid's Sandbox test data
+  (including account/routing numbers) is deterministic per institution,
+  so without this a second CI run would look like the exact same real
+  account relinking, and the duplicate-account detection below would
+  reject it.
+- **Seeded data gets no retention grace.** A real disconnect records the
+  accounts in `plaid_disconnected_accounts` and lets the 90-day purge job
+  delete the history later, which is right for a real user's real
+  transactions and wrong for synthetic ones: it turns "remove the test
+  data" into "remove it next quarter". Disconnecting a seeded Sandbox
+  item deletes its transactions and fingerprints outright.
 - **Three Edge Function secrets to set** on the Supabase project (same
   place as `TEST_LOGIN_SECRET`): `TEST_PLAID_LINK_SECRET` (matching the
   value baked into `eas.json`), and `PLAID_SANDBOX_CLIENT_ID` /
@@ -540,12 +553,42 @@ UI.
   writes real rows scoped to a real signed-in user -- deploy it the
   normal way (`supabase functions deploy test-plaid-link`), not with
   `--no-verify-jwt`.
-- **Triggered from the app, not called directly by the test.** A "Link
-  test bank" button (`components/AccountBalances.tsx`, same
-  `EXPO_PUBLIC_ENABLE_TEST_LOGIN` gate as "Sign in as test user") calls
-  it with the already-signed-in session's token -- `e2e/testPlaidLink.test.js`
-  signs in via test login, taps that button, then waits for the linked
-  account to actually show up in the Banks strip.
+- **Called by the test, not by the app.** `e2e/testAccount.js`'s
+  `seedSandboxBank()` calls the function over HTTP from Detox's own host
+  process, before the app launches; the spec then signs in and waits for
+  the linked account to show up in the Banks block.
+
+### Why the app has no test-bank button
+
+It used to. `components/AccountBalances.tsx` rendered a flask icon next
+to "Add bank" whenever `EXPO_PUBLIC_ENABLE_TEST_LOGIN` was set — which
+the `preview` EAS profile sets, so it shipped in the build installed on
+a real phone, one tap from the real balances, with no confirmation. And
+`test-plaid-link` acted on whatever session called it, not on the dummy
+account its own comments claimed. Tapping it while signed in as a real
+user therefore:
+
+- seeded twelve Sandbox accounts and their fixture transactions into
+  that real account, and
+- **disconnected the real bank first**, because the pre-seed cleanup
+  removed *every* active item rather than only what it had seeded. The
+  `itemRemove` call then failed silently (a Production access token
+  against the Sandbox client), so the Item stayed live at Plaid while
+  the app dropped its token — recoverable only by relinking through
+  Plaid Link.
+
+None of it could be undone from the app: the state is server-side, so
+signing out and back in changes nothing, and the seeded transactions sat
+on the 90-day retention clock rather than going away.
+
+Removing the button is only part of the fix — the two server-side gates
+above are what make the same call unreachable from any client. What the
+button bought was never real coverage: the exchange and every DB write
+happen inside the Edge Function, so a tap proved nothing that seeding
+from the host doesn't. If anything the specs now test more, since the app
+renders a linked account it did not create, exactly as a real user's app
+does after a real Plaid Link. `AccountBalances.test.tsx` keeps a
+regression test asserting no such control renders, in any build.
 
 ## Before shipping to a store
 

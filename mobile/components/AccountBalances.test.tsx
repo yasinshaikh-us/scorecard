@@ -61,7 +61,6 @@ describe("AccountBalances", () => {
     state.balances = { data: [], error: null };
     mockFetch.mockReset();
     (global as any).fetch = mockFetch;
-    delete (process.env as any).EXPO_PUBLIC_TEST_PLAID_LINK_SECRET;
   });
 
   it("shows the empty state with no linked accounts", async () => {
@@ -187,48 +186,21 @@ describe("AccountBalances", () => {
     );
   });
 
-  it("doesn't render the test-plaid-link button in a build without test login enabled", async () => {
-    mockAuthProviderState.TEST_LOGIN_ENABLED = false;
+  // Regression guard, not a formality. The button this asserts the
+  // absence of shipped in the preview build (TEST_LOGIN_ENABLED is set by
+  // that EAS profile), and one tap while signed in as a real user seeded
+  // Sandbox accounts into that real account and dropped its real bank
+  // connection. Seeding a test bank is Detox's job, from its own host
+  // process (mobile/e2e/testAccount.js) -- never the app's, in any build.
+  it("renders no test-seeding control, even in a build with test login enabled", async () => {
+    mockAuthProviderState.TEST_LOGIN_ENABLED = true;
     await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");
     expect(screen.queryByTestId("test-plaid-link-button")).toBeNull();
-  });
-
-  it("Link test bank: posts the secret and refreshes on success", async () => {
-    mockAuthProviderState.TEST_LOGIN_ENABLED = true;
-    process.env.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET = "plaid-shh";
-    const onLinked = jest.fn();
-    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
-
-    await renderWithTheme(<AccountBalances onLinked={onLinked} />);
-    await screen.findByText("No linked accounts yet");
-
-    await fireEvent.press(screen.getByTestId("test-plaid-link-button"));
-
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(global.fetch).not.toHaveBeenCalledWith(
       expect.stringContaining("/functions/v1/test-plaid-link"),
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer tok-1" }),
-        body: JSON.stringify({ secret: "plaid-shh" }),
-      })
+      expect.anything()
     );
-    expect(onLinked).toHaveBeenCalled();
-  });
-
-  it("Link test bank: shows the server's error on failure", async () => {
-    mockAuthProviderState.TEST_LOGIN_ENABLED = true;
-    process.env.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET = "plaid-shh";
-    mockFetch.mockResolvedValue({
-      ok: false,
-      json: () => Promise.resolve({ error: "PLAID_ENV is production, not sandbox" }),
-    });
-
-    await renderWithTheme(<AccountBalances />);
-    await screen.findByText("No linked accounts yet");
-
-    await fireEvent.press(screen.getByTestId("test-plaid-link-button"));
-    expect(await screen.findByText("PLAID_ENV is production, not sandbox")).toBeTruthy();
   });
 
   it("useBankLink's onDone callback (real Plaid Link success) refreshes balances and calls onLinked", async () => {

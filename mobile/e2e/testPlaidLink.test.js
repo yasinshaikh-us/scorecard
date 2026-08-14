@@ -4,55 +4,59 @@
 // Exercises Plaid Link end to end WITHOUT driving Plaid's own hosted Link
 // UI, which this app doesn't own and can't reliably script (native
 // WebView content, no stable testIDs to match against -- see
-// mobile/README.md's Stage 2 section). Instead, taps "Link test bank"
-// (see components/AccountBalances.tsx, only rendered when
-// EXPO_PUBLIC_ENABLE_TEST_LOGIN is set), which calls the
-// supabase/functions/test-plaid-link Edge Function -- it mints a real
-// Plaid Sandbox public_token via Plaid's own /sandbox/public_token/create
-// endpoint and runs it through the REAL production plaid-exchange +
-// syncItemTransactions pipeline. This verifies the part of the flow this
-// app actually owns (token exchange, DB writes, RLS-scoped reads, balance
-// display) end to end, without the fragility of scripting a third-party
-// webview.
+// mobile/README.md's Stage 2 section). Instead, seeds a real Plaid Sandbox
+// bank by calling the supabase/functions/test-plaid-link Edge Function
+// from THIS host process before the app launches (see
+// e2e/testAccount.js) -- it mints a real Sandbox public_token via Plaid's
+// own /sandbox/public_token/create endpoint and runs it through the REAL
+// plaid-exchange + syncItemTransactions pipeline. The spec then asserts
+// the part of the flow this app actually owns: that it reads that linked
+// account back under RLS and renders it.
+//
+// The seeding used to happen through a "Link test bank" button in the app
+// itself, which the spec tapped. That button is gone -- see
+// e2e/testAccount.js's seedSandboxBank for what it cost and why nothing
+// this spec verifies depended on it. Seeding before launch also removes
+// the PlaidLinkGate detour this spec used to take: the account has a bank
+// by the time the app starts, so a signed-in session lands on Home.
 const { captureScreen } = require("./screenshot");
 const { settleOnHome } = require("./session");
+const { seedSandboxBank } = require("./testAccount");
 
 describe("Plaid Link (Sandbox, test-seeded)", () => {
   beforeAll(async () => {
+    // Before the device boots: seeding chains several real network calls
+    // (cleanup, Plaid's sandboxPublicTokenCreate, the real exchange, then
+    // a full transactionsSync loop), and none of it needs an emulator.
+    // Doing it here rather than through the UI also takes that whole
+    // chain off the device-interaction timeout budget.
+    await seedSandboxBank();
     await device.launchApp({ newInstance: true, delete: true });
   });
 
-  it("signs in, links a Sandbox test bank, and shows the linked account on Home", async () => {
+  it("signs in and shows the Sandbox-linked account on Home", async () => {
     await element(by.id("test-signin-button")).tap();
     // 30s, not 15s -- see testLogin.test.js's comment on the identical
     // wait; a cold install + real Supabase auth round-trip is slower on a
     // resource-constrained CI emulator than 15s allowed for.
     //
-    // settleOnHome, not a bare wait on home-screen: this spec in
-    // particular starts with NO linked bank (that is what it is about),
-    // so a signed-in session lands on PlaidLinkGate. It only ever reached
-    // Home directly because appFlows happened to link a bank earlier in
-    // the same run -- see e2e/session.js.
+    // settleOnHome, not a bare wait on home-screen: kept even though the
+    // seed above means a bank IS linked, because the gate is also what
+    // this lands on if the seed silently produced nothing -- and falling
+    // through to the home-screen assertion reports that far better than a
+    // bare timeout would.
     await settleOnHome(30000);
 
-    // waitFor, not a bare tap: test-plaid-link-button lives inside
-    // AccountBalances, which renders just an ActivityIndicator until its
-    // own real balances fetch resolves -- home-screen being visible
-    // doesn't mean that fetch has finished. A real run hit exactly this
-    // race in appFlows.test.js's identical tap (see its beforeAll for the
-    // same fix and why).
-    await waitFor(element(by.id("test-plaid-link-button"))).toBeVisible().withTimeout(15000);
-    await element(by.id("test-plaid-link-button")).tap();
-    // test-plaid-link chains several real network calls (cleanup,
-    // Plaid's sandboxPublicTokenCreate, the real plaid-exchange, then a
-    // full transactionsSync loop) -- a longer window than the sign-in
-    // wait above.
-    //
     // .atIndex(0), not a bare id match: Plaid Sandbox's "First Platypus
     // Bank" test institution returns its whole account portfolio (not
     // just one account), so several linked-account-row views are on
     // screen at once by design -- see appFlows.test.js's beforeAll for
     // the same fix and why.
+    //
+    // Still a generous window: AccountBalances renders an
+    // ActivityIndicator until its own balances fetch resolves, and that
+    // fetch is slow on a resource-constrained CI emulator against an
+    // account whose dataset has grown across runs.
     await waitFor(element(by.id("linked-account-row")).atIndex(0))
       .toBeVisible()
       .withTimeout(30000);

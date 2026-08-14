@@ -17,7 +17,11 @@ export class HttpError extends Error {
   }
 }
 
-export async function requireUser(req: Request): Promise<{ id: string; accessToken: string }> {
+// `email` is returned alongside the id purely so a caller can assert
+// WHICH account it is talking to -- test-plaid-link needs that, since it
+// may only ever act on the designated dummy account. Every other caller
+// ignores it.
+export async function requireUser(req: Request): Promise<{ id: string; email: string | null; accessToken: string }> {
   const url = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!url || !anonKey) {
@@ -38,5 +42,5 @@ export async function requireUser(req: Request): Promise<{ id: string; accessTok
   }
 
   const user = await resp.json();
-  return { id: user.id, accessToken };
+  return { id: user.id, email: user.email ?? null, accessToken };
 }
