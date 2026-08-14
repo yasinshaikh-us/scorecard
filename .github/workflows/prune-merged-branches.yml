@@ -38,7 +38,13 @@ concurrency:
 
 jobs:
   prune:
-    if: inputs.prune_branches
+    # github.event.inputs, not the `inputs` context: dispatched through
+    # the REST API, `inputs` came back empty at job level and both jobs
+    # silently skipped -- the run finished with zero jobs and a
+    # conclusion of action_required, which reads like a permissions
+    # problem and isn't one. github.event.inputs is populated either way,
+    # and always as strings, hence the comparison against 'true'.
+    if: github.event.inputs.prune_branches == 'true'
     permissions:
       contents: write
       pull-requests: read
@@ -140,7 +146,7 @@ jobs:
             }
 
   audit:
-    if: inputs.audit_secrets
+    if: github.event.inputs.audit_secrets == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
