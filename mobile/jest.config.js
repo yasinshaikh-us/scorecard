@@ -34,8 +34,18 @@ module.exports = {
     ...jestExpoPreset.moduleNameMapper,
     "^@react-native-async-storage/async-storage$": "@react-native-async-storage/async-storage/jest",
   },
+  // Shipped by react-native-worklets for exactly this: Reanimated 4's
+  // entrypoint pulls in worklets' `.native.ts` implementation, which
+  // calls into a JSI module that doesn't exist in a Jest process
+  // ("Cannot read properties of undefined (reading 'loadUnpackers')").
+  // The resolver drops the `.native` extension for anything under
+  // react-native-worklets so the plain-JS implementation resolves
+  // instead. Preferred over blanket-mocking react-native-reanimated,
+  // which would replace Animated.View and leave RisingSuggestions'
+  // real rendering untested.
+  resolver: "react-native-worklets/jest/resolver",
   transformIgnorePatterns: [
-    "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-gifted-charts|gifted-charts-core|lucide-react-native))",
+    "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-gifted-charts|gifted-charts-core|lucide-react-native|react-native-reanimated|react-native-worklets|standard-navigation))",
   ],
   testTimeout: 20000,
   testPathIgnorePatterns: ["<rootDir>/node_modules/", "<rootDir>/e2e/"],

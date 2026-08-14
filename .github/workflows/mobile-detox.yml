@@ -269,6 +269,20 @@ jobs:
       # and emulator-options MUST stay identical between the snapshot step
       # and the run step, or the cached snapshot doesn't apply and both the
       # cache and the extra step are wasted.
+      # The trailing -v2 is a manual cache-buster, and it exists because a
+      # poisoned snapshot is silent and permanent. A snapshot saved while
+      # the guest was mid-boot restores into a state where
+      # sys.boot_completed reads 1 but the `input` system service has not
+      # published yet, so the runner's unlock keyevent throws
+      # "ServiceNotFoundException: No service published for: input" and
+      # the step dies before Detox starts -- no tests, no artifacts, and
+      # an identical failure on every retry, because every retry restores
+      # the same bad snapshot. Two consecutive runs failed this way, both
+      # with "Create the AVD" skipped on a cache hit, while every earlier
+      # green run had created the AVD fresh.
+      #
+      # Bump the suffix to force one fresh creation; the next run saves a
+      # good snapshot and the cache goes back to earning its ~4 minutes.
       - name: Cache the AVD + its boot snapshot
         uses: actions/cache@v4
         id: avd-cache
@@ -276,7 +290,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-${{ runner.os }}-api30-google_apis-x86_64-pixel_5
+          key: avd-${{ runner.os }}-api30-google_apis-x86_64-pixel_5-v2
 
       - name: Create the AVD and generate a boot snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'

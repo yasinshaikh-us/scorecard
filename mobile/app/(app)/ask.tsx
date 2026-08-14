@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { MessageCircleQuestion } from "lucide-react-native";
 import { useAuth } from "../../lib/AuthProvider";
 import { useData } from "../../lib/DataProvider";
 import { useTheme } from "../../lib/ThemeProvider";
@@ -8,13 +9,13 @@ import { fontFamily } from "../../lib/theme";
 import { functionUrl } from "../../lib/functionsClient";
 import { parseQueryResponse, type QueryResult } from "../../lib/logic";
 import QueryCard from "../../components/QueryCard";
+import RisingSuggestions from "../../components/RisingSuggestions";
 import ScreenHeader from "../../components/ScreenHeader";
 import CategoryRulesPanel from "../../components/CategoryRulesPanel";
 
-// Idle-state suggestions, shown as a static tappable list. These were
-// originally designed as floating/animated chips; there's no
-// straightforward RN equivalent without pulling in Reanimated, so that's
-// deferred (tracked in README.md's Status section).
+// Idle-state suggestions. Rendered by RisingSuggestions as a slow upward
+// drift of bare text, scattered left/centre/right -- see that component
+// for why they are not chips.
 const SUGGESTIONS = [
   "How much did I spend on dining last month?",
   "What's my biggest expense this year?",
@@ -38,6 +39,9 @@ export default function Ask() {
   const { session, signOut } = useAuth();
   const { transactions, dataStatus, CATS, refresh } = useData();
   const { colors } = useTheme();
+  // Same reason as Home: nothing reserves the navigation bar's space now
+  // that the tab bar is gone.
+  const insets = useSafeAreaInsets();
 
   const [input, setInput] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
@@ -82,49 +86,53 @@ export default function Ask() {
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.bg }]} edges={["top"]}>
-      <ScreenHeader onOpenRules={() => setRulesOpen(true)} />
+      <ScreenHeader onOpenRules={() => setRulesOpen(true)} screen="ask" />
 
-      <View style={[styles.queryBar]}>
-        <TextInput
-          testID="ask-input"
-          style={[styles.input, { borderColor: colors.border, color: colors.text, fontFamily: fontFamily.regular }]}
-          placeholderTextColor={colors.textFaint}
-          value={input}
-          onChangeText={setInput}
-          placeholder={dataStatus === "ready" ? "Ask about your spending…" : "Loading…"}
-          editable={dataStatus === "ready"}
-          onSubmitEditing={() => runQuery(input)}
-          returnKeyType="send"
-        />
-        <Pressable
-          testID="ask-button"
-          style={[styles.askBtn, { backgroundColor: colors.accent }, (loading || dataStatus !== "ready") && styles.askBtnDisabled]}
-          onPress={() => runQuery(input)}
-          disabled={loading || dataStatus !== "ready"}
-        >
-          {loading ? (
-            <ActivityIndicator color={colors.bg} size="small" />
-          ) : (
-            <Text style={[styles.askBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>Ask</Text>
-          )}
-        </Pressable>
+      {/* The send control sits inside the field rather than beside it, so
+          the bar itself runs the full width of the screen instead of
+          surrendering ~70px to a button. It is the Ask glyph with no fill:
+          a filled accent slab next to an input reads as the heaviest thing
+          on an otherwise quiet screen, and this is a control beside an
+          input rather than an action that closes a task. */}
+      <View style={styles.queryBar}>
+        <View style={[styles.field, { borderColor: colors.border }]}>
+          <TextInput
+            testID="ask-input"
+            style={[styles.input, { color: colors.text, fontFamily: fontFamily.regular }]}
+            placeholderTextColor={colors.textFaint}
+            value={input}
+            onChangeText={setInput}
+            placeholder={dataStatus === "ready" ? "Ask about your spending…" : "Loading…"}
+            editable={dataStatus === "ready"}
+            onSubmitEditing={() => runQuery(input)}
+            returnKeyType="send"
+          />
+          <Pressable
+            testID="ask-button"
+            style={styles.askBtn}
+            onPress={() => runQuery(input)}
+            disabled={loading || dataStatus !== "ready"}
+            hitSlop={10}
+            accessibilityLabel="Ask"
+          >
+            {loading ? (
+              <ActivityIndicator color={colors.textMuted} size="small" />
+            ) : (
+              <MessageCircleQuestion
+                size={18}
+                color={dataStatus === "ready" ? colors.textMuted : colors.textFaint}
+              />
+            )}
+          </Pressable>
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.feed} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.feed, { paddingBottom: insets.bottom + 24 }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {cards.length === 0 && (
-          <View style={styles.suggestions}>
-            {SUGGESTIONS.map((s) => (
-              <Pressable
-                key={s}
-                testID="ask-suggestion"
-                style={styles.suggestion}
-                disabled={dataStatus !== "ready"}
-                onPress={() => runQuery(s)}
-              >
-                <Text style={[styles.suggestionText, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>{s}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <RisingSuggestions suggestions={SUGGESTIONS} disabled={dataStatus !== "ready"} onPick={runQuery} />
         )}
 
         {cards.map((c) => (
@@ -146,27 +154,17 @@ export default function Ask() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  queryBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 8 },
-  input: {
-    flex: 1,
+  queryBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
+  field: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
+    paddingLeft: 12,
+    paddingRight: 10,
   },
-  askBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    minWidth: 60,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  askBtnDisabled: { opacity: 0.4 },
-  askBtnText: { fontSize: 14 },
-  feed: { paddingBottom: 24 },
-  suggestions: { paddingHorizontal: 16, paddingTop: 8, gap: 10 },
-  suggestion: { paddingVertical: 6 },
-  suggestionText: { fontSize: 14, fontStyle: "italic" },
+  input: { flex: 1, minWidth: 0, paddingVertical: 10, fontSize: 15 },
+  askBtn: { width: 26, height: 26, alignItems: "center", justifyContent: "center" },
+  feed: { flexGrow: 1 },
 });

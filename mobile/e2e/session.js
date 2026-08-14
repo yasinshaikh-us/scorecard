@@ -145,7 +145,7 @@ async function ensureOnHome() {
   if (await isVisible("home-screen")) return;
 
   // 2. Still not Home -- most likely parked on the Ask tab.
-  await tapIfPresent("tab-home-button");
+  await tapIfPresent("nav-home-button");
   if (await isVisible("home-screen", 5000)) return;
 
   // 3. Signed out, crashed, or wedged. A relaunch without `delete` keeps
@@ -158,4 +158,20 @@ async function ensureOnHome() {
   await launchAndSignIn({ reinstall: true });
 }
 
-module.exports = { isVisible, tapIfPresent, setInputText, settleOnHome, launchAndSignIn, ensureOnHome };
+// Scrolls Home's list until `testID` is on screen, then leaves it there.
+//
+// Needed because the Banks block is now a row per linked account rather
+// than a horizontal strip, and the Plaid Sandbox test item seeds twelve
+// accounts -- so Recent Activity starts well below the fold on CI, and a
+// bare toBeVisible() on the first transaction row fails Espresso's
+// 75%-visible rule without the app being broken. Real users have two or
+// three accounts; the emulator is the worst case, which is exactly what
+// this suite should be exercising.
+async function scrollIntoView(testID, listID = "home-transaction-list", index = 0) {
+  await waitFor(element(by.id(testID)).atIndex(index))
+    .toBeVisible()
+    .whileElement(by.id(listID))
+    .scroll(400, "down");
+}
+
+module.exports = { isVisible, tapIfPresent, setInputText, settleOnHome, launchAndSignIn, ensureOnHome, scrollIntoView };

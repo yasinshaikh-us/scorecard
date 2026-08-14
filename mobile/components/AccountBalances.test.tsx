@@ -97,6 +97,59 @@ describe("AccountBalances", () => {
     expect(await screen.findByText("No linked accounts yet")).toBeTruthy();
   });
 
+  // One Plaid item can carry many accounts -- the Sandbox test item seeds
+  // twelve. Unbounded, the block pushed Recent Activity below the fold
+  // and left the inline transaction editor opening in a sliver at the
+  // bottom of the screen, with Save drawn over the navigation bar. Seen
+  // on a real emulator; the design mockups had two banks.
+  describe("with more accounts than fit above the fold", () => {
+    const MANY = 12;
+    function seedMany() {
+      state.accounts = {
+        data: Array.from({ length: MANY }, (_, i) =>
+          account({ account_id: `acc-${i}`, name: `Account ${i}`, mask: String(1000 + i) })
+        ),
+        error: null,
+      };
+      state.balances = {
+        data: Array.from({ length: MANY }, (_, i) => ({ account_id: `acc-${i}`, current: 100 + i, available: null })),
+        error: null,
+      };
+    }
+
+    it("folds to four rows and says how many are hidden", async () => {
+      seedMany();
+      await renderWithTheme(<AccountBalances />);
+      await screen.findByText("Account 0 ••1000");
+
+      expect(screen.getAllByTestId("linked-account-row")).toHaveLength(4);
+      expect(screen.getByText("8 more")).toBeTruthy();
+      expect(screen.getByTestId("banks-expand-toggle").props.accessibilityLabel).toBe("Show all 12 accounts");
+    });
+
+    it("expands to every row, and folds back", async () => {
+      seedMany();
+      await renderWithTheme(<AccountBalances />);
+      await screen.findByText("Account 0 ••1000");
+
+      await fireEvent.press(screen.getByTestId("banks-expand-toggle"));
+      expect(screen.getAllByTestId("linked-account-row")).toHaveLength(MANY);
+      expect(screen.getByTestId("banks-expand-toggle").props.accessibilityLabel).toBe("Show fewer accounts");
+
+      await fireEvent.press(screen.getByTestId("banks-expand-toggle"));
+      expect(screen.getAllByTestId("linked-account-row")).toHaveLength(4);
+    });
+
+    it("has no fold control when every account already fits", async () => {
+      state.accounts = { data: [account()], error: null };
+      state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
+      await renderWithTheme(<AccountBalances />);
+      await screen.findByText("Checking ••1234");
+
+      expect(screen.queryByTestId("banks-expand-toggle")).toBeNull();
+    });
+  });
+
   it("Add bank: shows a confirmation banner, then calls startLink on Proceed", async () => {
     await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");
@@ -105,7 +158,7 @@ describe("AccountBalances", () => {
     expect(await screen.findByText("Only checking / savings accounts can be connected.")).toBeTruthy();
     expect(mockStartLink).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText("Proceed"));
+    await fireEvent.press(screen.getByTestId("add-bank-proceed-button"));
     expect(mockStartLink).toHaveBeenCalled();
   });
 
@@ -121,8 +174,8 @@ describe("AccountBalances", () => {
     expect(await screen.findByText(/Disconnect Checking ••1234\?/)).toBeTruthy();
     expect(global.fetch).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText("Continue"));
-    await fireEvent.press(screen.getByText(/Yes, disconnect/));
+    await fireEvent.press(screen.getByTestId("disconnect-continue-button"));
+    await fireEvent.press(screen.getByTestId("disconnect-confirm-button"));
 
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/functions/v1/plaid-disconnect"),
@@ -226,8 +279,8 @@ describe("AccountBalances", () => {
     await screen.findByText("Checking ••1234");
 
     await fireEvent.press(screen.getByTestId("disconnect-button"));
-    await fireEvent.press(screen.getByText("Continue"));
-    await fireEvent.press(screen.getByText(/Yes, disconnect/));
+    await fireEvent.press(screen.getByTestId("disconnect-continue-button"));
+    await fireEvent.press(screen.getByTestId("disconnect-confirm-button"));
 
     expect(await screen.findByText("Plaid item not found")).toBeTruthy();
     expect(screen.getByText(/Are you absolutely sure/)).toBeTruthy();
@@ -240,7 +293,7 @@ describe("AccountBalances", () => {
 
     await fireEvent.press(screen.getByTestId("add-bank-button"));
     await screen.findByText("Only checking / savings accounts can be connected.");
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("add-bank-cancel-button"));
 
     expect(screen.queryByText("Only checking / savings accounts can be connected.")).toBeNull();
     expect(screen.getByTestId("add-bank-button")).toBeTruthy();
@@ -255,7 +308,7 @@ describe("AccountBalances", () => {
 
     await fireEvent.press(screen.getByTestId("disconnect-button"));
     await screen.findByText(/Disconnect Checking ••1234\?/);
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("disconnect-cancel-button"));
 
     expect(screen.queryByText(/Disconnect Checking ••1234\?/)).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
@@ -268,9 +321,9 @@ describe("AccountBalances", () => {
     await screen.findByText("Checking ••1234");
 
     await fireEvent.press(screen.getByTestId("disconnect-button"));
-    await fireEvent.press(screen.getByText("Continue"));
+    await fireEvent.press(screen.getByTestId("disconnect-continue-button"));
     await screen.findByText(/Are you absolutely sure/);
-    await fireEvent.press(screen.getByText("Cancel"));
+    await fireEvent.press(screen.getByTestId("disconnect-final-cancel-button"));
 
     expect(screen.queryByText(/Are you absolutely sure/)).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();

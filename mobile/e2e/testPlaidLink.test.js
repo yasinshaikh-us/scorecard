@@ -50,10 +50,10 @@ describe("Plaid Link (Sandbox, test-seeded)", () => {
     //
     // .atIndex(0), not a bare id match: Plaid Sandbox's "First Platypus
     // Bank" test institution returns its whole account portfolio (not
-    // just one account), so several linked-account-chip views are on
+    // just one account), so several linked-account-row views are on
     // screen at once by design -- see appFlows.test.js's beforeAll for
     // the same fix and why.
-    await waitFor(element(by.id("linked-account-chip")).atIndex(0))
+    await waitFor(element(by.id("linked-account-row")).atIndex(0))
       .toBeVisible()
       .withTimeout(30000);
     await captureScreen("plaid-link-account-chip");

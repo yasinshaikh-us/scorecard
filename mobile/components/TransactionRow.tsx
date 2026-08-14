@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Check, ChevronDown, X } from "lucide-react-native";
 import { fmtDate, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { topCategory } from "../lib/logic";
@@ -8,6 +9,7 @@ import { iconForCategory } from "../lib/categoryIcons";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
+import IconButton from "./IconButton";
 import PickerModal from "./PickerModal";
 import type { Transaction } from "../lib/types";
 
@@ -17,7 +19,7 @@ import type { Transaction } from "../lib/types";
 // from the bank), and only rows with a real Id (linked to a
 // `transactions` row, not a client-side synthetic one) are editable.
 export default function TransactionRow({ row, CATS, onEdited }: { row: Transaction; CATS: string[]; onEdited?: () => void }) {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const [editing, setEditing] = useState(false);
   const [draftPayee, setDraftPayee] = useState(row.Payee);
   const [draftCategory, setDraftCategory] = useState(row.Category);
@@ -59,6 +61,8 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
     onEdited?.();
   }
 
+  const DraftIcon = iconForCategory(topCategory(draftCategory));
+
   if (editing) {
     return (
       <View style={[styles.editingRow, { borderBottomColor: colors.borderSubtle }]}>
@@ -70,30 +74,48 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
           editable={!saving}
           autoFocus
         />
+        {/* The one control here that keeps its words. It is a value being
+            chosen, not an action being taken, and the icon alone would
+            make the user decode the glyph set to read their own data
+            back. Icon plus name, so it still ties to the row's marker. */}
         <Pressable
           testID="transaction-edit-category-button"
           style={[styles.categorySelectBtn, { borderColor: colors.border }]}
           onPress={() => setCategoryPickerOpen(true)}
           disabled={saving}
+          accessibilityLabel={`Category: ${draftCategory}`}
         >
-          <Text style={[styles.categorySelectText, { color: colors.text, fontFamily: fontFamily.regular }]} numberOfLines={1}>
-            {draftCategory}
-          </Text>
+          <View style={styles.categorySelectValue}>
+            <DraftIcon size={14} color={catColor(draftCategory, CATS, topCategory, mode)} />
+            <Text style={[styles.categorySelectText, { color: colors.text, fontFamily: fontFamily.regular }]} numberOfLines={1}>
+              {draftCategory}
+            </Text>
+          </View>
+          <ChevronDown size={14} color={colors.textMuted} />
         </Pressable>
         <View style={styles.editActions}>
-          <Pressable testID="transaction-edit-cancel-button" onPress={() => setEditing(false)} disabled={saving} style={styles.cancelBtn}>
-            <Text style={[styles.cancelBtnText, { color: colors.textMuted, fontFamily: fontFamily.medium }]}>Cancel</Text>
-          </Pressable>
-          <Pressable
+          <IconButton
+            testID="transaction-edit-cancel-button"
+            onPress={() => setEditing(false)}
+            disabled={saving}
+            size={36}
+            accessibilityLabel="Discard changes"
+          >
+            <X size={17} color={colors.textMuted} />
+          </IconButton>
+          {/* Saving swaps the check for a spinner inside the same circle,
+              so the affirmative control never moves or disappears
+              mid-save -- the button the thumb is already on stays put. */}
+          <IconButton
             testID="transaction-edit-save-button"
             onPress={save}
             disabled={saving}
-            style={[styles.saveBtn, { backgroundColor: colors.accent }]}
+            size={36}
+            variant="accent"
+            accessibilityLabel={saving ? "Saving" : "Save changes"}
           >
-            <Text style={[styles.saveBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>
-              {saving ? "Saving…" : "Save"}
-            </Text>
-          </Pressable>
+            {saving ? <ActivityIndicator size="small" color={colors.bg} /> : <Check size={18} color={colors.bg} />}
+          </IconButton>
         </View>
         {error ? <Text style={[styles.errorText, { color: colors.danger, fontFamily: fontFamily.regular }]}>{error}</Text> : null}
         <PickerModal
@@ -107,10 +129,17 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
     );
   }
 
-  const color = catColor(row.Category, CATS, topCategory);
+  const color = catColor(row.Category, CATS, topCategory, mode);
   const Icon = iconForCategory(topCategory(row.Category));
+  // Direction, not sentiment: every expense is danger-red and every
+  // credit is accent-green, so scanning the column tells you which way
+  // money moved without reading a single figure.
   const amountColor = row.Amount < 0 ? colors.danger : colors.accent;
 
+  // Three fixed columns on the top line -- payee (flexes), category
+  // (fixed 22), amount (fixed 112) -- so the icons and the decimal points
+  // line up down the list however long the payee names are. The date gets
+  // the second line to itself.
   return (
     <Pressable
       testID="transaction-row"
@@ -118,36 +147,32 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
       onPress={row.Id != null ? startEdit : undefined}
       disabled={row.Id == null}
     >
-      <View style={styles.main}>
-        <Text style={[styles.payee, { color: colors.text, fontFamily: fontFamily.medium }]} numberOfLines={1}>
+      <View style={styles.topRow}>
+        <Text style={[styles.payee, { color: colors.text, fontFamily: fontFamily.regular }]} numberOfLines={1}>
           {row.Payee}
         </Text>
-        <View style={styles.metaRow}>
-          <View style={[styles.categoryBadge, { backgroundColor: color + "26" }]}>
-            <Icon size={11} color={color} />
-            <Text
-              testID="transaction-category-badge"
-              style={[styles.categoryText, { color, fontFamily: fontFamily.semibold }]}
-              numberOfLines={1}
-            >
-              {row.Category}
-            </Text>
-          </View>
-          <Text style={[styles.date, { color: colors.textMuted, fontFamily: fontFamily.mono }]}>{fmtDate(row.Date)}</Text>
+        {/* Icon-only: the name is redundant next to a color-coded glyph
+            the user already learns from the chart axis, and dropping it
+            is what let the row compress to two tight lines. The label is
+            what a screen reader reads instead. */}
+        <View
+          testID="transaction-category-badge"
+          accessibilityLabel={`Category: ${row.Category}`}
+          style={styles.categoryCol}
+        >
+          <Icon size={15} color={color} />
         </View>
+        <Text style={[styles.amount, { color: amountColor, fontFamily: fontFamily.mono }]}>{fmtMoney(row.Amount)}</Text>
       </View>
-      <Text style={[styles.amount, { color: amountColor, fontFamily: fontFamily.mono }]}>{fmtMoney(row.Amount)}</Text>
+      <Text style={[styles.date, { color: colors.textFaint, fontFamily: fontFamily.mono }]}>{fmtDate(row.Date)}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 7,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   // Column flow (RN's default), not row: editInput/categorySelectBtn's
@@ -166,28 +191,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  main: { flex: 1, marginRight: 12 },
-  payee: { fontSize: 15 },
-  metaRow: { flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8 },
-  categoryBadge: {
+  topRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  payee: { flex: 1, minWidth: 0, fontSize: 13 },
+  categoryCol: { flexBasis: 22, flexGrow: 0, flexShrink: 0, alignItems: "center", justifyContent: "center" },
+  amount: { flexBasis: 112, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "600" },
+  date: { fontSize: 10.5, marginTop: 1 },
+  editInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginBottom: 8 },
+  categorySelectBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    flexShrink: 1,
+    justifyContent: "space-between",
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
   },
-  categoryText: { fontSize: 11 },
-  date: { fontSize: 11 },
-  amount: { fontSize: 15, fontWeight: "600" },
-  editInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginBottom: 8 },
-  categorySelectBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8 },
+  categorySelectValue: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 },
   categorySelectText: { fontSize: 13 },
-  editActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
-  cancelBtn: { paddingVertical: 6, paddingHorizontal: 10 },
-  cancelBtnText: { fontSize: 13 },
-  saveBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
-  saveBtnText: { fontSize: 13 },
+  editActions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 10 },
   errorText: { fontSize: 12, marginTop: 6 },
 });

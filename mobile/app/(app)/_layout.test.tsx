@@ -41,11 +41,11 @@ jest.mock("../../components/PlaidLinkGate", () => {
 
 jest.mock("expo-router", () => {
   const { Text: RNText } = require("react-native");
-  const Tabs = ({ children }: { children: any }) => <>{children}</>;
-  Tabs.Screen = () => null;
+  const Stack = ({ children }: { children: any }) => <>{children}</>;
+  Stack.Screen = () => null;
   return {
     Redirect: ({ href }: { href: string }) => <RNText testID="redirect">{href}</RNText>,
-    Tabs,
+    Stack,
   };
 });
 
@@ -116,7 +116,7 @@ describe("AppLayout", () => {
     expect(mockFrom.mock.calls.length).toBe(callsBeforeSkip);
   });
 
-  it("renders the app (DataProvider + tabs) directly when a bank is already linked", async () => {
+  it("renders the app (DataProvider + Stack) directly when a bank is already linked", async () => {
     mockUseAuth.mockReturnValue({ session: { access_token: "tok" }, loading: false });
     state.plaidItems = { data: [{ id: "item-1", institution_name: "Chase", status: "active" }], error: null };
     await renderWithTheme(<AppLayout />);

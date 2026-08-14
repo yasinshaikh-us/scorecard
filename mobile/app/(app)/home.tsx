@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useData } from "../../lib/DataProvider";
 import { useTheme } from "../../lib/ThemeProvider";
 import { fontFamily } from "../../lib/theme";
@@ -21,6 +21,12 @@ const RECENT_DAYS = 7;
 export default function Home() {
   const { transactions, dataStatus, CATS, refresh } = useData();
   const { colors } = useTheme();
+  // edges={["top"]} only insets the top, and the bottom tab bar that used
+  // to occupy the space above the navigation bar is gone -- so without
+  // this the last transaction row renders underneath the system
+  // navigation bar. A real Stage 2 screenshot caught it with the home
+  // indicator sitting on top of a row.
+  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -45,14 +51,14 @@ export default function Home() {
 
   return (
     <SafeAreaView testID="home-screen" style={[styles.screen, { backgroundColor: colors.bg }]} edges={["top"]}>
-      <ScreenHeader onOpenRules={() => setRulesOpen(true)} />
+      <ScreenHeader onOpenRules={() => setRulesOpen(true)} screen="home" />
 
       <FlatList
         testID="home-transaction-list"
         data={recent}
         keyExtractor={(item, i) => String(item.Id ?? i)}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textMuted} />}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
         ListHeaderComponent={
           <>
             <AccountBalances onLinked={refresh} />
@@ -90,7 +96,7 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  listContent: { paddingBottom: 24 },
+  listContent: {},
   sectionTitle: {
     fontSize: 11,
     textTransform: "uppercase",

@@ -1,5 +1,10 @@
 import { Platform } from "react-native";
 
+// Which of the two token sets is in force. Lives here rather than in
+// ThemeProvider so lib/palette.ts can key its two tonal variants off the
+// same type without importing a React module.
+export type ThemeMode = "light" | "dark";
+
 export type ThemeColors = {
   bg: string;
   surface: string;

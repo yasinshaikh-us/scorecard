@@ -18,13 +18,27 @@ the only copy.
 Covers the full set of flows this app is meant to have:
 
 - **Auth**: Google sign-in, encrypted session storage.
-- **Home**: account balances, last-7-days transaction list.
+- **Home**: account balances (one row per linked account), last-7-days
+  transaction list.
+- **Navigation**: no tab bar. `ScreenHeader`'s second slot cross-navigates
+  between the app's two screens — Ask from Home, Home from Ask — so the
+  control is never a no-op pointing at the screen you are already on. With
+  only two destinations, a persistent bottom bar was a lot of permanent
+  furniture, and it sat in the thumb area the transaction list wants.
+- **No worded buttons**: every control in the app is a glyph. Fill carries
+  the meaning that the label used to — accent for the affirmative action,
+  danger for the destructive one, outline for dismiss, no fill for a
+  control beside an input. Every icon-only control carries an
+  `accessibilityLabel`, which is now the whole screen-reader surface of
+  the UI; `components/IconButton.tsx` is the single shape they all use,
+  and it pads any circle under 44pt out to a 44pt touch target.
 - **Ask**: natural-language questions → chart (bar/pie/line, tap-to-filter)
   → matching transaction list, via the `query` Edge Function.
-- **Plaid Link**: connect a bank (first-login gate + "+ Add bank" on Home)
-  and disconnect one (two-step confirmation), via `react-native-plaid-link-sdk`.
+- **Plaid Link**: connect a bank (first-login gate + the add button on
+  Home) and disconnect one (two-step confirmation), via
+  `react-native-plaid-link-sdk`.
 - **Category rules**: an "if payee/category contains X, set Y" engine,
-  opened from Home's "Rules" button.
+  opened from the header's rules button.
 - **Inline transaction editing**: tap a row to edit payee/category, same
   `manually_edited` flag the backend respects, so rules/Plaid sync don't
   clobber it.
@@ -32,9 +46,13 @@ Covers the full set of flows this app is meant to have:
 Deliberately simpler than originally designed, tracked here rather than
 silently dropped:
 
-- Idle-state Ask suggestions are a static tappable list, not floating or
-  animated (no straightforward RN equivalent without pulling in
-  Reanimated).
+- ~~Idle-state Ask suggestions are a static tappable list, not floating
+  or animated.~~ **Done** — `components/RisingSuggestions.tsx` drifts them
+  upward as bare text, scattered left/centre/right, via
+  `react-native-reanimated`. Respecting the OS reduce-motion setting
+  swaps in a plain static column rather than freezing the animated one:
+  the drifting layout stacks absolutely-positioned items in a single
+  space, so held still they would all render on top of each other.
 - No chart tooltip yet (gifted-charts' pointer/tooltip config is a
   separate lift) — tapping a bar/slice/point still filters the list below.
 - No row-detail popover on tap/long-press (the original was
@@ -75,7 +93,7 @@ cp .env.example .env
 
 **`react-native-plaid-link-sdk` is a native module — Expo Go can no longer
 run this app.** Any screen is fine in Expo Go until you touch Plaid Link
-(sign-in, Home minus "+ Add bank", Ask, Rules, inline editing all still
+(sign-in, Home minus the add-bank button, Ask, Rules, inline editing all still
 work there), but `createPlaidLinkSession` will throw "native module not
 found" the moment it's called. To actually test the whole app, build a
 custom dev client instead:

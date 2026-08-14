@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Landmark, Unlink } from "lucide-react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ArrowRight, ChevronDown, ChevronUp, FlaskConical, Landmark, Plus, Unlink, X } from "lucide-react-native";
 import { useAuth, TEST_LOGIN_ENABLED } from "../lib/AuthProvider";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
@@ -31,6 +31,7 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   const [disconnect, setDisconnect] = useState<DisconnectState | null>(null);
   const [testLinking, setTestLinking] = useState(false);
   const [testLinkError, setTestLinkError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const loadBalances = useCallback(async () => {
     const [accountsRes, balancesRes] = await Promise.all([
@@ -69,6 +70,13 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   });
 
   if (!balances) return <ActivityIndicator style={styles.loading} color={colors.accent} />;
+
+  // Four keeps the block under a quarter of the screen, which is what
+  // leaves room for Recent Activity -- the reason anyone opens this
+  // screen -- to start above the fold.
+  const COLLAPSED_MAX = 4;
+  const shown = expanded ? balances : balances.slice(0, COLLAPSED_MAX);
+  const hidden = balances.length - shown.length;
 
   function startDisconnect(account: Balance) {
     const siblingLabels = (balances || [])
@@ -138,19 +146,23 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
           <Landmark size={14} color={colors.textMuted} />
           <Text style={[styles.headerLabel, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}>Banks</Text>
         </View>
+        {/* Add sits on the block, not on any one bank: it adds an
+            institution, while unlink acts on the row it sits in. */}
         <View style={styles.headerButtons}>
           {TEST_LOGIN_ENABLED ? (
-            <Pressable
+            <IconButton
               testID="test-plaid-link-button"
               onPress={startTestLink}
               disabled={testLinking}
-              hitSlop={6}
-              style={styles.testLinkBtn}
+              size={28}
+              accessibilityLabel={testLinking ? "Linking test bank" : "Link test bank"}
             >
-              <Text style={[styles.testLinkBtnText, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
-                {testLinking ? "Linking…" : "Link test bank"}
-              </Text>
-            </Pressable>
+              {testLinking ? (
+                <ActivityIndicator size="small" color={colors.textFaint} />
+              ) : (
+                <FlaskConical size={13} color={colors.textFaint} />
+              )}
+            </IconButton>
           ) : null}
           {!showConfirm && !disconnect && (
             <IconButton
@@ -163,36 +175,83 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
               {connecting ? (
                 <ActivityIndicator size="small" color={colors.textMuted} />
               ) : (
-                <Text style={[styles.addBtnText, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}>+</Text>
+                <Plus size={14} color={colors.textMuted} strokeWidth={2.2} />
               )}
             </IconButton>
           )}
         </View>
       </View>
 
+      {/* One card, one row per account. The previous horizontal chip
+          strip put a scroll gesture between the user and their own
+          balances -- with three banks linked, the third was off-screen
+          with nothing indicating it existed. Rows cascade downward
+          instead, so account N+1 costs vertical space rather than
+          discoverability, and every amount lands in the same right-hand
+          column where they can be compared at a glance. */}
       {balances.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.row}>
-          {balances.map((b) => (
-            <View key={b.id} testID="linked-account-chip" style={[styles.chip, { backgroundColor: colors.surfaceRecessed }]}>
-              <View style={styles.chipTopRow}>
-                <Text style={[styles.chipLabel, { color: colors.textMuted, fontFamily: fontFamily.regular }]} numberOfLines={1}>
-                  {b.label}
-                </Text>
-                <Pressable testID="disconnect-button" onPress={() => startDisconnect(b)} hitSlop={6}>
-                  <Unlink size={14} color={colors.danger} />
-                </Pressable>
-              </View>
+        <View style={[styles.bankCard, { backgroundColor: colors.surface }]}>
+          {shown.map((b, i) => (
+            <View
+              key={b.id}
+              testID="linked-account-row"
+              style={[
+                styles.bankRow,
+                { borderBottomColor: colors.borderSubtle },
+                i === shown.length - 1 && hidden === 0 ? styles.bankRowLast : null,
+              ]}
+            >
+              <Text style={[styles.bankLabel, { color: colors.textMuted, fontFamily: fontFamily.regular }]} numberOfLines={1}>
+                {b.label}
+              </Text>
               <Text
                 style={[
-                  styles.chipAmount,
+                  styles.bankAmount,
                   { color: b.amount < 0 ? colors.danger : colors.text, fontFamily: fontFamily.mono },
                 ]}
               >
                 {fmtMoney(b.amount)}
               </Text>
+              <IconButton
+                testID="disconnect-button"
+                onPress={() => startDisconnect(b)}
+                size={28}
+                accessibilityLabel={`Disconnect ${b.label}`}
+              >
+                <Unlink size={14} color={colors.danger} />
+              </IconButton>
             </View>
           ))}
-        </ScrollView>
+
+          {/* One Plaid item can carry a lot of accounts -- the Sandbox
+              test item seeds twelve, and a real user with several banks
+              gets there too. Unbounded, the block ate 62% of the screen:
+              Recent Activity started below the fold, and tapping a
+              transaction opened its editor in the sliver left at the
+              bottom, with Save drawn over the navigation bar. Caught on a
+              real emulator, not in review -- the mockups had two banks.
+              Rows still cascade, as designed; they just start folded once
+              there are more than a screenful. */}
+          {hidden > 0 || expanded ? (
+            <Pressable
+              testID="banks-expand-toggle"
+              onPress={() => setExpanded((e) => !e)}
+              style={[styles.expandRow, { borderTopColor: colors.borderSubtle }]}
+              accessibilityLabel={
+                expanded ? "Show fewer accounts" : `Show all ${balances.length} accounts`
+              }
+            >
+              <Text style={[styles.expandText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
+                {expanded ? "" : `${hidden} more`}
+              </Text>
+              {expanded ? (
+                <ChevronUp size={15} color={colors.textMuted} />
+              ) : (
+                <ChevronDown size={15} color={colors.textMuted} />
+              )}
+            </Pressable>
+          ) : null}
+        </View>
       ) : (
         <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>No linked accounts yet</Text>
       )}
@@ -203,26 +262,27 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             Only checking / savings accounts can be connected.
           </Text>
           <View style={styles.confirmActions}>
-            <Pressable
+            <IconButton
               testID="add-bank-cancel-button"
               onPress={() => setShowConfirm(false)}
-              style={[styles.cancelBtn, { borderColor: colors.border }]}
+              size={36}
+              accessibilityLabel="Cancel adding a bank"
             >
-              <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
-            </Pressable>
-            <Pressable
+              <X size={17} color={colors.textMuted} />
+            </IconButton>
+            <IconButton
               testID="add-bank-proceed-button"
               onPress={() => {
                 setShowConfirm(false);
                 startLink();
               }}
               disabled={connecting}
-              style={[styles.proceedBtn, { backgroundColor: colors.accent }]}
+              size={36}
+              variant="accent"
+              accessibilityLabel={connecting ? "Connecting" : "Continue to Plaid"}
             >
-              <Text style={[styles.proceedBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>
-                {connecting ? "Connecting…" : "Proceed"}
-              </Text>
-            </Pressable>
+              {connecting ? <ActivityIndicator size="small" color={colors.bg} /> : <ArrowRight size={18} color={colors.bg} />}
+            </IconButton>
           </View>
         </View>
       )}
@@ -237,20 +297,26 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             Existing transaction history is kept for 90 days in case you reconnect, then permanently deleted.
           </Text>
           <View style={styles.confirmActions}>
-            <Pressable
+            <IconButton
               testID="disconnect-cancel-button"
               onPress={() => setDisconnect(null)}
-              style={[styles.cancelBtn, { borderColor: colors.border }]}
+              size={36}
+              accessibilityLabel="Keep this bank connected"
             >
-              <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
-            </Pressable>
-            <Pressable
+              <X size={17} color={colors.textMuted} />
+            </IconButton>
+            {/* Step 1 only advances, so it takes the neutral arrow. The
+                unlink glyph is held back for step 2, where the tap
+                actually disconnects. */}
+            <IconButton
               testID="disconnect-continue-button"
               onPress={() => setDisconnect((d) => (d ? { ...d, step: 2 } : d))}
-              style={[styles.proceedBtn, { backgroundColor: colors.accent }]}
+              size={36}
+              variant="accent"
+              accessibilityLabel="Continue to the final disconnect confirmation"
             >
-              <Text style={[styles.proceedBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>Continue</Text>
-            </Pressable>
+              <ArrowRight size={18} color={colors.bg} />
+            </IconButton>
           </View>
         </View>
       )}
@@ -263,25 +329,37 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
             through Plaid to restore access, and after 90 days any transaction history that isn't reconnected is gone
             for good.
           </Text>
+          {/* The one place in the app where a glyph carries an
+              irreversible action. It gets the danger fill, the unlink
+              mark rather than a generic arrow, and -- since the label
+              that used to name the account is gone -- an
+              accessibilityLabel that still names it. */}
           <View style={styles.confirmActions}>
-            <Pressable
+            <IconButton
               testID="disconnect-final-cancel-button"
               onPress={() => setDisconnect(null)}
               disabled={disconnect.submitting}
-              style={[styles.cancelBtn, { borderColor: colors.border }]}
+              size={36}
+              accessibilityLabel="Keep this bank connected"
             >
-              <Text style={[styles.cancelBtnText, { color: colors.text, fontFamily: fontFamily.medium }]}>Cancel</Text>
-            </Pressable>
-            <Pressable
+              <X size={17} color={colors.textMuted} />
+            </IconButton>
+            <IconButton
               testID="disconnect-confirm-button"
               onPress={confirmDisconnect}
               disabled={disconnect.submitting}
-              style={[styles.deleteBtn, { backgroundColor: colors.danger }]}
+              size={36}
+              variant="danger"
+              accessibilityLabel={
+                disconnect.submitting ? "Disconnecting" : `Yes, permanently disconnect ${disconnect.label}`
+              }
             >
-              <Text style={[styles.deleteBtnText, { color: colors.bg, fontFamily: fontFamily.semibold }]}>
-                {disconnect.submitting ? "Disconnecting…" : `Yes, disconnect ${disconnect.label}`}
-              </Text>
-            </Pressable>
+              {disconnect.submitting ? (
+                <ActivityIndicator size="small" color={colors.bg} />
+              ) : (
+                <Unlink size={18} color={colors.bg} />
+              )}
+            </IconButton>
           </View>
           {disconnect.error ? (
             <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{disconnect.error}</Text>
@@ -297,30 +375,26 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 16 },
+  // Deliberately more than the gap between rows inside either block: the
+  // banks and the activity list are different kinds of thing, and at 16
+  // they read as one continuous list.
+  wrap: { marginBottom: 26 },
   loading: { marginVertical: 20 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, marginBottom: 8 },
   headerLabelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   headerLabel: { fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 },
-  headerButtons: { flexDirection: "row", alignItems: "center", gap: 12 },
-  addBtnText: { fontSize: 16, lineHeight: 18 },
-  testLinkBtn: {},
-  testLinkBtnText: { fontSize: 12, textDecorationLine: "underline" },
-  row: { paddingLeft: 16 },
+  headerButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
   empty: { paddingHorizontal: 16 },
-  chip: { borderRadius: 12, padding: 12, marginRight: 10, minWidth: 150 },
-  chipTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  chipLabel: { fontSize: 12, flex: 1, marginRight: 6 },
-  chipAmount: { fontSize: 18, fontWeight: "700" },
+  bankCard: { marginHorizontal: 16, borderRadius: 12, overflow: "hidden" },
+  bankRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  bankRowLast: { borderBottomWidth: 0 },
+  expandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
+  expandText: { fontSize: 12 },
+  bankLabel: { flex: 1, minWidth: 0, fontSize: 13 },
+  bankAmount: { flexBasis: 96, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "700" },
   confirmBanner: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
   confirmBannerFinal: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
   confirmText: { fontSize: 13, lineHeight: 18 },
-  confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 10 },
-  cancelBtn: { paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderRadius: 7 },
-  cancelBtnText: { fontSize: 13 },
-  proceedBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
-  proceedBtnText: { fontSize: 13 },
-  deleteBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
-  deleteBtnText: { fontSize: 13 },
+  confirmActions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 10 },
   error: { fontSize: 12, marginTop: 8, paddingHorizontal: 16 },
 });
