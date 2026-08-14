@@ -433,10 +433,21 @@ account (`synthetic-monitor@scorecard.test`) without touching Google at
 all.
 
 - **Gated to non-production builds only.** `eas.json`'s `development`/
-  `preview` profiles set `EXPO_PUBLIC_ENABLE_TEST_LOGIN=true` plus a
-  shared `EXPO_PUBLIC_TEST_LOGIN_SECRET`; `production` sets neither, so
-  the "Sign in as test user" link on the login screen (and the code
-  behind it) is compiled out of any build a real user would install.
+  `preview` profiles set `EXPO_PUBLIC_ENABLE_TEST_LOGIN=true`;
+  `production` sets neither that nor the secret below, so the "Sign in as
+  test user" link on the login screen (and the code behind it) is
+  compiled out of any build a real user would install.
+- **The secret itself is not committed.** `EXPO_PUBLIC_TEST_LOGIN_SECRET`
+  comes from a GitHub repository secret of the same name (see
+  `mobile-detox.yml` / `mobile-build.yml`), and from `eas secret:create`
+  for EAS builds. It used to be a literal in `eas.json` and in both
+  workflows, on the argument that it can only ever act on one dummy
+  account -- true, but this repository is public, so it was also
+  world-readable, and anyone could mint a session for that account. Note
+  the value is still inlined into the app bundle at build time (that is
+  what `EXPO_PUBLIC_` means) and is extractable from any installed
+  build; keeping it out of git is a narrower goal than keeping it
+  secret, and the only achievable one.
 - **The account's real password never leaves the server.** The shared
   secret only proves "this build is allowed to ask for a test session" —
   it can't be used to look up or change the account's actual Supabase
@@ -503,11 +514,12 @@ UI.
   failure logs loudly rather than reddening an otherwise-green run, and
   the start-of-run cleanup remains the safety net for a run that never
   reaches teardown (a cancelled job, a crashed emulator).
-- **Gated the same way as test login**: `eas.json`'s `development`/
-  `preview` profiles set a separate `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET`
-  (independently rotatable from `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same
-  reasoning) that must match the `TEST_PLAID_LINK_SECRET` Edge Function
-  secret. Even a leaked secret can only ever link a Sandbox test bank
+- **Gated the same way as test login**: a separate
+  `EXPO_PUBLIC_TEST_PLAID_LINK_SECRET` (independently rotatable from
+  `EXPO_PUBLIC_TEST_LOGIN_SECRET`, same reasoning) must match the
+  `TEST_PLAID_LINK_SECRET` Edge Function secret. Sourced from a GitHub
+  repository secret, not committed -- same reasoning as test login
+  above. Even a leaked secret can only ever link a Sandbox test bank
   using Sandbox-only credentials that have no access to any real bank
   data.
 - **Idempotent.** Before linking, it disconnects any bank already linked

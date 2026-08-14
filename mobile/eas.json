@@ -14,9 +14,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_ENABLE_TEST_LOGIN": "true",
-        "EXPO_PUBLIC_TEST_LOGIN_SECRET": "0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea",
-        "EXPO_PUBLIC_TEST_PLAID_LINK_SECRET": "231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55"
+        "EXPO_PUBLIC_ENABLE_TEST_LOGIN": "true"
       }
     },
     "preview": {
@@ -24,9 +22,7 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_ENABLE_TEST_LOGIN": "true",
-        "EXPO_PUBLIC_TEST_LOGIN_SECRET": "0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea",
-        "EXPO_PUBLIC_TEST_PLAID_LINK_SECRET": "231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55"
+        "EXPO_PUBLIC_ENABLE_TEST_LOGIN": "true"
       }
     },
     "production": {
