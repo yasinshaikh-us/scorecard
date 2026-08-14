@@ -41,7 +41,7 @@
 // row can no longer misdirect a tap.
 const { captureScreen } = require("./screenshot");
 const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
-const { launchAndSignIn, ensureOnHome, setInputText } = require("./session");
+const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require("./session");
 
 // Namespaced per run, so a Stage 2 job running concurrently on another ref
 // cannot collide with these and afterEach can delete exactly what this run
@@ -229,7 +229,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   });
 
   it("Transaction row: edit and save a category change", async () => {
-    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
+    await scrollIntoView("transaction-row");
     await element(by.id("transaction-row")).atIndex(0).tap();
 
     // tapReturnKey(), not straight into the next tap: transaction-edit-
@@ -253,13 +253,13 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     // completed AND edit mode closed -- no need to separately wait for
     // the edit UI to disappear.
     await waitFor(element(by.id("transaction-category-badge")).atIndex(0))
-      .toHaveText("Miscellaneous")
+      .toHaveLabel("Category: Miscellaneous")
       .withTimeout(10000);
     await captureScreen("transaction-edited");
   });
 
   it("Transaction row: Cancel discards edits without saving", async () => {
-    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
+    await scrollIntoView("transaction-row");
     await element(by.id("transaction-row")).atIndex(0).tap();
 
     // setInputText replaces the field's whole contents, so the separate
@@ -285,17 +285,17 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
   it("Account management: add-bank and disconnect banners can be cancelled", async () => {
     await element(by.id("add-bank-button")).tap();
-    await expect(element(by.id("add-bank-cancel-button"))).toBeVisible();
+    await scrollIntoView("add-bank-cancel-button");
     await captureScreen("add-bank-confirm-banner");
     await element(by.id("add-bank-cancel-button")).tap();
 
     await element(by.id("disconnect-button")).atIndex(0).tap();
-    await expect(element(by.id("disconnect-cancel-button"))).toBeVisible();
+    await scrollIntoView("disconnect-cancel-button");
     await element(by.id("disconnect-cancel-button")).tap();
 
     await element(by.id("disconnect-button")).atIndex(0).tap();
     await element(by.id("disconnect-continue-button")).tap();
-    await expect(element(by.id("disconnect-final-cancel-button"))).toBeVisible();
+    await scrollIntoView("disconnect-final-cancel-button");
     await captureScreen("disconnect-final-confirm-banner");
     await element(by.id("disconnect-final-cancel-button")).tap();
 

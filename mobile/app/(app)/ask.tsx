@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageCircleQuestion } from "lucide-react-native";
 import { useAuth } from "../../lib/AuthProvider";
 import { useData } from "../../lib/DataProvider";
@@ -39,6 +39,9 @@ export default function Ask() {
   const { session, signOut } = useAuth();
   const { transactions, dataStatus, CATS, refresh } = useData();
   const { colors } = useTheme();
+  // Same reason as Home: nothing reserves the navigation bar's space now
+  // that the tab bar is gone.
+  const insets = useSafeAreaInsets();
 
   const [input, setInput] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
@@ -124,7 +127,10 @@ export default function Ask() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.feed} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.feed, { paddingBottom: insets.bottom + 24 }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {cards.length === 0 && (
           <RisingSuggestions suggestions={SUGGESTIONS} disabled={dataStatus !== "ready"} onPick={runQuery} />
         )}
@@ -160,5 +166,5 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, minWidth: 0, paddingVertical: 10, fontSize: 15 },
   askBtn: { width: 26, height: 26, alignItems: "center", justifyContent: "center" },
-  feed: { flexGrow: 1, paddingBottom: 24 },
+  feed: { flexGrow: 1 },
 });
