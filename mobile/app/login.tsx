@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { Redirect } from "expo-router";
 import Constants from "expo-constants";
@@ -49,6 +50,14 @@ function GoogleIcon({ size = 18 }: { size?: number }) {
 export default function Login() {
   const { session, signInWithGoogle, signInWithTestAccount } = useAuth();
   const { colors } = useTheme();
+  // This screen is a plain centred View rather than a SafeAreaView, so
+  // that the stack centres on the whole screen instead of on the area
+  // between the system bars. That leaves its two absolutely-positioned
+  // elements to handle the insets themselves -- a real Stage 2
+  // screenshot caught both: the toggle drawn over the status bar's
+  // battery icon, and the version sitting under the navigation bar's
+  // home indicator.
+  const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,7 +89,7 @@ export default function Login() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={styles.themeToggleWrap}>
+      <View style={[styles.themeToggleWrap, { top: insets.top + 20 }]}>
         <ThemeToggleButton />
       </View>
 
@@ -132,7 +141,10 @@ export default function Login() {
       {/* Anchored to the bottom rather than added to the centred stack,
           so it never shifts when the stack grows -- and stays out of the
           way. */}
-      <Text testID="app-version" style={[styles.version, { color: colors.textFaint, fontFamily: fontFamily.mono }]}>
+      <Text
+        testID="app-version"
+        style={[styles.version, { bottom: insets.bottom + 18, color: colors.textFaint, fontFamily: fontFamily.mono }]}
+      >
         v{VERSION}
       </Text>
     </View>
@@ -141,12 +153,12 @@ export default function Login() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 16 },
-  themeToggleWrap: { position: "absolute", top: 20, right: 20 },
+  themeToggleWrap: { position: "absolute", right: 20 },
   mark: { width: 64, height: 64, borderRadius: 15 },
   title: { fontSize: 32, letterSpacing: -0.5, marginBottom: -6 },
   tagline: { fontSize: 14.5, marginBottom: 8 },
   testLogin: { borderWidth: 0 },
   errorSlot: { minHeight: 19, alignItems: "center", justifyContent: "center" },
   error: { textAlign: "center", fontSize: 13 },
-  version: { position: "absolute", left: 0, right: 0, bottom: 18, textAlign: "center", fontSize: 10, letterSpacing: 0.4 },
+  version: { position: "absolute", left: 0, right: 0, textAlign: "center", fontSize: 10, letterSpacing: 0.4 },
 });

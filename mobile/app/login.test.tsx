@@ -1,6 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { StyleSheet } from "react-native";
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { renderWithTheme } from "../lib/testUtils";
+import { renderWithTheme, TEST_METRICS } from "../lib/testUtils";
 import Login from "./login";
 
 const mockSignInWithGoogle = jest.fn() as jest.Mock<any>;
@@ -86,6 +87,22 @@ describe("Login", () => {
     await fireEvent.press(screen.getByTestId("test-signin-button"));
     expect(mockSignInWithTestAccount).toHaveBeenCalled();
     expect(await screen.findByText("bad secret")).toBeTruthy();
+  });
+
+  // Regression: a real Stage 2 screenshot showed the version rendered
+  // under the navigation bar's home indicator and the theme toggle drawn
+  // over the status bar's battery icon. This screen is a plain centred
+  // View, so both absolutely-positioned elements have to add the insets
+  // themselves -- flattened here because the style is an array.
+  it("keeps the version and theme toggle clear of the system bars", async () => {
+    notSignedIn();
+    await renderWithTheme(<Login />);
+
+    const version = StyleSheet.flatten(screen.getByTestId("app-version").props.style);
+    expect(version.bottom).toBe(TEST_METRICS.insets.bottom + 18);
+
+    const toggle = StyleSheet.flatten(screen.getByTestId("theme-toggle-button").parent!.props.style);
+    expect(toggle.top).toBe(TEST_METRICS.insets.top + 20);
   });
 
   it("clears a previous error on a fresh attempt", async () => {
