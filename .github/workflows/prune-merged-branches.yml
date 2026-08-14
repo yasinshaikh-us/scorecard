@@ -163,44 +163,65 @@ jobs:
           jq -r 'keys[]' <<<"$SECRETS_JSON" | grep -vix 'github_token' | sort -u > /tmp/have-secrets
           jq -r 'keys[]' <<<"$VARS_JSON" | sort -u > /tmp/have-vars
 
-          # A name counts as referenced if it appears anywhere in the
-          # tree outside .git -- workflows are the usual home, but a
-          # secret can also be named in a script, a config, or docs that
-          # tell someone to set it.
-          scan() {
+          # Two different questions, and conflating them is how a
+          # live secret gets deleted or a dead one kept:
+          #
+          #   1. Does a workflow consume it? Only `secrets.NAME` in
+          #      .github/workflows makes an Actions secret do anything.
+          #      Nothing else in the tree can read one.
+          #   2. Is the name known to the repo at all? A name can appear
+          #      in .env.example, a script, or the docs while no workflow
+          #      touches it -- typically because the value lives in
+          #      another store (Supabase's function env) and GitHub holds
+          #      a stale copy. Dead here, but worth naming rather than
+          #      silently dropping.
+          #
+          # Bucket 1 is the safety check; bucket 2 is the explanation.
+          classify() {
+            local ctx="$1"
             while read -r name; do
               [ -z "$name" ] && continue
-              if grep -rqF "$name" . --exclude-dir=.git; then
-                echo "used $name"
+              if grep -rqE "$ctx\\.$name([^A-Za-z0-9_]|$)" .github/workflows; then
+                echo "live $name consumed by a workflow"
+              elif grep -rqF "$name" . --exclude-dir=.git --exclude-dir=.github; then
+                local where
+                where=$(grep -rlF "$name" . --exclude-dir=.git --exclude-dir=.github | head -3 | sed 's|^\./||' | tr '\n' ' ' | sed 's/ $//')
+                echo "dead $name no workflow reads it; name appears in $where"
               else
-                echo "unused $name"
+                echo "dead $name referenced nowhere"
               fi
             done
           }
 
-          scan < /tmp/have-secrets > /tmp/secret-report
-          scan < /tmp/have-vars > /tmp/var-report
+          classify secrets < /tmp/have-secrets > /tmp/secret-report
+          classify vars < /tmp/have-vars > /tmp/var-report
 
           emit() {
             local label="$1" file="$2"
-            local unused used
-            unused=$(grep -c '^unused ' "$file" || true)
-            used=$(grep -c '^used ' "$file" || true)
+            local dead live
+            dead=$(grep -c '^dead ' "$file" || true)
+            live=$(grep -c '^live ' "$file" || true)
             {
               echo "### $label"
               echo
-              echo "**Referenced nowhere in the tree ($unused)** -- candidates for deletion:"
+              # Deliberately not "safe to delete" flatly: a name here
+              # may still be a live secret in Supabase's function env,
+              # where the app actually reads it. What is dead is the
+              # GitHub *copy*, which nothing can consume.
+              echo "**Inert ($dead)** -- no workflow can read these, so deleting the GitHub copy changes no behaviour. Read the Why column before deleting the value anywhere else:"
               echo
-              if [ "$unused" -gt 0 ]; then
-                sed -n 's/^unused /- `/p' "$file" | sed 's/$/`/'
+              if [ "$dead" -gt 0 ]; then
+                echo "| Name | Why |"
+                echo "| --- | --- |"
+                sed -n 's/^dead \([^ ]*\) \(.*\)$/| `\1` | \2 |/p' "$file"
               else
                 echo "_None._"
               fi
               echo
-              echo "<details><summary>Still referenced ($used)</summary>"
+              echo "<details><summary>In use ($live)</summary>"
               echo
-              if [ "$used" -gt 0 ]; then
-                sed -n 's/^used /- `/p' "$file" | sed 's/$/`/'
+              if [ "$live" -gt 0 ]; then
+                sed -n 's/^live \([^ ]*\) .*$/- `\1`/p' "$file"
               else
                 echo "_None._"
               fi
