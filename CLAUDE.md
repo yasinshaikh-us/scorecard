@@ -26,12 +26,12 @@ Claude acts without asking for confirmation across normal operations on
 this project. Specifically and non-exhaustively:
 
 **GitHub** — read anything; create/update/merge/close PRs; comment and
-review; create branches; push; trigger, re-run and cancel workflows;
-read logs and download artifacts; manage PR subscriptions.
+review; create and delete branches; push; trigger, re-run and cancel
+workflows; read logs and download artifacts; manage PR subscriptions.
 
 **Supabase** — read anything; `execute_sql`; `apply_migration`; deploy
 Edge Functions; read logs and advisors; list/inspect projects, tables,
-extensions, migrations; generate types; create/merge/rebase/reset
+extensions, migrations; generate types; create/merge/rebase/reset/delete
 development branches.
 
 **Local** — install dependencies; run any test, linter, typechecker or
@@ -48,7 +48,7 @@ different work, or when proceeding would be unsafe.
 Short list, everything else is covered above:
 
 - Force-push, hard reset, or history rewrite on `main`
-- Deleting branches, Supabase projects, or Supabase branches
+- Deleting a Supabase project
 - Pausing or restoring a Supabase project
 - `execute_sql` that drops or truncates a table, or issues an unscoped
   `DELETE`/`UPDATE` against production data (this database holds real
