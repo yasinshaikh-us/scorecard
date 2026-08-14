@@ -28,11 +28,27 @@
 // real linked bank account, and this test-only path has no business
 // changing their behavior.
 //
-// Gated by a shared secret (TEST_PLAID_LINK_SECRET, an Edge Function
-// secret, same pattern as test-login's TEST_LOGIN_SECRET -- independently
-// rotatable, and leaking it can only ever link a Sandbox test bank to the
-// one hardcoded dummy account below, using Sandbox-only credentials that
-// have no access to any real bank data).
+// Gated TWICE, and both gates matter:
+//
+//   1. A shared secret (TEST_PLAID_LINK_SECRET, an Edge Function secret,
+//      same pattern as test-login's TEST_LOGIN_SECRET -- independently
+//      rotatable).
+//   2. The caller must BE the designated dummy account
+//      (synthetic-monitor@scorecard.test). This function writes rows
+//      scoped to whatever user_id the JWT carries, so without this check
+//      the secret plus any signed-in session is enough to write Sandbox
+//      data into a REAL user's account -- which is exactly what happened:
+//      the app used to expose a "Link test bank" button in any build with
+//      test login enabled (the preview profile, i.e. the build on a real
+//      phone), so one tap while signed in as a real user seeded twelve
+//      Sandbox accounts into that account AND -- via the pre-seed cleanup
+//      below, which then disconnected everything rather than only what
+//      this function had seeded -- silently dropped their real bank
+//      connection. The button is gone (Detox now seeds from its host
+//      process, see mobile/e2e/testAccount.js), but the button was never
+//      the whole bug: this check is what makes the blast radius actually
+//      zero, and what makes the "leaking the secret only affects the
+//      dummy account" claim above true rather than aspirational.
 //
 // Unlike test-login, this needs a real signed-in user (it writes real
 // plaid_items/plaid_accounts rows scoped to a real user_id), so
@@ -40,13 +56,15 @@
 // plaid-exchange/plaid-disconnect) -- call test-login first to get a
 // session, then call this with that session's access_token.
 //
-// Idempotent: disconnects any bank accounts already linked to this test
-// account first, so repeated CI runs always start from a clean slate
+// Idempotent: disconnects the Sandbox items THIS function has already
+// seeded first, so repeated CI runs always start from a clean slate
 // instead of hitting the duplicate-account detection below on a relink
 // of the same Sandbox test account (Plaid's Sandbox test data --
 // account/routing numbers included -- is deterministic per institution,
 // so a second run without cleanup would look like the exact same real
-// account relinking).
+// account relinking). Scoped to SANDBOX_INSTITUTION_ID, never "every
+// active item": even inside the dummy account, disconnecting something
+// this function did not create is more force than idempotency needs.
 
 import { CountryCode, Products } from "npm:plaid@45";
 import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
@@ -62,9 +80,24 @@ import { fingerprintFor, partitionDuplicateAccounts } from "../_shared/plaidExch
 // no UI or credential simulation needed.
 const SANDBOX_INSTITUTION_ID = "ins_109508";
 
-// Mirrors plaid-disconnect/index.ts's logic exactly (revoke at Plaid,
-// snapshot accounts for the 90-day purge job, delete the plaid_items row),
-// against the sandbox client instead of the shared production one.
+// The one account this function is allowed to touch. Same constant
+// test-login/index.ts signs in as -- these two are a pair, and a session
+// for anything else has no business here.
+const TEST_ACCOUNT_EMAIL = "synthetic-monitor@scorecard.test";
+
+// Follows plaid-disconnect/index.ts (revoke at Plaid, delete the
+// plaid_items row) against the sandbox client instead of the shared
+// production one, with ONE deliberate divergence: the seeded transactions
+// are deleted outright rather than recorded in plaid_disconnected_accounts
+// for the 90-day purge job.
+//
+// That retention grace exists to protect a real user's real history
+// across an accidental disconnect (see
+// migrations/20260805010000_purge_stale_disconnected_transactions.sql).
+// Applying it to synthetic rows gets the trade-off backwards: nothing is
+// protected, and "remove the test data" silently becomes "remove it in
+// three months", which is precisely why Sandbox transactions were still
+// sitting in an account long after the item that seeded them was gone.
 async function disconnectItem(client: ReturnType<typeof plaidSandboxClient>, db: ReturnType<typeof supabaseAdmin>, item: { id: string; access_token: string; user_id: string }) {
   try {
     await client.itemRemove({ access_token: item.access_token });
@@ -78,34 +111,50 @@ async function disconnectItem(client: ReturnType<typeof plaidSandboxClient>, db:
     .eq("item_id", item.id);
   if (accountsFetchError) throw accountsFetchError;
 
-  if (accounts && accounts.length > 0) {
-    const accountIds = accounts.map((a: any) => a.account_id);
-    const { data: fingerprints, error: fingerprintFetchError } = await db
-      .from("plaid_account_fingerprints")
-      .select("account_id, fingerprint")
-      .in("account_id", accountIds);
-    if (fingerprintFetchError) throw fingerprintFetchError;
-    const fingerprintByAccountId: Record<string, string> = {};
-    for (const f of fingerprints || []) fingerprintByAccountId[f.account_id] = f.fingerprint;
+  const accountIds = (accounts || []).map((a: any) => a.account_id);
+  if (accountIds.length > 0) {
+    // Ordered deletes, narrowest scope first. Every one of these is
+    // filtered by account_id -- the ids that came out of THIS item's
+    // plaid_accounts rows -- so nothing outside the item being
+    // disconnected is reachable from here.
+    const { error: txDeleteError } = await db
+      .from("transactions")
+      .delete()
+      .eq("user_id", item.user_id)
+      .eq("source", "plaid")
+      .in("plaid_account_id", accountIds);
+    if (txDeleteError) throw txDeleteError;
 
-    const { error: trackError } = await db.from("plaid_disconnected_accounts").insert(
-      accountIds.map((accountId: string) => ({
-        user_id: item.user_id,
-        account_id: accountId,
-        fingerprint: fingerprintByAccountId[accountId] || null,
-      }))
-    );
-    if (trackError) throw trackError;
+    const { error: fingerprintDeleteError } = await db
+      .from("plaid_account_fingerprints")
+      .delete()
+      .eq("user_id", item.user_id)
+      .in("account_id", accountIds);
+    if (fingerprintDeleteError) throw fingerprintDeleteError;
+
+    const { error: disconnectedDeleteError } = await db
+      .from("plaid_disconnected_accounts")
+      .delete()
+      .eq("user_id", item.user_id)
+      .in("account_id", accountIds);
+    if (disconnectedDeleteError) throw disconnectedDeleteError;
   }
 
   const { error: deleteError } = await db.from("plaid_items").delete().eq("id", item.id);
   if (deleteError) throw deleteError;
 }
 
-// Disconnects every active item belonging to the test account, returning
-// how many were removed. Used both to start a run from a clean slate and
-// to tear one down afterwards (see the `action: "cleanup"` branch below).
-async function disconnectAllActiveItems(
+// Disconnects the Sandbox items this function seeded, returning how many
+// were removed. Used both to start a run from a clean slate and to tear
+// one down afterwards (see the `action: "cleanup"` branch below).
+//
+// The institution_id filter is load-bearing, not tidiness: this used to
+// select every active item for the user, which meant a real bank
+// connection was one call away from being deleted -- and the itemRemove
+// above would fail for it anyway (a production access_token against the
+// Sandbox client), so the token was dropped locally while the Item stayed
+// live at Plaid, leaving no way back except relinking through Plaid Link.
+async function disconnectSeededItems(
   client: ReturnType<typeof plaidSandboxClient>,
   db: ReturnType<typeof supabaseAdmin>,
   userId: string
@@ -114,7 +163,8 @@ async function disconnectAllActiveItems(
     .from("plaid_items")
     .select("id, access_token, user_id")
     .eq("user_id", userId)
-    .eq("status", "active");
+    .eq("status", "active")
+    .eq("institution_id", SANDBOX_INSTITUTION_ID);
   if (existingItemsError) throw existingItemsError;
 
   for (const item of existingItems || []) {
@@ -166,13 +216,25 @@ Deno.serve(async (req) => {
 
   try {
     const user = await requireUser(req);
+
+    // Gate 2 (see the header): the secret proves the CALLER is trusted,
+    // this proves the TARGET is the dummy account. Checked before any
+    // write, and before the cleanup branch below, so neither path can
+    // touch a real user's data.
+    if (user.email !== TEST_ACCOUNT_EMAIL) {
+      return new Response(
+        JSON.stringify({ error: "test-plaid-link only operates on the designated test account." }),
+        { status: 403, headers: { ...corsHeaders, "content-type": "application/json" } }
+      );
+    }
+
     const client = plaidSandboxClient();
     const db = supabaseAdmin();
 
     // Start from a clean slate -- see header comment on why a stale
     // linked account from a prior run would break the duplicate-account
     // detection below.
-    const disconnected = await disconnectAllActiveItems(client, db, user.id);
+    const disconnected = await disconnectSeededItems(client, db, user.id);
 
     // Cleanup-only mode: disconnect and stop, without seeding a new item.
     // Called by mobile/e2e/globalTeardown.js once every Detox spec has

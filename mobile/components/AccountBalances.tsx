@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { ArrowRight, ChevronDown, ChevronUp, FlaskConical, Landmark, Plus, Unlink, X } from "lucide-react-native";
-import { useAuth, TEST_LOGIN_ENABLED } from "../lib/AuthProvider";
+import { ArrowRight, ChevronDown, ChevronUp, Landmark, Plus, Unlink, X } from "lucide-react-native";
+import { useAuth } from "../lib/AuthProvider";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 import { supabase } from "../lib/supabase";
@@ -29,8 +29,6 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   const [refreshKey, setRefreshKey] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
   const [disconnect, setDisconnect] = useState<DisconnectState | null>(null);
-  const [testLinking, setTestLinking] = useState(false);
-  const [testLinkError, setTestLinkError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   const loadBalances = useCallback(async () => {
@@ -106,39 +104,23 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
     }
   }
 
-  // Seeds a Plaid Sandbox-linked bank account via the test-plaid-link
-  // Edge Function instead of driving Plaid Link's own hosted UI, which
-  // this app doesn't own and can't reliably script (native WebView
-  // content, no stable testIDs to match against) -- see
-  // mobile/README.md's "Test Plaid Link" section and Detox's own
-  // e2e/testPlaidLink.test.js. Only rendered in development/preview
-  // builds, same gate as the "Sign in as test user" link.
-  async function startTestLink() {
-    if (!session) return;
-    setTestLinking(true);
-    setTestLinkError(null);
-    try {
-      const secret = process.env.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET;
-      if (!secret) throw new Error("Test Plaid link isn't enabled in this build.");
-
-      const resp = await fetch(functionUrl("test-plaid-link"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ secret }),
-      });
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => null);
-        throw new Error(data?.error || "Test Plaid link failed");
-      }
-      setRefreshKey((k) => k + 1);
-      onLinked?.();
-    } catch (e) {
-      setTestLinkError(e instanceof Error ? e.message : "Test Plaid link failed");
-    } finally {
-      setTestLinking(false);
-    }
-  }
-
+  // There is deliberately NO "link a test bank" control here, in any
+  // build. Stage 2 still needs a Sandbox-seeded bank -- it just seeds it
+  // from Detox's own host process (mobile/e2e/testAccount.js) rather than
+  // through the UI, which is both closer to what a real user's app does
+  // (render a linked account it did not create) and keeps
+  // TEST_PLAID_LINK_SECRET out of the app bundle entirely.
+  //
+  // The button that used to sit here was gated on TEST_LOGIN_ENABLED,
+  // which the preview EAS profile sets -- so it shipped in the build
+  // installed on a real phone, one tap away from real balances, with no
+  // confirmation in front of it. Tapping it while signed in as a real
+  // user seeded twelve Sandbox accounts into that account and dropped the
+  // real bank connection (test-plaid-link's pre-seed cleanup); nothing in
+  // the UI could undo either, since the state is server-side and survives
+  // sign-out. See supabase/functions/test-plaid-link/index.ts for the
+  // server-side gates that now make that unreachable regardless of what
+  // any client sends.
   return (
     <View style={styles.wrap}>
       <View style={styles.headerRow}>
@@ -149,21 +131,6 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
         {/* Add sits on the block, not on any one bank: it adds an
             institution, while unlink acts on the row it sits in. */}
         <View style={styles.headerButtons}>
-          {TEST_LOGIN_ENABLED ? (
-            <IconButton
-              testID="test-plaid-link-button"
-              onPress={startTestLink}
-              disabled={testLinking}
-              size={28}
-              accessibilityLabel={testLinking ? "Linking test bank" : "Link test bank"}
-            >
-              {testLinking ? (
-                <ActivityIndicator size="small" color={colors.textFaint} />
-              ) : (
-                <FlaskConical size={13} color={colors.textFaint} />
-              )}
-            </IconButton>
-          ) : null}
           {!showConfirm && !disconnect && (
             <IconButton
               testID="add-bank-button"
@@ -367,9 +334,6 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
         </View>
       )}
       {linkError ? <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{linkError}</Text> : null}
-      {testLinkError ? (
-        <Text style={[styles.error, { color: colors.danger, fontFamily: fontFamily.regular }]}>{testLinkError}</Text>
-      ) : null}
     </View>
   );
 }

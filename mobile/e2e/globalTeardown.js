@@ -23,58 +23,24 @@
 // safety net for a run that never reaches teardown (a cancelled job, a
 // crashed emulator).
 const detoxTeardown = require("detox/runners/jest/globalTeardown");
+const { cleanupSandboxBank } = require("./testAccount");
 
 // Deliberately non-fatal. A cleanup failure must not turn an otherwise
 // green Stage 2 run red -- the next run's start-of-run cleanup will
 // remove whatever is left. It is logged loudly instead, since a silent
 // failure here is the exact problem this file was written to fix.
-async function cleanupSandboxBank() {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  const loginSecret = process.env.EXPO_PUBLIC_TEST_LOGIN_SECRET;
-  const plaidLinkSecret = process.env.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET;
-
-  if (!supabaseUrl || !anonKey || !loginSecret || !plaidLinkSecret) {
-    console.warn("[sandbox-cleanup] SKIPPED: test-login/test-plaid-link env vars are not all set");
-    return;
-  }
-
-  // test-plaid-link keeps verify_jwt enabled (it writes rows scoped to a
-  // real user_id), so a session is needed before it can be called at all.
-  const loginResp = await fetch(`${supabaseUrl}/functions/v1/test-login`, {
-    method: "POST",
-    headers: { "content-type": "application/json", apikey: anonKey },
-    body: JSON.stringify({ secret: loginSecret }),
-  });
-  if (!loginResp.ok) {
-    throw new Error(`test-login returned ${loginResp.status}: ${await loginResp.text()}`);
-  }
-  // test-login returns { access_token, refresh_token } at the top level.
-  const { access_token: accessToken } = await loginResp.json();
-  if (!accessToken) {
-    throw new Error("test-login response contained no access_token");
-  }
-
-  const cleanupResp = await fetch(`${supabaseUrl}/functions/v1/test-plaid-link`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      apikey: anonKey,
-      authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ secret: plaidLinkSecret, action: "cleanup" }),
-  });
-  if (!cleanupResp.ok) {
-    throw new Error(`test-plaid-link cleanup returned ${cleanupResp.status}: ${await cleanupResp.text()}`);
-  }
-
-  const { disconnected } = await cleanupResp.json();
+//
+// The HTTP call itself lives in testAccount.js, next to the seeding call
+// the specs make -- the two are the same endpoint with a different body,
+// and keeping one inlined here is how they drifted apart before.
+async function removeSandboxBank() {
+  const disconnected = await cleanupSandboxBank();
   console.log(`[sandbox-cleanup] disconnected ${disconnected} Sandbox item(s)`);
 }
 
 module.exports = async function globalTeardown(globalConfig) {
   try {
-    await cleanupSandboxBank();
+    await removeSandboxBank();
   } catch (err) {
     console.error(
       "[sandbox-cleanup] FAILED -- a Plaid Sandbox item may be left in the project, " +

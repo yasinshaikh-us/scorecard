@@ -55,6 +55,20 @@ function requiredEnv() {
   return { supabaseUrl, anonKey, loginSecret };
 }
 
+// Deliberately NOT EXPO_PUBLIC_. Everything under that prefix is inlined
+// into the app bundle at build time and is extractable from any installed
+// build; this secret is now only ever read here, in Detox's host Node
+// process, so it has no business being bundled. (The GitHub repository
+// secret keeps its old name -- see mobile-detox.yml's env block, which
+// maps it onto this one.)
+function plaidLinkSecret() {
+  const secret = process.env.TEST_PLAID_LINK_SECRET;
+  if (!secret) {
+    throw new Error("TEST_PLAID_LINK_SECRET must be set to seed or clean up the Sandbox bank.");
+  }
+  return secret;
+}
+
 // test-login mints a session for the one hardcoded dummy account. The
 // same call globalTeardown.js already makes for the Sandbox cleanup.
 async function signInTestAccount() {
@@ -118,6 +132,59 @@ async function cleanupThisRunsRules(accessToken) {
   return deleteRulesWithPrefix(`${E2E_RULE_PREFIX}${RUN_ID}-`, accessToken);
 }
 
+// Links / unlinks the Plaid Sandbox bank the specs need, by calling the
+// test-plaid-link Edge Function directly.
+//
+// WHY FROM HERE AND NOT FROM THE APP
+//
+// The app used to carry a "Link test bank" button that made this exact
+// call, and the specs tapped it. That put a control which seeds Sandbox
+// data -- and, at the time, disconnected every existing bank first -- into
+// every build with test login enabled, including the preview build people
+// install on a real phone. It fired on one tap, with no confirmation, next
+// to the real balances. That is a bad trade for a test affordance, and the
+// test never needed it: token exchange and the DB writes all happen inside
+// the Edge Function, so tapping a button proved nothing about the app that
+// seeding from here doesn't. What the specs actually assert -- that the app
+// fetches a linked account and renders it -- survives intact, and is if
+// anything a truer test now, because the app renders state it did not
+// create, exactly as a real user's app does after a real Plaid Link.
+//
+// The Edge Function refuses any caller that isn't the dummy account, so
+// this can only ever act on synthetic-monitor@scorecard.test.
+async function callTestPlaidLink(body, accessToken) {
+  const { supabaseUrl, anonKey } = requiredEnv();
+  const token = accessToken || (await signInTestAccount());
+
+  const resp = await fetch(`${supabaseUrl}/functions/v1/test-plaid-link`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      apikey: anonKey,
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ secret: plaidLinkSecret(), ...body }),
+  });
+  if (!resp.ok) {
+    throw new Error(`test-plaid-link returned ${resp.status}: ${await resp.text()}`);
+  }
+  return resp.json();
+}
+
+// Seeds the Sandbox bank. Idempotent -- the function removes the Sandbox
+// item it previously seeded before creating a new one, so a spec can call
+// this without knowing what the last run left behind.
+async function seedSandboxBank(accessToken) {
+  return callTestPlaidLink({}, accessToken);
+}
+
+// Removes it again. Called by globalTeardown.js at the end of a run; see
+// that file for why a leftover Sandbox item is more than untidy.
+async function cleanupSandboxBank(accessToken) {
+  const { disconnected } = await callTestPlaidLink({ action: "cleanup" }, accessToken);
+  return disconnected;
+}
+
 module.exports = {
   E2E_RULE_PREFIX,
   RUN_ID,
@@ -125,4 +192,6 @@ module.exports = {
   signInTestAccount,
   resetAllE2eRules,
   cleanupThisRunsRules,
+  seedSandboxBank,
+  cleanupSandboxBank,
 };
