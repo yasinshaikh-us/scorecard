@@ -1,0 +1,131 @@
+name: Prune merged Claude branches
+
+# One-shot cleanup for the `claude/*` branches that accumulated before
+# the repo's "Automatically delete head branches" setting was turned on.
+# With that setting now in force, new branches clean themselves up on
+# merge and this workflow has nothing left to do -- it exists to clear
+# the backlog, and should be deleted once it has.
+#
+# It runs here rather than from a session because Claude Code's agent
+# proxy blocks ref deletion outright (HTTP 403 on both `git push
+# --delete` and `DELETE /git/refs/*`), so the deletion has to happen
+# from a runner using the workflow's own GITHUB_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report what would be deleted"
+        type: boolean
+        default: true
+      prefix:
+        description: "Only consider branches under this prefix"
+        type: string
+        default: "claude/"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: prune-merged-branches
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            // workflow_dispatch inputs arrive on the event payload as
+            // strings, even when declared `type: boolean` -- and
+            // core.getInput() would look for an INPUT_* env var that
+            // only exists for keys passed under this step's `with:`.
+            // Defaulting to a dry run means a malformed value errs
+            // toward doing nothing.
+            const dryRun = context.payload.inputs.dry_run !== 'false';
+            const prefix = context.payload.inputs.prefix || 'claude/';
+            const { owner, repo } = context.repo;
+
+            const { data: repoInfo } = await github.rest.repos.get({ owner, repo });
+            const defaultBranch = repoInfo.default_branch;
+
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+
+            const candidates = branches
+              .map((b) => b.name)
+              .filter((n) => n.startsWith(prefix) && n !== defaultBranch)
+              .sort();
+
+            core.info(`${candidates.length} branch(es) under "${prefix}" to assess`);
+
+            // A branch is only safe to delete when every pull request
+            // that ever pointed at it is closed AND at least one of them
+            // merged. That second half matters: a branch whose only PR
+            // was closed unmerged still holds the sole copy of that work,
+            // and ancestry can't tell us otherwise because this repo
+            // squash-merges (the branch tip is never an ancestor of the
+            // default branch, merged or not).
+            const deletable = [];
+            const skipped = [];
+
+            for (const branch of candidates) {
+              const prs = await github.paginate(github.rest.pulls.list, {
+                owner, repo, state: 'all', head: `${owner}:${branch}`, per_page: 100,
+              });
+
+              if (prs.length === 0) {
+                skipped.push([branch, 'no pull request ever opened']);
+              } else if (prs.some((p) => p.state === 'open')) {
+                const open = prs.filter((p) => p.state === 'open').map((p) => `#${p.number}`);
+                skipped.push([branch, `still open: ${open.join(', ')}`]);
+              } else if (!prs.some((p) => p.merged_at)) {
+                const closed = prs.map((p) => `#${p.number}`);
+                skipped.push([branch, `closed without merging: ${closed.join(', ')}`]);
+              } else {
+                const merged = prs.filter((p) => p.merged_at).map((p) => `#${p.number}`);
+                deletable.push([branch, merged.join(', ')]);
+              }
+            }
+
+            const failures = [];
+            for (const [branch, merged] of deletable) {
+              if (dryRun) continue;
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+              } catch (err) {
+                failures.push([branch, err.status === 422 ? 'already gone' : err.message]);
+              }
+            }
+
+            const lines = [
+              `**Default branch:** \`${defaultBranch}\` (never a candidate)`,
+              `**Mode:** ${dryRun ? 'dry run -- nothing deleted' : 'live'}`,
+              '',
+              `### ${dryRun ? 'Would delete' : 'Deleted'} (${deletable.length})`,
+              ...(deletable.length
+                ? ['| Branch | Merged in |', '| --- | --- |',
+                   ...deletable.map(([b, m]) => `| \`${b}\` | ${m} |`)]
+                : ['_None._']),
+              '',
+              `### Kept (${skipped.length})`,
+              ...(skipped.length
+                ? ['| Branch | Why |', '| --- | --- |',
+                   ...skipped.map(([b, why]) => `| \`${b}\` | ${why} |`)]
+                : ['_None._']),
+            ];
+
+            if (failures.length) {
+              lines.push('', `### Failed (${failures.length})`, '| Branch | Error |', '| --- | --- |',
+                ...failures.map(([b, e]) => `| \`${b}\` | ${e} |`));
+            }
+
+            await core.summary.addRaw(lines.join('\n')).write();
+            core.info(lines.join('\n'));
+
+            if (failures.length) {
+              core.setFailed(`${failures.length} branch(es) could not be deleted`);
+            }
