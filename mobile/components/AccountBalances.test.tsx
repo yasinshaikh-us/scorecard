@@ -97,6 +97,59 @@ describe("AccountBalances", () => {
     expect(await screen.findByText("No linked accounts yet")).toBeTruthy();
   });
 
+  // One Plaid item can carry many accounts -- the Sandbox test item seeds
+  // twelve. Unbounded, the block pushed Recent Activity below the fold
+  // and left the inline transaction editor opening in a sliver at the
+  // bottom of the screen, with Save drawn over the navigation bar. Seen
+  // on a real emulator; the design mockups had two banks.
+  describe("with more accounts than fit above the fold", () => {
+    const MANY = 12;
+    function seedMany() {
+      state.accounts = {
+        data: Array.from({ length: MANY }, (_, i) =>
+          account({ account_id: `acc-${i}`, name: `Account ${i}`, mask: String(1000 + i) })
+        ),
+        error: null,
+      };
+      state.balances = {
+        data: Array.from({ length: MANY }, (_, i) => ({ account_id: `acc-${i}`, current: 100 + i, available: null })),
+        error: null,
+      };
+    }
+
+    it("folds to four rows and says how many are hidden", async () => {
+      seedMany();
+      await renderWithTheme(<AccountBalances />);
+      await screen.findByText("Account 0 ••1000");
+
+      expect(screen.getAllByTestId("linked-account-row")).toHaveLength(4);
+      expect(screen.getByText("8 more")).toBeTruthy();
+      expect(screen.getByTestId("banks-expand-toggle").props.accessibilityLabel).toBe("Show all 12 accounts");
+    });
+
+    it("expands to every row, and folds back", async () => {
+      seedMany();
+      await renderWithTheme(<AccountBalances />);
+      await screen.findByText("Account 0 ••1000");
+
+      await fireEvent.press(screen.getByTestId("banks-expand-toggle"));
+      expect(screen.getAllByTestId("linked-account-row")).toHaveLength(MANY);
+      expect(screen.getByTestId("banks-expand-toggle").props.accessibilityLabel).toBe("Show fewer accounts");
+
+      await fireEvent.press(screen.getByTestId("banks-expand-toggle"));
+      expect(screen.getAllByTestId("linked-account-row")).toHaveLength(4);
+    });
+
+    it("has no fold control when every account already fits", async () => {
+      state.accounts = { data: [account()], error: null };
+      state.balances = { data: [{ account_id: "acc-1", current: 100, available: null }], error: null };
+      await renderWithTheme(<AccountBalances />);
+      await screen.findByText("Checking ••1234");
+
+      expect(screen.queryByTestId("banks-expand-toggle")).toBeNull();
+    });
+  });
+
   it("Add bank: shows a confirmation banner, then calls startLink on Proceed", async () => {
     await renderWithTheme(<AccountBalances />);
     await screen.findByText("No linked accounts yet");

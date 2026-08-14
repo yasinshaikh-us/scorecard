@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { ArrowRight, FlaskConical, Landmark, Plus, Unlink, X } from "lucide-react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ArrowRight, ChevronDown, ChevronUp, FlaskConical, Landmark, Plus, Unlink, X } from "lucide-react-native";
 import { useAuth, TEST_LOGIN_ENABLED } from "../lib/AuthProvider";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
@@ -31,6 +31,7 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   const [disconnect, setDisconnect] = useState<DisconnectState | null>(null);
   const [testLinking, setTestLinking] = useState(false);
   const [testLinkError, setTestLinkError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const loadBalances = useCallback(async () => {
     const [accountsRes, balancesRes] = await Promise.all([
@@ -69,6 +70,13 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
   });
 
   if (!balances) return <ActivityIndicator style={styles.loading} color={colors.accent} />;
+
+  // Four keeps the block under a quarter of the screen, which is what
+  // leaves room for Recent Activity -- the reason anyone opens this
+  // screen -- to start above the fold.
+  const COLLAPSED_MAX = 4;
+  const shown = expanded ? balances : balances.slice(0, COLLAPSED_MAX);
+  const hidden = balances.length - shown.length;
 
   function startDisconnect(account: Balance) {
     const siblingLabels = (balances || [])
@@ -183,14 +191,14 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
           column where they can be compared at a glance. */}
       {balances.length > 0 ? (
         <View style={[styles.bankCard, { backgroundColor: colors.surface }]}>
-          {balances.map((b, i) => (
+          {shown.map((b, i) => (
             <View
               key={b.id}
               testID="linked-account-row"
               style={[
                 styles.bankRow,
                 { borderBottomColor: colors.borderSubtle },
-                i === balances.length - 1 ? styles.bankRowLast : null,
+                i === shown.length - 1 && hidden === 0 ? styles.bankRowLast : null,
               ]}
             >
               <Text style={[styles.bankLabel, { color: colors.textMuted, fontFamily: fontFamily.regular }]} numberOfLines={1}>
@@ -214,6 +222,35 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
               </IconButton>
             </View>
           ))}
+
+          {/* One Plaid item can carry a lot of accounts -- the Sandbox
+              test item seeds twelve, and a real user with several banks
+              gets there too. Unbounded, the block ate 62% of the screen:
+              Recent Activity started below the fold, and tapping a
+              transaction opened its editor in the sliver left at the
+              bottom, with Save drawn over the navigation bar. Caught on a
+              real emulator, not in review -- the mockups had two banks.
+              Rows still cascade, as designed; they just start folded once
+              there are more than a screenful. */}
+          {hidden > 0 || expanded ? (
+            <Pressable
+              testID="banks-expand-toggle"
+              onPress={() => setExpanded((e) => !e)}
+              style={[styles.expandRow, { borderTopColor: colors.borderSubtle }]}
+              accessibilityLabel={
+                expanded ? "Show fewer accounts" : `Show all ${balances.length} accounts`
+              }
+            >
+              <Text style={[styles.expandText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
+                {expanded ? "" : `${hidden} more`}
+              </Text>
+              {expanded ? (
+                <ChevronUp size={15} color={colors.textMuted} />
+              ) : (
+                <ChevronDown size={15} color={colors.textMuted} />
+              )}
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>No linked accounts yet</Text>
@@ -351,6 +388,8 @@ const styles = StyleSheet.create({
   bankCard: { marginHorizontal: 16, borderRadius: 12, overflow: "hidden" },
   bankRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   bankRowLast: { borderBottomWidth: 0 },
+  expandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
+  expandText: { fontSize: 12 },
   bankLabel: { flex: 1, minWidth: 0, fontSize: 13 },
   bankAmount: { flexBasis: 96, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "700" },
   confirmBanner: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },

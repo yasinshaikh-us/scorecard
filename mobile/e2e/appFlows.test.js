@@ -229,7 +229,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   });
 
   it("Transaction row: edit and save a category change", async () => {
-    await scrollIntoView("transaction-row");
+    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
     await element(by.id("transaction-row")).atIndex(0).tap();
 
     // tapReturnKey(), not straight into the next tap: transaction-edit-
@@ -259,7 +259,7 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   });
 
   it("Transaction row: Cancel discards edits without saving", async () => {
-    await scrollIntoView("transaction-row");
+    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
     await element(by.id("transaction-row")).atIndex(0).tap();
 
     // setInputText replaces the field's whole contents, so the separate
