@@ -89,12 +89,21 @@ system recents button. It is the required last step, not a follow-up.
 
 ## CI cadence
 
-Webhooks deliver CI *failures* reliably, not successes — catching green
-needs polling. Stage 1 checks finish in under two minutes; poll about
-once a minute after opening a PR. Stage 2 takes ~18 minutes.
+**Don't subscribe to PR activity.** If the session auto-subscribes when a
+PR is opened, call `unsubscribe_pr_activity` for it straight away. The
+`<wake reason="external-event">` envelopes those produce are noise in the
+user's transcript.
 
-No need to `subscribe_pr_activity` before acting on a PR. Check state
-directly and act.
+The cost is real and falls on Claude, not the user: without them, a CI
+failure arrives nowhere. Nothing will interrupt to say a check went red,
+so a PR left unattended stays red silently. Poll instead — and don't walk
+away from a PR assuming it is fine.
+
+Stage 1 checks finish in under two minutes; poll about once a minute
+after opening a PR. Stage 2 takes ~18 minutes. Webhooks never reliably
+delivered CI *success* anyway, so green always needed polling.
+
+Check PR and CI state directly and act on it.
 
 ## Known traps in this repo
 
