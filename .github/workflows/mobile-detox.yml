@@ -87,20 +87,25 @@ jobs:
     env:
       EXPO_PUBLIC_SUPABASE_URL: https://bidorjtgbhuihppsznkc.supabase.co
       EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
-      # Same value baked into eas.json's development/preview profiles --
-      # see mobile/README.md's "Test login" section for what this is and
-      # why it's safe to commit (it can only ever mint a session for one
-      # hardcoded dummy account, and is unrelated to that account's real
-      # password).
+      # Repository secrets, not literals. These used to be committed here
+      # and in eas.json on the argument that each can only ever act on one
+      # hardcoded dummy account -- which is true, and was still the wrong
+      # call: this repository is public, so both were world-readable, and
+      # anyone could mint a session for the synthetic monitor account or
+      # attach a Plaid Sandbox bank to it. The blast radius was small; it
+      # was not zero, and it cost nothing to close.
+      #
+      # They stay EXPO_PUBLIC_ because they are inlined into the app
+      # bundle at build time and are therefore extractable from any
+      # installed build -- that is inherent to the design, and is why the
+      # values must be worthless outside the dummy account. Sourcing them
+      # from secrets keeps them out of git, which is a different and
+      # achievable goal.
+      #
+      # See mobile/README.md's "Test login" / "Test Plaid Link" sections.
       EXPO_PUBLIC_ENABLE_TEST_LOGIN: "true"
-      EXPO_PUBLIC_TEST_LOGIN_SECRET: 0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea
-      # Same value baked into eas.json's development/preview profiles --
-      # see mobile/README.md's "Test Plaid Link" section. Independently
-      # rotatable from EXPO_PUBLIC_TEST_LOGIN_SECRET above -- leaking this
-      # one can only ever link a Plaid Sandbox test bank to the same
-      # hardcoded dummy account, using Sandbox-only credentials with no
-      # access to any real bank data.
-      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: 231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55
+      EXPO_PUBLIC_TEST_LOGIN_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_LOGIN_SECRET }}
+      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET }}
     steps:
       - uses: actions/checkout@v4
 
@@ -258,53 +263,39 @@ jobs:
       # this doesn't affect whether the app's *logic* is correct, only how
       # representative the screenshots are when eyeballing a UI change.
       #
-      # The emulator step below was the second-slowest thing in this
-      # workflow (~5m45s on a real run), and most of that was not the tests
-      # -- it was downloading the system image, creating the AVD from
-      # scratch, and cold-booting it, every single run. The two steps that
-      # follow are the action's own documented fix: create the AVD once,
-      # snapshot it, cache it, and reuse the snapshot afterwards.
+      # The emulator step below is the second-slowest thing in this
+      # workflow (~5m45s on a real run), and most of that is not the tests
+      # -- it is downloading the system image, creating the AVD, and
+      # cold-booting it. The action documents a snapshot cache as the fix
+      # for exactly that, and this workflow used to do it.
       #
-      # The AVD-defining inputs (api-level/target/arch/profile/avd-name)
-      # and emulator-options MUST stay identical between the snapshot step
-      # and the run step, or the cached snapshot doesn't apply and both the
-      # cache and the extra step are wasted.
-      # The trailing -v2 is a manual cache-buster, and it exists because a
-      # poisoned snapshot is silent and permanent. A snapshot saved while
-      # the guest was mid-boot restores into a state where
-      # sys.boot_completed reads 1 but the `input` system service has not
-      # published yet, so the runner's unlock keyevent throws
-      # "ServiceNotFoundException: No service published for: input" and
-      # the step dies before Detox starts -- no tests, no artifacts, and
-      # an identical failure on every retry, because every retry restores
-      # the same bad snapshot. Two consecutive runs failed this way, both
-      # with "Create the AVD" skipped on a cache hit, while every earlier
-      # green run had created the AVD fresh.
+      # No AVD snapshot cache any more, deliberately. There was one, and it cost
+      # far more than the ~4 minutes it saved.
       #
-      # Bump the suffix to force one fresh creation; the next run saves a
-      # good snapshot and the cache goes back to earning its ~4 minutes.
-      - name: Cache the AVD + its boot snapshot
-        uses: actions/cache@v4
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-${{ runner.os }}-api30-google_apis-x86_64-pixel_5-v2
-
-      - name: Create the AVD and generate a boot snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          target: google_apis
-          arch: x86_64
-          profile: pixel_5
-          avd-name: Pixel_API_30
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          script: echo "Generated AVD snapshot for caching."
+      # Restoring a cached snapshot intermittently boots the guest into a
+      # state where sys.boot_completed reads 1 but the `input` system
+      # service has not published yet. The runner's unlock keyevent then
+      # throws "ServiceNotFoundException: No service published for: input"
+      # and the step dies before Detox starts -- no tests, no artifacts,
+      # and a red check that looks nothing like an infrastructure fault.
+      #
+      # The tally that settled it, across one day of real runs:
+      #
+      #   AVD created fresh    2 runs, 2 passed
+      #   AVD restored         6 runs, 1 passed
+      #
+      # It is a race, not corruption: the same cache entry passed the full
+      # suite once and then failed three consecutive reruns on the next
+      # commit, with an identical emulator build (37.1.11.0) and
+      # build-tools on both. An earlier version of this comment claimed
+      # the cache was "poisoned and permanently broken" and bumped the key
+      # to fix it -- that was wrong. Bumping only helped because it forced
+      # one fresh creation.
+      #
+      # So the emulator step below creates its own AVD each run. That is
+      # ~4 minutes on a step that already takes ~18, in exchange for
+      # removing a failure mode that costs a full rerun and reads as a
+      # real test failure every time it happens.
 
       # Resolved here rather than inline in the emulator step so the choice
       # is visible in the log. An empty value means "every spec" -- detox
@@ -335,7 +326,7 @@ jobs:
           # false so an existing (cached) AVD is reused rather than
           # recreated, and -no-snapshot-save so a test run never writes
           # back over the clean snapshot the step above produced.
-          force-avd-creation: false
+          force-avd-creation: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           working-directory: mobile

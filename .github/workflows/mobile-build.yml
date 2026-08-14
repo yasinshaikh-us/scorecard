@@ -67,12 +67,13 @@ jobs:
       # all (TEST_LOGIN_ENABLED in lib/AuthProvider.tsx reads this exact
       # variable, inlined into the bundle at build time). See
       # mobile/README.md's "Test login" / "Test Plaid Link" sections for
-      # what these are and why they're safe to commit -- each can only
-      # ever act on one hardcoded dummy account, using Plaid Sandbox
-      # credentials with no access to any real bank data.
+      # what these are. They come from repository secrets rather than
+      # literals -- see mobile-detox.yml's env block for why that changed.
+      # `production` still gets empty strings, so a store build has no
+      # test path compiled into it at all.
       EXPO_PUBLIC_ENABLE_TEST_LOGIN: ${{ inputs.profile == 'preview' && 'true' || 'false' }}
-      EXPO_PUBLIC_TEST_LOGIN_SECRET: ${{ inputs.profile == 'preview' && '0fa7abf661011fdbda3588269fed656a9c0de127bf53633ed0417b90326308ea' || '' }}
-      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: ${{ inputs.profile == 'preview' && '231d59221113f764eb1321d3b100ea3b4e1e513fd90f894686cdea34057df20e55' || '' }}
+      EXPO_PUBLIC_TEST_LOGIN_SECRET: ${{ inputs.profile == 'preview' && secrets.EXPO_PUBLIC_TEST_LOGIN_SECRET || '' }}
+      EXPO_PUBLIC_TEST_PLAID_LINK_SECRET: ${{ inputs.profile == 'preview' && secrets.EXPO_PUBLIC_TEST_PLAID_LINK_SECRET || '' }}
     steps:
       - uses: actions/checkout@v4
 
