@@ -1,4 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { StyleSheet } from "react-native";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
 import AccountBalances from "./AccountBalances";
@@ -81,6 +82,22 @@ describe("AccountBalances", () => {
     state.balances = { data: [{ account_id: "acc-1", current: null, available: 42 }], error: null };
     await renderWithTheme(<AccountBalances />);
     expect(await screen.findByText("$42.00")).toBeTruthy();
+  });
+
+  // Caught on a real emulator, not in review: at 18pt the balance column
+  // was still 96dp wide, so "$1,000.00" wrapped to "$1,000.0" over "0".
+  // The column has to hold the widest balance anyone plausibly has, and
+  // clip rather than wrap past that -- half a number on each of two lines
+  // is worse than an ellipsis.
+  it("keeps a four-figure balance on one line", async () => {
+    state.accounts = { data: [account()], error: null };
+    state.balances = { data: [{ account_id: "acc-1", current: 1000, available: null }], error: null };
+    await renderWithTheme(<AccountBalances />);
+
+    const amount = await screen.findByText("$1,000.00");
+    expect(amount.props.numberOfLines).toBe(1);
+    const style = StyleSheet.flatten(amount.props.style);
+    expect(style.flexBasis).toBeGreaterThanOrEqual(style.fontSize * 6.5);
   });
 
   it("skips an account whose balance hasn't loaded at all", async () => {
