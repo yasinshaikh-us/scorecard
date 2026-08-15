@@ -22,6 +22,22 @@ const Y_AXIS_GUTTER = 35;
 // card's own). Only ever used for the first paint of the first chart.
 const ASSUMED_WIDTH = SCREEN_WIDTH - 60;
 
+// Bar geometry for a horizontal ranking. Passed to the chart AND used to
+// work out how much vertical room to reserve for it, so the two can't
+// disagree -- they did, and the chart drew over the list beneath it.
+const BAR_THICKNESS = 18;
+const BAR_GAP = 14;
+const EDGE_SPACING = 20;
+const MAX_BARS = 14;
+
+// The band gifted-charts paints below the value axis for its labels. It
+// sits OUTSIDE the height the chart reserves in layout: React Native
+// transforms (which is how `horizontal` is implemented -- the wrapper
+// rotates the container) do not affect layout at all, so the rotated
+// chart's footprint is not what it paints. Without reserving this, the
+// axis numbers landed on top of the transaction rows below the card.
+const AXIS_LABEL_BAND = 56;
+
 // Bar/pie/line chart with tap-to-select: tapping a bar/slice/point selects
 // it (filters the transaction list below to just that group), tapping the
 // same one again deselects. Merchant totals and individual-transaction
@@ -141,9 +157,14 @@ export default function Chart({
     };
   });
 
-  // How far the stack of bars runs down the screen. Only meaningful for
-  // the horizontal case; a vertical chart is a fixed 200 tall.
-  const barsExtent = Math.min(data.length * 36, 320);
+  // How far the stack of bars runs down the screen, derived from the bar
+  // geometry rather than a round number per row. `data.length * 36` against
+  // 18 + 14 = 32dp of actual pitch, capped at 320, ran a ten-row ranking
+  // past the end of its own axis: the last three bars and their icons
+  // simply weren't drawn. buildChartData already caps a ranking at ten
+  // rows (spec.limit can ask for more), so the cap here is a backstop
+  // against a runaway series rather than the usual case.
+  const barsExtent = Math.min(data.length, MAX_BARS) * (BAR_THICKNESS + BAR_GAP) + EDGE_SPACING * 2;
 
   // `width` and `height` are TRANSPOSED when `horizontal` is set --
   // gifted-charts-core reads them as
@@ -159,15 +180,24 @@ export default function Chart({
   // swapping them here keeps the call site readable -- the alternative,
   // writing the swap inline, is what made this look correct for months.
   return (
-    <View style={styles.wrap} onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}>
+    <View
+      style={[styles.wrap, longLabelChart ? { height: barsExtent + AXIS_LABEL_BAND } : null]}
+      onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}
+    >
       <BarChart
         data={barData}
         width={longLabelChart ? barsExtent : width}
         height={longLabelChart ? width : 200}
         horizontal={longLabelChart}
         yAxisLabelWidth={Y_AXIS_GUTTER}
-        barWidth={longLabelChart ? 18 : 22}
-        spacing={longLabelChart ? 14 : 18}
+        barWidth={longLabelChart ? BAR_THICKNESS : 22}
+        spacing={longLabelChart ? BAR_GAP : 18}
+        // Pinned rather than left to the library's defaults, which differ
+        // per chart type: barsExtent is computed from these exact numbers,
+        // and a default drifting from them is what silently truncates the
+        // last rows of a ranking.
+        initialSpacing={EDGE_SPACING}
+        endSpacing={EDGE_SPACING}
         xAxisLabelTextStyle={axisLabelStyle}
         yAxisTextStyle={axisLabelStyle}
         noOfSections={4}

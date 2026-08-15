@@ -125,8 +125,11 @@ describe("Chart", () => {
     const props = mockBarChart.mock.calls[0][0];
     expect(props.horizontal).toBe(true);
     // `width` carries the extent the bars stack along (rendered as the
-    // chart's height), scaled by row count and capped at 320.
-    expect(props.width).toBe(Math.min(data.length * 36, 320));
+    // chart's height), derived from the bar geometry the chart is given
+    // rather than a round number per row -- the two disagreeing is what
+    // ran a ten-row ranking past the end of its own axis, dropping the
+    // last three bars.
+    expect(props.width).toBe(data.length * (props.barWidth + props.spacing) + props.initialSpacing + props.endSpacing);
     // `height` carries the plot's on-screen width. Plot plus gutter has to
     // fit the container -- that sum overflowing it is what clipped the
     // last axis label off every chart. onLayout doesn't fire under RNTL,
