@@ -16,7 +16,7 @@
 // 14-minute run that ends in a cascade of confusing UI failures -- which
 // is precisely how the leftover-rule bug presented before this existed.
 const detoxSetup = require("detox/runners/jest/globalSetup");
-const { resetAllE2eRules, E2E_RULE_PREFIX, RUN_ID } = require("./testAccount");
+const { resetAllE2eRules, seedSandboxBank, E2E_RULE_PREFIX, RUN_ID } = require("./testAccount");
 
 // Two retries: a single transient network blip on a shared CI runner is
 // not a reason to throw away a run that takes ~14 minutes, but a genuinely
@@ -43,7 +43,50 @@ async function resetTestAccount() {
   );
 }
 
+// Seeds the Plaid Sandbox bank the specs need, BEFORE detoxSetup boots the
+// emulator -- and that ordering is the whole point, not a tidiness
+// preference.
+//
+// The seed first lived in appFlows/testPlaidLink's own `beforeAll`, which
+// put ~12s of host-side network I/O between the emulator finishing a cold
+// boot and the app ever reaching the foreground. The device spends that
+// window sitting on the launcher while the system is still settling, and
+// on a CI runner the launcher loses that race: a real run came back with
+// every one of the 14 specs failing on Espresso's "Waited for the root of
+// the view hierarchy to have window focus", and the failure artifact
+// showed why -- a "Pixel Launcher isn't responding" ANR dialog parked on
+// top, holding focus for the rest of the run. It survived the retry, since
+// the dialog outlives the specs that provoked it.
+//
+// Running here costs the same seconds against no device at all. It also
+// means every spec starts signed-out-but-linked, so nothing depends on
+// which spec happened to seed first.
+async function seedBank() {
+  let lastErr;
+  for (let attempt = 1; attempt <= RESET_ATTEMPTS; attempt++) {
+    try {
+      const result = await seedSandboxBank();
+      console.log(
+        `[e2e-seed] run ${RUN_ID}: linked ${result?.accounts?.length ?? 0} Sandbox account(s) ` +
+          `from ${result?.institution_name || "the Sandbox institution"}`
+      );
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[e2e-seed] attempt ${attempt}/${RESET_ATTEMPTS} failed: ${err}`);
+    }
+  }
+  // Fatal for the same reason the rules reset is: every spec below assumes
+  // a linked bank, so continuing would just spend 14 minutes turning one
+  // clear backend failure into a screenful of confusing UI ones.
+  throw new Error(
+    `[e2e-seed] could not seed the Sandbox bank after ${RESET_ATTEMPTS} attempts -- ` +
+      `refusing to run Stage 2 without one. Last error: ${lastErr}`
+  );
+}
+
 module.exports = async function globalSetup(globalConfig) {
   await resetTestAccount();
+  await seedBank();
   await detoxSetup(globalConfig);
 };

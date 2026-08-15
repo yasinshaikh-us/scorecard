@@ -112,7 +112,13 @@ export function groupKeyOf(spec: QuerySpec | null, d: Transaction): string {
   return "";
 }
 
-export type ChartDatum = { key: string; total: number; count: number; row?: Transaction };
+// `category` is the group's dominant top-level category by spend -- for a
+// payee/account grouping the key is a merchant or account name, which
+// carries no category of its own, so the chart has nothing to draw an
+// axis glyph from without this. Dominant by total rather than by count so
+// it agrees with the bar's own length: a merchant with one large
+// Groceries charge and three small Dining ones is a Groceries bar.
+export type ChartDatum = { key: string; total: number; count: number; category?: string; row?: Transaction };
 
 // Builds the {key, total, count} chart series from already-filtered rows:
 // groups by groupKeyOf, sorts chronologically for date-based groupings
@@ -127,19 +133,36 @@ export function buildChartData(filteredRows: Transaction[], spec: QuerySpec | nu
   // transaction back via `row` so the list below the chart can show
   // exactly this ranked/capped set.
   if (spec.groupBy === "transaction") {
-    const arr = filteredRows.map((d) => ({ key: groupKeyOf(spec, d), total: Math.abs(d.Amount), count: 1, row: d }));
+    const arr = filteredRows.map((d) => ({
+      key: groupKeyOf(spec, d),
+      total: Math.abs(d.Amount),
+      count: 1,
+      category: topCategory(d.Category),
+      row: d,
+    }));
     arr.sort((a, b) => b.total - a.total);
     const cap = spec.limit || 10;
     return arr.slice(0, cap);
   }
 
+  // Spend per top-level category within each group, so the group can be
+  // labelled with whichever category accounts for most of it.
+  const categoryTotals: Record<string, Record<string, number>> = {};
   const map: Record<string, ChartDatum> = {};
   filteredRows.forEach((d) => {
     const k = groupKeyOf(spec, d);
     if (!map[k]) map[k] = { key: k, total: 0, count: 0 };
     map[k].total += Math.abs(d.Amount);
     map[k].count += 1;
+
+    const cat = topCategory(d.Category);
+    if (!categoryTotals[k]) categoryTotals[k] = {};
+    categoryTotals[k][cat] = (categoryTotals[k][cat] || 0) + Math.abs(d.Amount);
   });
+  for (const k of Object.keys(map)) {
+    const totals = categoryTotals[k];
+    map[k].category = Object.keys(totals).reduce((best, cat) => (totals[cat] > totals[best] ? cat : best));
+  }
   let arr = Object.values(map);
   if (spec.groupBy === "day" || spec.groupBy === "week" || spec.groupBy === "month") {
     arr.sort((a, b) => a.key.localeCompare(b.key));
