@@ -1,6 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { Dimensions } from "react-native";
-import { screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
 import { lightColors } from "../lib/theme";
 import Chart from "./Chart";
@@ -84,7 +83,9 @@ describe("Chart", () => {
     );
 
     const props = mockBarChart.mock.calls[0][0];
-    expect(props.horizontal).toBe(false);
+    // Not passed at all any more: only vertical charts reach the library,
+    // so there is no orientation left to switch on.
+    expect(props.horizontal).toBeUndefined();
     expect(props.data[0].label).toBeUndefined();
     expect(props.data[0].frontColor).toBeDefined();
 
@@ -108,39 +109,51 @@ describe("Chart", () => {
     expect(props.data[0].labelComponent).toBeUndefined();
   });
 
-  // Regression test for a chart that drew itself rotated in its own box:
-  // one bar rendered 36dp wide and ~350dp tall, running off the card's
-  // right edge while padding the card out with a blank screen's worth of
-  // space. gifted-charts TRANSPOSES width/height when `horizontal` is set
-  // (heightFromProps = props.width, widthFromProps = props.height -- see
-  // gifted-charts-core/dist/BarChart/index.js), so the props have to be
-  // passed swapped to get the intended on-screen box. Asserting the swap
-  // explicitly is the point: passing them the natural way round looks
-  // right at the call site, which is exactly how this survived so long.
-  it("renders a horizontal BarChart with its width/height transposed for the library's swap", async () => {
+  // Rankings deliberately do NOT go through gifted-charts. Its `horizontal`
+  // mode rotates the container, React Native excludes transforms from
+  // layout, and the chart therefore painted its value axis across the
+  // transaction rows underneath -- with the library's width/height props
+  // transposed on top of that. Asserting the library is not called at all
+  // is the guard against someone "simplifying" this back into a
+  // `horizontal` BarChart.
+  it("renders a ranking as its own rows, not a horizontal BarChart", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
     const data = [datum({ key: "A Very Long Merchant Name" }), datum({ key: "Another One" })];
     await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
 
-    const props = mockBarChart.mock.calls[0][0];
-    expect(props.horizontal).toBe(true);
-    // `width` carries the extent the bars stack along (rendered as the
-    // chart's height), derived from the bar geometry the chart is given
-    // rather than a round number per row -- the two disagreeing is what
-    // ran a ten-row ranking past the end of its own axis, dropping the
-    // last three bars.
-    expect(props.width).toBe(data.length * (props.barWidth + props.spacing) + props.initialSpacing + props.endSpacing);
-    // `height` carries the plot's on-screen width. Plot plus gutter has to
-    // fit the container -- that sum overflowing it is what clipped the
-    // last axis label off every chart. onLayout doesn't fire under RNTL,
-    // so the container here is Chart's pre-measurement fallback.
-    expect(props.height + props.yAxisLabelWidth).toBe(Dimensions.get("window").width - 60);
+    expect(mockBarChart).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("chart-rank-row")).toHaveLength(2);
   });
 
-  // These used to get no axis mark at all -- the icon axis was gated to
-  // category groupings, so a ranking chart was a stack of anonymous bars
-  // sitting directly above a list that showed a glyph on every row.
-  it("marks a horizontal ranking chart's axis with the group's category icon", async () => {
+  // A pie or a line says nothing useful about "the ten biggest single
+  // expenses", so a ranking stays a ranking whatever chart type the model
+  // asked for.
+  it("renders a ranking as rows even when the spec asks for a pie", async () => {
+    const spec: QuerySpec = { chartType: "pie", groupBy: "transaction" };
+    await renderWithTheme(
+      <Chart data={[datum({ key: "Whole Foods — 3 Aug" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />
+    );
+
+    expect(mockPieChart).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId("chart-rank-row")).toHaveLength(1);
+  });
+
+  // Bars are a share of the largest, so the top row is always full width
+  // and the rest are readable against it without an axis to consult.
+  it("sizes each ranking bar as its share of the largest", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
+    const data = [datum({ key: "Big", total: 400 }), datum({ key: "Small", total: 100 })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const bars = screen.getAllByTestId("chart-rank-bar");
+    expect(bars[0].props.style).toEqual(expect.arrayContaining([expect.objectContaining({ width: "100%" })]));
+    expect(bars[1].props.style).toEqual(expect.arrayContaining([expect.objectContaining({ width: "25%" })]));
+  });
+
+  // These used to get no mark at all -- the icon axis was gated to category
+  // groupings, so a ranking was a stack of anonymous bars sitting directly
+  // above a list that showed a glyph on every row.
+  it("marks each ranking row with the group's category icon", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
     await renderWithTheme(
       <Chart
@@ -152,11 +165,18 @@ describe("Chart", () => {
       />
     );
 
-    const props = mockBarChart.mock.calls[0][0];
-    expect(props.data[0].label).toBeUndefined();
-    const label: any = props.data[0].labelComponent();
-    expect(label.props.testID).toBe("chart-axis-icon-Groceries");
-    expect(label.props.accessibilityLabel).toBe("Groceries");
+    expect(screen.getByTestId("chart-axis-icon-Groceries")).toBeTruthy();
+  });
+
+  it("tapping a ranking row calls onSelect with that row's key", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
+    const onSelect = jest.fn();
+    await renderWithTheme(
+      <Chart data={[datum({ key: "Whole Foods" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={onSelect} />
+    );
+
+    await fireEvent.press(screen.getByTestId("chart-rank-row"));
+    expect(onSelect).toHaveBeenCalledWith("Whole Foods");
   });
 
   it("dims non-selected bars once a key is selected", async () => {

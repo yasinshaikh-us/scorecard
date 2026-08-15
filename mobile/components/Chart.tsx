@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dimensions, StyleSheet, View } from "react-native";
+import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-gifted-charts";
 import { fmtGroupKey, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
@@ -22,28 +22,101 @@ const Y_AXIS_GUTTER = 35;
 // card's own). Only ever used for the first paint of the first chart.
 const ASSUMED_WIDTH = SCREEN_WIDTH - 60;
 
-// Bar geometry for a horizontal ranking. Passed to the chart AND used to
-// work out how much vertical room to reserve for it, so the two can't
-// disagree -- they did, and the chart drew over the list beneath it.
-const BAR_THICKNESS = 18;
-const BAR_GAP = 14;
-const EDGE_SPACING = 20;
-const MAX_BARS = 14;
+// A ranking ("payee"/"transaction") is drawn here rather than by
+// gifted-charts, and that is a deliberate retreat from its `horizontal`
+// mode after three rounds of chasing the same class of defect.
+//
+// That mode is implemented by ROTATING the chart's container, and React
+// Native excludes transforms from layout -- so the area the chart paints
+// is structurally not the box it reserves. In practice: the value axis and
+// its labels painted across the transaction rows underneath, and the only
+// lever was to reverse-engineer the library's internal padding and reserve
+// it by hand, a constant fitted to one screenshot on one device that a
+// different row count or screen size would invalidate again. The library's
+// own props (width/height) are also transposed in that mode, which is how
+// this got shipped drawing sideways in the first place.
+//
+// A ranking is a row per item: a mark, a bar as long as its share of the
+// largest, and the amount. Percentage widths need no measurement, no
+// transform, and no axis arithmetic, so the layout is exactly what it
+// says. The amount carries the scale the dropped axis used to.
+//
+// Vertical charts (category/day/week/month) keep using gifted-charts:
+// nothing above applies to them, and they have a real value axis worth
+// having.
+function RankingChart({
+  data,
+  colors,
+  iconFor,
+  selectedKey,
+  onSelect,
+}: {
+  data: ChartDatum[];
+  colors: ReturnType<typeof useTheme>["colors"];
+  iconFor: (d: ChartDatum) => { Icon: ReturnType<typeof iconForCategory> | null; category?: string };
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const max = Math.max(...data.map((d) => d.total));
 
-// The band gifted-charts paints below the value axis for its labels. It
-// sits OUTSIDE the height the chart reserves in layout: React Native
-// transforms (which is how `horizontal` is implemented -- the wrapper
-// rotates the container) do not affect layout at all, so the rotated
-// chart's footprint is not what it paints. Without reserving this, the
-// axis numbers landed on top of the transaction rows below the card.
-const AXIS_LABEL_BAND = 56;
+  return (
+    <View style={styles.rankWrap}>
+      {data.map((d) => {
+        const { Icon, category } = iconFor(d);
+        // A zero-total group would divide by zero; a ranking of nothing
+        // spent is degenerate but reachable via a filter that matches only
+        // refunds.
+        const share = max > 0 ? d.total / max : 0;
+        const dimmed = selectedKey !== null && selectedKey !== d.key;
+        return (
+          <Pressable
+            key={d.key}
+            testID="chart-rank-row"
+            accessibilityLabel={`${fmtGroupKey(d.key, "payee")}, ${fmtMoney(d.total)}`}
+            onPress={() => onSelect(d.key)}
+            style={[styles.rankRow, dimmed ? styles.rankRowDimmed : null]}
+          >
+            <View
+              testID={category ? `chart-axis-icon-${category}` : "chart-rank-icon"}
+              accessibilityLabel={category}
+              style={styles.rankIcon}
+            >
+              {Icon ? <Icon size={14} color={colors.accent} /> : null}
+            </View>
+            {/* The track is what makes a short bar readable as "short"
+                rather than as a rendering failure -- without it the two
+                smallest rows in a ranking are a few pixels of colour
+                floating in white space. */}
+            <View style={[styles.rankTrack, { backgroundColor: colors.surfaceRecessed }]}>
+              <View
+                testID="chart-rank-bar"
+                style={[
+                  styles.rankFill,
+                  // Percent of the track, so this needs no measurement and
+                  // survives any card width.
+                  { width: `${Math.max(share * 100, share > 0 ? 1.5 : 0)}%`, backgroundColor: colors.accent },
+                ]}
+              />
+            </View>
+            <Text
+              style={[styles.rankAmount, { color: colors.textMuted, fontFamily: fontFamily.mono }]}
+              numberOfLines={1}
+            >
+              {fmtMoney(d.total)}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 // Bar/pie/line chart with tap-to-select: tapping a bar/slice/point selects
 // it (filters the transaction list below to just that group), tapping the
 // same one again deselects. Merchant totals and individual-transaction
-// rankings ("payee"/"transaction" groupBy) use long, variable-width
-// labels, so those render as horizontal bars instead of vertical -- a
-// vertical axis can't fit them legibly.
+// rankings ("payee"/"transaction" groupBy) render as horizontal bars
+// instead of vertical -- a vertical axis can't fit their long,
+// variable-width labels legibly -- via RankingChart above.
 export default function Chart({
   data,
   spec,
@@ -72,6 +145,21 @@ export default function Chart({
   const longLabelChart = spec.groupBy === "payee" || spec.groupBy === "transaction";
   // What's left for the plot itself once the axis gutter has its share.
   const width = available - Y_AXIS_GUTTER;
+
+  // Ahead of the chartType branches on purpose: a ranking is a ranking
+  // whatever chart type the model asked for, and neither a pie nor a line
+  // says anything useful about "the ten biggest single expenses".
+  if (longLabelChart) {
+    return (
+      <RankingChart
+        data={data}
+        colors={colors}
+        iconFor={(d) => ({ Icon: d.category ? iconForCategory(d.category) : null, category: d.category })}
+        selectedKey={selectedKey}
+        onSelect={onSelect}
+      />
+    );
+  }
 
   if (spec.chartType === "pie") {
     const pieData = data.map((d) => ({
@@ -122,24 +210,13 @@ export default function Chart({
   // a fixed 14px whatever the name's length, so bar count stops competing
   // with label legibility -- and it's the same glyph, in the same palette
   // color, that marks the category on every transaction row below.
-  // Horizontal (payee/transaction) bars get the same treatment. They used
-  // to get no axis mark at all -- the `&& !longLabelChart` that used to sit
-  // here excluded them -- so a ranking chart was a stack of anonymous bars
-  // whose own list, directly underneath, showed the glyph for every row.
-  // topCategory() resolves the dominant category for those groupings too,
-  // so it's the same glyph in the same palette colour, just on the axis the
-  // bars actually run from.
-  const iconAxis = spec.groupBy === "category" || longLabelChart;
+  // Rankings are handled by RankingChart above and never reach here.
+  const iconAxis = spec.groupBy === "category";
 
   const barData = data.map((d) => {
-    const color = spec.groupBy === "category" ? catColor(d.key, CATS, topCategory, mode) : colors.accent;
-    // For a category chart the key IS the category; for a ranking the key
-    // is a merchant or a payee-and-date, and the category rides along on
-    // the datum (see buildChartData). Running topCategory() over a
-    // merchant name instead just yields the merchant name back, which
-    // resolves to the fallback glyph -- the "?" on every bar.
-    const category = spec.groupBy === "category" ? topCategory(d.key) : d.category;
-    const Icon = iconAxis && category ? iconForCategory(category) : null;
+    const color = iconAxis ? catColor(d.key, CATS, topCategory, mode) : colors.accent;
+    const category = iconAxis ? topCategory(d.key) : null;
+    const Icon = category ? iconForCategory(category) : null;
     return {
       value: d.total,
       label: iconAxis ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
@@ -157,47 +234,15 @@ export default function Chart({
     };
   });
 
-  // How far the stack of bars runs down the screen, derived from the bar
-  // geometry rather than a round number per row. `data.length * 36` against
-  // 18 + 14 = 32dp of actual pitch, capped at 320, ran a ten-row ranking
-  // past the end of its own axis: the last three bars and their icons
-  // simply weren't drawn. buildChartData already caps a ranking at ten
-  // rows (spec.limit can ask for more), so the cap here is a backstop
-  // against a runaway series rather than the usual case.
-  const barsExtent = Math.min(data.length, MAX_BARS) * (BAR_THICKNESS + BAR_GAP) + EDGE_SPACING * 2;
-
-  // `width` and `height` are TRANSPOSED when `horizontal` is set --
-  // gifted-charts-core reads them as
-  //
-  //   heightFromProps = horizontal ? props.width  : props.height
-  //   widthFromProps  = horizontal ? props.height : props.width
-  //
-  // (gifted-charts-core/dist/BarChart/index.js). Passing the on-screen
-  // dimensions in their natural slots therefore produced a chart rotated
-  // in its own box: a one-bar ranking rendered 36dp wide and ~350dp tall,
-  // overflowing the card horizontally while padding it out vertically
-  // with the better part of a blank screen. Naming both extents and
-  // swapping them here keeps the call site readable -- the alternative,
-  // writing the swap inline, is what made this look correct for months.
   return (
-    <View
-      style={[styles.wrap, longLabelChart ? { height: barsExtent + AXIS_LABEL_BAND } : null]}
-      onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}
-    >
+    <View style={styles.wrap} onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}>
       <BarChart
         data={barData}
-        width={longLabelChart ? barsExtent : width}
-        height={longLabelChart ? width : 200}
-        horizontal={longLabelChart}
+        width={width}
+        height={200}
         yAxisLabelWidth={Y_AXIS_GUTTER}
-        barWidth={longLabelChart ? BAR_THICKNESS : 22}
-        spacing={longLabelChart ? BAR_GAP : 18}
-        // Pinned rather than left to the library's defaults, which differ
-        // per chart type: barsExtent is computed from these exact numbers,
-        // and a default drifting from them is what silently truncates the
-        // last rows of a ranking.
-        initialSpacing={EDGE_SPACING}
-        endSpacing={EDGE_SPACING}
+        barWidth={22}
+        spacing={18}
         xAxisLabelTextStyle={axisLabelStyle}
         yAxisTextStyle={axisLabelStyle}
         noOfSections={4}
@@ -216,4 +261,18 @@ export const formatValue = fmtMoney;
 const styles = StyleSheet.create({
   wrap: { alignItems: "center", marginBottom: 12 },
   axisIcon: { alignItems: "center", justifyContent: "center", paddingTop: 4 },
+
+  // A ranking's own rows. Ordinary flex layout, so the block is exactly as
+  // tall as its rows and cannot paint over what follows it -- which is the
+  // entire reason this exists rather than a `horizontal` BarChart.
+  rankWrap: { marginBottom: 12 },
+  rankRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 7 },
+  rankRowDimmed: { opacity: 0.35 },
+  rankIcon: { flexBasis: 18, flexGrow: 0, flexShrink: 0, alignItems: "center", justifyContent: "center" },
+  rankTrack: { flex: 1, minWidth: 0, height: 14, borderRadius: 3, overflow: "hidden" },
+  rankFill: { height: "100%", borderRadius: 3 },
+  // Matches the transaction rows below: same right-hand column, same
+  // tabular figures, so the two read as one table rather than a chart and
+  // an unrelated list.
+  rankAmount: { flexBasis: 96, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 12 },
 });
