@@ -40,7 +40,7 @@
 // see CategoryRulesPanel.tsx) rather than by position, so an unexpected
 // row can no longer misdirect a tap.
 const { captureScreen } = require("./screenshot");
-const { runScopedRuleValue, cleanupThisRunsRules, seedSandboxBank } = require("./testAccount");
+const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
 const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require("./session");
 
 // Namespaced per run, so a Stage 2 job running concurrently on another ref
@@ -52,19 +52,19 @@ const RENAMED_PAYEE = "E2E Renamed Payee";
 
 describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
   beforeAll(async () => {
-    // Guarantees a linked account (for the account-management banners
-    // below) and at least one transaction (Home's Recent Activity is
-    // anchored to the ledger's OWN latest date, so whatever this seeds is
-    // always "recent" -- see app/(app)/home.tsx's daysBefore comment) --
-    // regardless of whatever state a previous CI run left behind.
+    // The linked account these tests need (for the account-management
+    // banners below) and its transactions (Home's Recent Activity is
+    // anchored to the ledger's OWN latest date, so whatever is seeded is
+    // always "recent" -- see app/(app)/home.tsx's daysBefore comment) are
+    // seeded by e2e/globalSetup.js, before the emulator is even booted.
     //
-    // Seeded from this host process, BEFORE the app launches, rather than
-    // by tapping a button in the app: the app no longer carries one, and
-    // should not (see e2e/testAccount.js's seedSandboxBank). Seeding first
-    // also means launchAndSignIn lands straight on Home instead of routing
-    // through PlaidLinkGate.
-    await seedSandboxBank();
-
+    // Deliberately NOT seeded here. Doing it in this hook put ~12s of
+    // network I/O between the cold boot and the app reaching the
+    // foreground, and the launcher ANR'd in that window -- taking every
+    // spec in the run down with it. See globalSetup.js for the full
+    // account. Launching the app is the first thing this hook does, and
+    // should stay that way.
+    //
     // Handles every entry state (retained session, login screen, or a
     // fresh account stopping at PlaidLinkGate) -- see e2e/session.js.
     await launchAndSignIn({ reinstall: true });
