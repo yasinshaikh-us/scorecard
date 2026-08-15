@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-gifted-charts";
 import { fmtGroupKey, fmtMoney } from "../lib/format";
@@ -8,6 +9,18 @@ import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
+
+// gifted-charts renders the y-axis labels in a gutter to the LEFT of the
+// plot and adds it to the plot's own width, so the box on screen is
+// `yAxisLabelWidth + width`, not `width`. Passed explicitly rather than
+// left to the library's default (also 35) so the arithmetic below can't
+// silently drift if that default ever changes.
+const Y_AXIS_GUTTER = 35;
+
+// Fallback until onLayout reports the real figure -- roughly the Ask
+// card's inner width (screen, less the list's horizontal padding and the
+// card's own). Only ever used for the first paint of the first chart.
+const ASSUMED_WIDTH = SCREEN_WIDTH - 60;
 
 // Bar/pie/line chart with tap-to-select: tapping a bar/slice/point selects
 // it (filters the transaction list below to just that group), tapping the
@@ -29,12 +42,20 @@ export default function Chart({
   onSelect: (key: string) => void;
 }) {
   const { colors, mode } = useTheme();
+  // Measured, not derived from Dimensions: the chart sits inside
+  // QueryCard, inside a padded list, so screen width minus a guessed
+  // constant was always going to be wrong by whatever those paddings
+  // happen to be. It was -- the guess (screen - 64) omitted the y-axis
+  // gutter entirely, so every chart drew ~35dp past the card's right
+  // edge and clipped its own last axis label.
+  const [available, setAvailable] = useState(ASSUMED_WIDTH);
   const axisLabelStyle = { color: colors.textMuted, fontSize: 10, fontFamily: fontFamily.regular };
 
   if (data.length === 0) return null;
 
   const longLabelChart = spec.groupBy === "payee" || spec.groupBy === "transaction";
-  const width = SCREEN_WIDTH - 64;
+  // What's left for the plot itself once the axis gutter has its share.
+  const width = available - Y_AXIS_GUTTER;
 
   if (spec.chartType === "pie") {
     const pieData = data.map((d) => ({
@@ -61,11 +82,12 @@ export default function Chart({
       onPress: () => onSelect(d.key),
     }));
     return (
-      <View style={styles.wrap}>
+      <View style={styles.wrap} onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}>
         <LineChart
           data={lineData}
           width={width}
           height={200}
+          yAxisLabelWidth={Y_AXIS_GUTTER}
           color={colors.accent}
           thickness={2}
           dataPointsColor={colors.accent}
@@ -84,38 +106,66 @@ export default function Chart({
   // a fixed 14px whatever the name's length, so bar count stops competing
   // with label legibility -- and it's the same glyph, in the same palette
   // color, that marks the category on every transaction row below.
-  const iconAxis = spec.groupBy === "category" && !longLabelChart;
+  // Horizontal (payee/transaction) bars get the same treatment. They used
+  // to get no axis mark at all -- the `&& !longLabelChart` that used to sit
+  // here excluded them -- so a ranking chart was a stack of anonymous bars
+  // whose own list, directly underneath, showed the glyph for every row.
+  // topCategory() resolves the dominant category for those groupings too,
+  // so it's the same glyph in the same palette colour, just on the axis the
+  // bars actually run from.
+  const iconAxis = spec.groupBy === "category" || longLabelChart;
 
   const barData = data.map((d) => {
     const color = spec.groupBy === "category" ? catColor(d.key, CATS, topCategory, mode) : colors.accent;
-    const Icon = iconAxis ? iconForCategory(topCategory(d.key)) : null;
+    // For a category chart the key IS the category; for a ranking the key
+    // is a merchant or a payee-and-date, and the category rides along on
+    // the datum (see buildChartData). Running topCategory() over a
+    // merchant name instead just yields the merchant name back, which
+    // resolves to the fallback glyph -- the "?" on every bar.
+    const category = spec.groupBy === "category" ? topCategory(d.key) : d.category;
+    const Icon = iconAxis && category ? iconForCategory(category) : null;
     return {
       value: d.total,
-      label: longLabelChart || iconAxis ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
-      labelComponent: Icon
-        ? () => (
-            <View
-              testID={`chart-axis-icon-${topCategory(d.key)}`}
-              accessibilityLabel={topCategory(d.key)}
-              style={styles.axisIcon}
-            >
-              <Icon size={14} color={color} />
-            </View>
-          )
-        : undefined,
+      label: iconAxis ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
+      labelComponent:
+        Icon && category
+          ? () => (
+              <View testID={`chart-axis-icon-${category}`} accessibilityLabel={category} style={styles.axisIcon}>
+                <Icon size={14} color={color} />
+              </View>
+            )
+          : undefined,
       frontColor: color,
       opacity: selectedKey && selectedKey !== d.key ? 0.35 : 1,
       onPress: () => onSelect(d.key),
     };
   });
 
+  // How far the stack of bars runs down the screen. Only meaningful for
+  // the horizontal case; a vertical chart is a fixed 200 tall.
+  const barsExtent = Math.min(data.length * 36, 320);
+
+  // `width` and `height` are TRANSPOSED when `horizontal` is set --
+  // gifted-charts-core reads them as
+  //
+  //   heightFromProps = horizontal ? props.width  : props.height
+  //   widthFromProps  = horizontal ? props.height : props.width
+  //
+  // (gifted-charts-core/dist/BarChart/index.js). Passing the on-screen
+  // dimensions in their natural slots therefore produced a chart rotated
+  // in its own box: a one-bar ranking rendered 36dp wide and ~350dp tall,
+  // overflowing the card horizontally while padding it out vertically
+  // with the better part of a blank screen. Naming both extents and
+  // swapping them here keeps the call site readable -- the alternative,
+  // writing the swap inline, is what made this look correct for months.
   return (
-    <View style={styles.wrap}>
+    <View style={styles.wrap} onLayout={(e) => setAvailable(e.nativeEvent.layout.width)}>
       <BarChart
         data={barData}
-        width={width}
-        height={longLabelChart ? Math.min(data.length * 36, 320) : 200}
+        width={longLabelChart ? barsExtent : width}
+        height={longLabelChart ? width : 200}
         horizontal={longLabelChart}
+        yAxisLabelWidth={Y_AXIS_GUTTER}
         barWidth={longLabelChart ? 18 : 22}
         spacing={longLabelChart ? 14 : 18}
         xAxisLabelTextStyle={axisLabelStyle}

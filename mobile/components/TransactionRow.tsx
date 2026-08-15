@@ -192,10 +192,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   topRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  payee: { flex: 1, minWidth: 0, fontSize: 13 },
+  // 15/11, not the 13/10.5 the design pass moved them to. This is the
+  // densest text in the app and the only screen most sessions ever see;
+  // at 13 the payee and at 10.5 the date both read as fine print on a
+  // real phone, whatever they looked like in a mockup. The flex layout
+  // around them is unchanged -- only the sizes come back.
+  payee: { flex: 1, minWidth: 0, fontSize: 15 },
   categoryCol: { flexBasis: 22, flexGrow: 0, flexShrink: 0, alignItems: "center", justifyContent: "center" },
   amount: { flexBasis: 112, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "600" },
-  date: { fontSize: 10.5, marginTop: 1 },
+  date: { fontSize: 11, marginTop: 1 },
   editInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginBottom: 8 },
   categorySelectBtn: {
     flexDirection: "row",

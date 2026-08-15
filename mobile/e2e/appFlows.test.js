@@ -359,6 +359,33 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
+  // The question above produces a VERTICAL chart, which is the only kind
+  // Stage 2 ever screenshotted -- and horizontal is the orientation that
+  // was broken. gifted-charts transposes width/height when `horizontal`
+  // is set (see Chart.tsx), so a ranking rendered rotated in its own box:
+  // overflowing the card sideways while padding it out with most of a
+  // blank screen vertically. Every assertion passed throughout, because
+  // the card and its rows were present and visible the whole time. Only a
+  // screenshot shows it, which is the entire reason this exists.
+  //
+  // Asserting only that a card comes back, deliberately: the question is
+  // interpreted by Claude in the `query` Edge Function, so which chart
+  // type it picks is not something a UI test should be made to depend on.
+  // A ranking is what this phrasing reliably yields, and the screenshot is
+  // what's actually being inspected.
+  it("Ask: a ranking question renders its horizontal chart inside the card", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "Top 10 expenses this month");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await captureScreen("ask-screen-horizontal-ranking");
+    await element(by.id("query-card-close-button")).tap();
+
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
   it("Home: pull-to-refresh doesn't crash and content survives", async () => {
     // Only testable here -- RN's RefreshControl doesn't preserve custom
     // testIDs through ScrollView's native prop handling in Stage 1's JS

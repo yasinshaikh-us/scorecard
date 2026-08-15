@@ -355,7 +355,9 @@ const styles = StyleSheet.create({
   expandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
   expandText: { fontSize: 12 },
   bankLabel: { flex: 1, minWidth: 0, fontSize: 13 },
-  bankAmount: { flexBasis: 96, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "700" },
+  // 18, as it was before the design pass took it to 15: a balance is the
+  // one number on this screen read at a glance rather than scanned.
+  bankAmount: { flexBasis: 96, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 18, fontWeight: "700" },
   confirmBanner: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
   confirmBannerFinal: { borderWidth: 1, borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 10 },
   confirmText: { fontSize: 13, lineHeight: 18 },

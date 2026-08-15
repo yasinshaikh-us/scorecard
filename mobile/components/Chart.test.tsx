@@ -1,4 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { Dimensions } from "react-native";
 import { screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
 import { lightColors } from "../lib/theme";
@@ -107,16 +108,52 @@ describe("Chart", () => {
     expect(props.data[0].labelComponent).toBeUndefined();
   });
 
-  it("renders a horizontal BarChart with no per-item labels for long-label groupings (payee/transaction)", async () => {
+  // Regression test for a chart that drew itself rotated in its own box:
+  // one bar rendered 36dp wide and ~350dp tall, running off the card's
+  // right edge while padding the card out with a blank screen's worth of
+  // space. gifted-charts TRANSPOSES width/height when `horizontal` is set
+  // (heightFromProps = props.width, widthFromProps = props.height -- see
+  // gifted-charts-core/dist/BarChart/index.js), so the props have to be
+  // passed swapped to get the intended on-screen box. Asserting the swap
+  // explicitly is the point: passing them the natural way round looks
+  // right at the call site, which is exactly how this survived so long.
+  it("renders a horizontal BarChart with its width/height transposed for the library's swap", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
     const data = [datum({ key: "A Very Long Merchant Name" }), datum({ key: "Another One" })];
     await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
 
     const props = mockBarChart.mock.calls[0][0];
     expect(props.horizontal).toBe(true);
+    // `width` carries the extent the bars stack along (rendered as the
+    // chart's height), scaled by row count and capped at 320.
+    expect(props.width).toBe(Math.min(data.length * 36, 320));
+    // `height` carries the plot's on-screen width. Plot plus gutter has to
+    // fit the container -- that sum overflowing it is what clipped the
+    // last axis label off every chart. onLayout doesn't fire under RNTL,
+    // so the container here is Chart's pre-measurement fallback.
+    expect(props.height + props.yAxisLabelWidth).toBe(Dimensions.get("window").width - 60);
+  });
+
+  // These used to get no axis mark at all -- the icon axis was gated to
+  // category groupings, so a ranking chart was a stack of anonymous bars
+  // sitting directly above a list that showed a glyph on every row.
+  it("marks a horizontal ranking chart's axis with the group's category icon", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "payee" };
+    await renderWithTheme(
+      <Chart
+        data={[datum({ key: "Whole Foods", category: "Groceries" })]}
+        spec={spec}
+        CATS={CATS}
+        selectedKey={null}
+        onSelect={jest.fn()}
+      />
+    );
+
+    const props = mockBarChart.mock.calls[0][0];
     expect(props.data[0].label).toBeUndefined();
-    // Height scales with row count for horizontal bars, capped at 320.
-    expect(props.height).toBe(Math.min(data.length * 36, 320));
+    const label: any = props.data[0].labelComponent();
+    expect(label.props.testID).toBe("chart-axis-icon-Groceries");
+    expect(label.props.accessibilityLabel).toBe("Groceries");
   });
 
   it("dims non-selected bars once a key is selected", async () => {
