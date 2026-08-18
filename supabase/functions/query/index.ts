@@ -10,6 +10,7 @@ import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
 import { requireUser, HttpError } from "../_shared/requireUser.ts";
 import { fetchLedgerMeta, fetchAccountLabels } from "../_shared/transactionsData.ts";
 import { buildSystemPrompt } from "../_shared/querySystemPrompt.ts";
+import { checkQueryRateLimit } from "../_shared/rateLimit.ts";
 
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
@@ -50,6 +51,14 @@ Deno.serve(async (req) => {
 
   try {
     const user = await requireUser(req);
+
+    const rateLimit = await checkQueryRateLimit(url, anonKey, user.accessToken);
+    if (!rateLimit.allowed) {
+      return new Response(JSON.stringify({ error: "Too many questions asked -- try again shortly." }), {
+        status: 429,
+        headers: { ...corsHeaders, "content-type": "application/json", "Retry-After": String(rateLimit.retryAfterSeconds) },
+      });
+    }
 
     const [meta, labels] = await Promise.all([
       fetchLedgerMeta(url, anonKey, user.accessToken),
