@@ -384,10 +384,26 @@ Written by `supabase/functions/plaid-disconnect/index.ts`, one row per account, 
 Origin: [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql),
 [`20260806010000_add_missing_user_id_indexes.sql`](supabase/migrations/20260806010000_add_missing_user_id_indexes.sql).
 
+### `query_rate_limits`
+
+Backs `check_and_increment_query_rate_limit()` below — one row per user tracking the current rate-limit window for the `query` Edge Function's Anthropic calls.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `user_id` | `uuid` | no | | Primary key. FK → `auth.users.id`, cascades on delete. |
+| `window_start` | `timestamptz` | no | `now()` | Start of the current sliding window; reset once the window has elapsed. |
+| `count` | `integer` | no | `0` | Requests seen so far in the current window. |
+
+**Constraints:** PK `user_id`; FK `user_id → auth.users(id)` (cascade delete).
+**RLS:** enabled, **zero policies** for any client role — same treatment as `plaid_items`/`plaid_disconnected_accounts`. Only `check_and_increment_query_rate_limit()` (`SECURITY DEFINER`) reads or writes this table; no client ever touches it directly.
+
+Origin: [`20260818000000_add_query_rate_limit.sql`](supabase/migrations/20260818000000_add_query_rate_limit.sql).
+
 ## Functions
 
 | Function | Security | Returns | Purpose |
 |---|---|---|---|
+| `check_and_increment_query_rate_limit(integer, integer)` | `DEFINER` | one row: `allowed boolean, retry_after_seconds integer` | Sliding-window rate limit (default 20 requests / 300s) for the `query` Edge Function's per-call Anthropic spend, enforced in the database so it can't be bypassed by calling PostgREST directly instead of going through the Edge Function. `SECURITY DEFINER` because a bare `authenticated`/RLS grant can't atomically upsert-and-check another user's-eye-view of `query_rate_limits` in one statement without a policy that would let a caller inspect (not just increment) it; scoped internally to `auth.uid()` (raises if null) so a caller can still only ever touch their own row. `EXECUTE` is revoked from `anon`/`public`, granted only to `authenticated` — same lockdown pattern as `purge_stale_disconnected_transactions()`. See `checkQueryRateLimit()` in [`supabase/functions/_shared/rateLimit.ts`](supabase/functions/_shared/rateLimit.ts), called from [`supabase/functions/query/index.ts`](supabase/functions/query/index.ts). |
 | `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Also recomputes `is_transfer` for every `source='plaid'` row: true only when Plaid classified it `TRANSFER_IN`/`TRANSFER_OUT` **and** the user has 2+ linked `plaid_accounts` — with fewer than 2, there's no second tracked account for a "transfer" to double-count against, so it's treated as real spend/income instead (this is what previously made mortgage/alimony/etc. payments vanish from every total once Plaid classified them as transfers). Skips any row with `manually_edited = true` entirely (reset step, every rule pass, and the `is_transfer` recompute), so a direct row edit isn't reverted by an unrelated rule change. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked automatically by `mobile/components/CategoryRulesPanel.tsx` after every rule add/toggle/delete — there's no manual "reapply" step for the user. |
 | `clean_payee(text)` | `INVOKER` | `text` | Strips statement-descriptor junk (masked account suffixes, reference codes, phone numbers, ACH ID labels, trailing dates/state codes) from a raw payee string. Mirrored in TypeScript as `cleanPayee()` in [`supabase/functions/_shared/categoryRules.ts`](supabase/functions/_shared/categoryRules.ts) for the live sync path — the SQL version exists for retroactive bulk reprocessing. The two are kept manually in sync (one runs in Postgres, one in Deno); if you change the cleaning logic, update both. |
 | `purge_stale_disconnected_transactions()` | `DEFINER` | `integer` (accounts purged) | Deletes `transactions` (and the matching `plaid_account_fingerprints` row) for every `plaid_disconnected_accounts` entry disconnected more than 90 days ago and never relinked since (checked via `fingerprint` against currently-active `plaid_accounts`) — relinked accounts are left untouched, just cleared from the tracking table. `SECURITY DEFINER` because it has to operate across every user's data with no session to scope `auth.uid()` to; `EXECUTE` is revoked from `anon`/`authenticated` so only the cron job below (or a superuser) can invoke it. |
@@ -401,7 +417,8 @@ Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations
 [`20260805000000_fix_transfer_flag_and_mortgage_rule.sql`](supabase/migrations/20260805000000_fix_transfer_flag_and_mortgage_rule.sql),
 [`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql),
 [`20260805020000_lock_down_purge_function.sql`](supabase/migrations/20260805020000_lock_down_purge_function.sql) (`purge_stale_disconnected_transactions()`),
-[`20260806030000_add_ledger_meta_function.sql`](supabase/migrations/20260806030000_add_ledger_meta_function.sql) (`ledger_meta()`).
+[`20260806030000_add_ledger_meta_function.sql`](supabase/migrations/20260806030000_add_ledger_meta_function.sql) (`ledger_meta()`),
+[`20260818000000_add_query_rate_limit.sql`](supabase/migrations/20260818000000_add_query_rate_limit.sql) (`query_rate_limits`, `check_and_increment_query_rate_limit()`).
 
 ## Scheduled jobs
 
