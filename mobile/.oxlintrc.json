@@ -8,7 +8,27 @@
   "rules": {
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "warn",
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+
+    // Three rules oxlint 1.79 promoted into `correctness` (i.e. error).
+    // Kept visible as warnings rather than switched off, because each
+    // fires on code that predates them and each needs a different answer:
+    //
+    //   * static-components -- false-positive here. It fires on
+    //     `<Icon .../>` where Icon is looked up from categoryIcons' static
+    //     map during render. Nothing is *created* per render; the rule
+    //     sees a locally-bound capitalized value used as a component.
+    //   * immutability -- false-positive on Reanimated. It flags
+    //     `progress.value = ...` in RisingSuggestions, which is exactly
+    //     how a shared value is written. It also catches a real one:
+    //     TransactionRow mutates the `row` prop after a successful save.
+    //   * set-state-in-effect -- fires on the load-on-mount pattern in
+    //     DataProvider, AccountBalances and (app)/_layout. Real enough to
+    //     keep reading, but unwinding it is a data-flow change, not a
+    //     lint fix, and does not belong in a dependency bump.
+    "react/static-components": "warn",
+    "react/immutability": "warn",
+    "react/set-state-in-effect": "warn"
   },
   "env": {
     "builtin": true
