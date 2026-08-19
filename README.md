@@ -192,6 +192,19 @@ successful sync, so once the 6h resync exists that column is a heartbeat
 that ticks whether or not the bank had any activity. Without it, a quiet
 account and a wedged one are indistinguishable.
 
+One trap worth knowing if you add another scheduled HTTP job:
+`net.http_post`'s `timeout_milliseconds` **defaults to 5000**. Both HTTP
+jobs here pass it explicitly (30s for balances, 120s for the resync)
+because neither originally did, and production showed six timed-out calls
+to one recorded success — the resync that recovered the Aug 15–19 outage
+took 27 seconds. The work still completed (the Edge Function runs to the
+end and returns 200 even after pg_net has hung up), so nothing was lost;
+what it cost was the signal, since `net._http_response` then records a
+timeout on every run whether the job succeeded or not. `supabase/tests/sql/cron_jobs.sql`
+asserts that every `net.http_post` cron job sets a timeout, so a new one
+can't quietly inherit the 5s default. The health check makes no HTTP call
+at all and is immune by construction.
+
 **The reporting half is not finished.** `check_plaid_sync_health()` writes
 `sync_health` and raises a `WARNING` into `postgres_logs`. Nothing pages
 anyone. As it stands you still have to go and look, which is the same
