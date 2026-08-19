@@ -25,6 +25,8 @@ If you change the schema, please update this file in the same PR.
   - [`plaid_auth_numbers`](#plaid_auth_numbers)
   - [`plaid_account_fingerprints`](#plaid_account_fingerprints)
   - [`plaid_disconnected_accounts`](#plaid_disconnected_accounts)
+  - [`query_rate_limits`](#query_rate_limits)
+  - [`sync_health`](#sync_health)
 - [Functions](#functions)
 - [Scheduled jobs](#scheduled-jobs)
 
@@ -399,6 +401,28 @@ Backs `check_and_increment_query_rate_limit()` below — one row per user tracki
 
 Origin: [`20260818000000_add_query_rate_limit.sql`](supabase/migrations/20260818000000_add_query_rate_limit.sql).
 
+### `sync_health`
+
+Current ingest health, one row per **active** `plaid_items` row, rewritten by `check_plaid_sync_health()` on every hourly tick.
+
+This exists because of a real five-day outage. Transactions are webhook-only, and `plaid_items.cursor` only advances after a fully successful sync — so a sync that throws pins the cursor and every later webhook replays the identical failure. Nothing surfaced it: `plaid-balance-refresh` kept polling balances on its own independent hourly path, so the app went on showing a live, correct balance beside a ledger frozen five days back.
+
+Current state rather than an append-only log — the useful question is "is ingest working right now", and a row per item per hour would grow without ever being read. `stale_since` is the one piece of history worth keeping: it answers "since when", which is what turns an alert into a diagnosis.
+
+| Column | Type | Nullable | Default | Notes |
+|---|---|---|---|---|
+| `item_id` | `text` | no | | Primary key. FK → `plaid_items.item_id`, cascades on delete — disconnecting a bank clears its health row rather than leaving a permanently stale orphan that alerts forever. |
+| `user_id` | `uuid` | no | | FK → `auth.users.id`, cascades on delete. |
+| `last_synced_at` | `timestamptz` | no | | Copy of `plaid_items.updated_at` as of the check — the last time a sync completed successfully. |
+| `is_stale` | `boolean` | no | | True when `last_synced_at` is older than the threshold (default 24h — four missed resync cycles, so one transient failure isn't a false alarm). |
+| `stale_since` | `timestamptz` | yes | | When the item **first** went stale in the current incident; preserved across consecutive stale checks, cleared on recovery. |
+| `checked_at` | `timestamptz` | no | `now()` | When the health check last ran for this item. Distinguishes "checked and healthy" from "the check itself stopped running". |
+
+**Constraints:** PK `item_id`; FK `item_id → plaid_items(item_id)` (cascade delete); FK `user_id → auth.users(id)` (cascade delete). Index on `user_id`.
+**RLS:** enabled. `authenticated` holds `SELECT` and one policy — `auth.uid() = user_id` — so the app can surface "your bank feed is behind" without a further migration. No client write path at all: only the `SECURITY DEFINER` health check (and the service role, which bypasses RLS) writes here.
+
+Origin: [`20260819190000_add_sync_health_and_resync_cron.sql`](supabase/migrations/20260819190000_add_sync_health_and_resync_cron.sql).
+
 ## Functions
 
 | Function | Security | Returns | Purpose |
@@ -407,6 +431,7 @@ Origin: [`20260818000000_add_query_rate_limit.sql`](supabase/migrations/20260818
 | `apply_category_rules()` | `INVOKER` | `integer` (rows affected) | Resets every one of the caller's transactions to its `raw_payee`/`raw_category`, then re-applies their `category_rules` in priority order. Also recomputes `is_transfer` for every `source='plaid'` row: true only when Plaid classified it `TRANSFER_IN`/`TRANSFER_OUT` **and** the user has 2+ linked `plaid_accounts` — with fewer than 2, there's no second tracked account for a "transfer" to double-count against, so it's treated as real spend/income instead (this is what previously made mortgage/alimony/etc. payments vanish from every total once Plaid classified them as transfers). Skips any row with `manually_edited = true` entirely (reset step, every rule pass, and the `is_transfer` recompute), so a direct row edit isn't reverted by an unrelated rule change. Always scoped to `auth.uid()` internally — takes no parameters, so a caller can never target another user's rows through it. Invoked automatically by `mobile/components/CategoryRulesPanel.tsx` after every rule add/toggle/delete — there's no manual "reapply" step for the user. |
 | `clean_payee(text)` | `INVOKER` | `text` | Strips statement-descriptor junk (masked account suffixes, reference codes, phone numbers, ACH ID labels, trailing dates/state codes) from a raw payee string. Mirrored in TypeScript as `cleanPayee()` in [`supabase/functions/_shared/categoryRules.ts`](supabase/functions/_shared/categoryRules.ts) for the live sync path — the SQL version exists for retroactive bulk reprocessing. The two are kept manually in sync (one runs in Postgres, one in Deno); if you change the cleaning logic, update both. |
 | `purge_stale_disconnected_transactions()` | `DEFINER` | `integer` (accounts purged) | Deletes `transactions` (and the matching `plaid_account_fingerprints` row) for every `plaid_disconnected_accounts` entry disconnected more than 90 days ago and never relinked since (checked via `fingerprint` against currently-active `plaid_accounts`) — relinked accounts are left untouched, just cleared from the tracking table. `SECURITY DEFINER` because it has to operate across every user's data with no session to scope `auth.uid()` to; `EXECUTE` is revoked from `anon`/`authenticated` so only the cron job below (or a superuser) can invoke it. |
+| `check_plaid_sync_health(interval)` | `DEFINER` | `integer` (stale items) | Rewrites `sync_health` for every `active` `plaid_items` row and returns how many haven't synced within the threshold (default `24 hours`), raising a `WARNING` — visible in `postgres_logs` — when any have. Unscoped by design, unlike `ledger_meta()`/`apply_category_rules()`: this is an operator-facing sweep across every user's items, run by `pg_cron` with no `auth.uid()` to scope to, so `EXECUTE` is revoked from `public`/`anon`/`authenticated` and only the cron job (or a superuser) can invoke it. The `interval` parameter exists so the SQL tests can drive the boundary directly instead of waiting 24 hours. Pure SQL with no HTTP hop — one less thing that can fail in the component whose whole job is noticing failure. |
 | `ledger_meta()` | `INVOKER` | one row: `categories text[], subcategories text[], min_date date, max_date date, distinct_account_ids text[], has_manual boolean` | Computes the handful of scalars `supabase/functions/query/index.ts` needs to build its NL-query system prompt (the valid top-level/`Top:Sub` category values, the data's date range, and which accounts appear in the ledger) directly in the database, off the `(user_id, category, date desc)` index — replacing what used to be a full paginated download of every transaction row just to derive five values in JS. Always scoped to `auth.uid()` internally — takes no parameters, same pattern as `apply_category_rules()`. See `fetchLedgerMeta()` in [`supabase/functions/_shared/transactionsData.ts`](supabase/functions/_shared/transactionsData.ts). |
 
 Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations/20260803010000_add_category_rules_engine.sql),
@@ -425,7 +450,10 @@ Full logic: [`20260803010000_add_category_rules_engine.sql`](supabase/migrations
 | Job | Schedule | What it does |
 |---|---|---|
 | `plaid-balance-refresh` | Hourly (`pg_cron` + `pg_net`) | Calls the `plaid-balance-refresh` Edge Function for every `active` `plaid_items` row, refreshing `plaid_account_balances`. Plaid's Balance product has no webhook, so this polling job is the only way stale balances (accounts that haven't transacted recently) stay current. Authenticated via a service-role key stored in Supabase Vault (`plaid_balance_refresh_service_key`) — never hardcoded in a migration file. |
+| `plaid-transaction-resync` | Every 6h, `:41` (`pg_cron` + `pg_net`) | Calls the `plaid-transaction-resync` Edge Function, which syncs every `active` Item exactly as a webhook would. Transactions are otherwise webhook-only, so this is the floor that lets a lost or failing webhook self-heal instead of freezing the ledger indefinitely. Balances come along for free — `syncItemTransactions` piggybacks `refreshAccountBalances` on every successful sync. Reuses the same Vault secret as the balance job (`plaid_balance_refresh_service_key`), so it needs no manual setup step. |
+| `plaid-sync-health-check` | Hourly, `:47` (`pg_cron`) | Calls `check_plaid_sync_health()` directly (no HTTP hop). Watches the resync's own heartbeat: `syncItemTransactions` stamps `plaid_items.updated_at` on every successful run, so once the 6h resync exists that column ticks whether or not the bank had activity — before it, a quiet account and a wedged one looked identical. |
 | `purge-stale-disconnected-transactions` | Daily, 3am UTC (`pg_cron`) | Calls `purge_stale_disconnected_transactions()` directly (no HTTP hop — pure DB operation, no external API involved) to enforce the 90-day disconnected-account retention policy. |
 
 Origin: [`20260802000100_schedule_plaid_balance_refresh.sql`](supabase/migrations/20260802000100_schedule_plaid_balance_refresh.sql),
-[`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql).
+[`20260805010000_purge_stale_disconnected_transactions.sql`](supabase/migrations/20260805010000_purge_stale_disconnected_transactions.sql),
+[`20260819190000_add_sync_health_and_resync_cron.sql`](supabase/migrations/20260819190000_add_sync_health_and_resync_cron.sql) (`plaid-transaction-resync`, `plaid-sync-health-check`).
