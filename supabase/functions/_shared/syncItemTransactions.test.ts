@@ -561,6 +561,91 @@ describe("syncItemTransactions", () => {
     });
   });
 
+  // supabase-js resolves a query as { data: null, error: null } when a
+  // filter matches nothing, so every read here is written as `data || []`.
+  // If one of those fallbacks were dropped the sync would throw on an
+  // ordinary empty result -- a crash on the most common case there is.
+  describe("empty reads (data: null with no error)", () => {
+    it("treats no tracked accounts as nothing to ingest", async () => {
+      const { db, calls } = fakeDb({ tracked: { data: null, error: null } });
+      const { client } = fakeClient([page({ added: [tx()] })]);
+
+      await expect(syncItemTransactions("item-1", client, db)).resolves.toMatchObject({ added: 1 });
+      // Reported as added by Plaid, but nothing tracked to attribute it to.
+      expect(calls.upserts).toHaveLength(0);
+    });
+
+    it("treats no manually-edited rows as nothing to protect", async () => {
+      const { db, calls, client } = happyPath({ manuallyEdited: { data: null, error: null } });
+
+      await syncItemTransactions("item-1", client, db);
+
+      expect(upsertedRows(calls)).toHaveLength(1);
+    });
+
+    it("treats no category rules as an empty rule set", async () => {
+      const { db, calls, client } = happyPath({ rules: { data: null, error: null } });
+
+      await syncItemTransactions("item-1", client, db);
+
+      // Identical to an explicitly empty rule set: the payee is kept and the
+      // Plaid category is clamped into the closed set.
+      expect(upsertedRows(calls)[0]).toMatchObject({ payee: "Blue Bottle", category: "Miscellaneous" });
+    });
+
+    it("counts a transfer as real spend when the linked-account count is unknown", async () => {
+      // is_transfer only suppresses double-counting between two *tracked*
+      // accounts. With no usable count, the safe reading is 0 -- excluding
+      // it instead would make the money silently disappear from totals.
+      const { db, calls, client } = happyPath(
+        { accountCount: { count: null, error: null } },
+        [tx({ personal_finance_category: { primary: "TRANSFER_OUT" } })]
+      );
+
+      await syncItemTransactions("item-1", client, db);
+
+      expect(upsertedRows(calls)[0]).toMatchObject({ is_transfer: false });
+    });
+
+    it("treats an empty boundary-date read as nothing already synced", async () => {
+      const { db, calls } = fakeDb({
+        tracked: { data: [{ account_id: "acct-1", resync_after_date: "2026-01-15" }], error: null },
+        boundaryExisting: { data: null, error: null },
+      });
+      const { client } = fakeClient([page({ added: [tx({ date: "2026-01-15" })] })]);
+
+      await syncItemTransactions("item-1", client, db);
+
+      // Nothing on the boundary date to dedup against, so the transaction
+      // is new and must be kept rather than dropped.
+      expect(upsertedRows(calls)).toHaveLength(1);
+    });
+  });
+
+  describe("error propagation on the relink and delete paths", () => {
+    it("propagates a boundary-date lookup failure instead of reporting success", async () => {
+      const { db } = fakeDb({
+        tracked: { data: [{ account_id: "acct-1", resync_after_date: "2026-01-15" }], error: null },
+        boundaryExisting: { data: null, error: new Error("boundary failed") },
+      });
+      const { client } = fakeClient([page({ added: [tx({ date: "2026-01-15" })] })]);
+
+      await expect(syncItemTransactions("item-1", client, db)).rejects.toThrow("boundary failed");
+    });
+
+    it("propagates a delete failure instead of reporting success", async () => {
+      // A swallowed delete failure leaves a transaction Plaid has removed
+      // sitting in the ledger forever, silently skewing every total.
+      const { db } = fakeDb({
+        tracked: { data: [{ account_id: "acct-1", resync_after_date: null }], error: null },
+        delete: { error: new Error("delete failed") },
+      });
+      const { client } = fakeClient([page({ removed: [{ transaction_id: "tx-gone" }] })]);
+
+      await expect(syncItemTransactions("item-1", client, db)).rejects.toThrow("delete failed");
+    });
+  });
+
   // Regression: a Plaid HISTORICAL_UPDATE hands over an account's entire
   // backlog in one response. Every id-list query built from that batch used
   // to go out as a single `.in(...)`, which PostgREST serializes into the
