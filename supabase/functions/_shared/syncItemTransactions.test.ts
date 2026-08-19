@@ -51,6 +51,9 @@ function fakeDb(config: DbConfig = {}) {
     upserts: [] as unknown[][],
     deletes: [] as unknown[][],
     cursorUpdates: [] as unknown[][],
+    // Every `.in(...)` filter, recorded per table/op, so the chunking of
+    // Plaid-sized batches is directly assertable.
+    selectIns: [] as { table: string; column: string; values: unknown[] }[],
   };
 
   function query(table: string) {
@@ -99,6 +102,7 @@ function fakeDb(config: DbConfig = {}) {
       order: () => builder,
       in(column: string, values: unknown) {
         if (state.op === "delete") calls.deletes.push([column, values]);
+        else calls.selectIns.push({ table, column, values: values as unknown[] });
         return builder;
       },
       maybeSingle: () => Promise.resolve(resolve()),
@@ -554,6 +558,80 @@ describe("syncItemTransactions", () => {
       const { client } = fakeClient([page({ added: [tx()] })]);
 
       await expect(syncItemTransactions("item-1", client, db)).rejects.toThrow(message);
+    });
+  });
+
+  // Regression: a Plaid HISTORICAL_UPDATE hands over an account's entire
+  // backlog in one response. Every id-list query built from that batch used
+  // to go out as a single `.in(...)`, which PostgREST serializes into the
+  // query string -- 246 transactions produced a 9.9KB URL that Deno's fetch
+  // rejected with "TypeError: Invalid URL". Because the cursor only advances
+  // after every write succeeds, the throw left the cursor unmoved and the
+  // next webhook rebuilt the identical oversized URL: ingest wedged
+  // permanently on the first oversized batch and never recovered on its own.
+  describe("oversized Plaid batches are chunked", () => {
+    const MAX_IDS_PER_QUERY = 75;
+
+    function manyTxs(n: number, prefix = "tx") {
+      return Array.from({ length: n }, (_, i) =>
+        tx({ transaction_id: `${prefix}-${i}`, date: "2026-01-15" })
+      );
+    }
+
+    function idsIn(calls: ReturnType<typeof fakeDb>["calls"], table: string, column: string) {
+      return calls.selectIns.filter((c) => c.table === table && c.column === column);
+    }
+
+    it("splits the manually-edited lookup into bounded chunks covering every id", async () => {
+      const added = manyTxs(246);
+      const { db, calls, client } = happyPath({}, added);
+
+      await syncItemTransactions("item-1", client, db);
+
+      const queries = idsIn(calls, "transactions", "plaid_transaction_id");
+      expect(queries.length).toBeGreaterThan(1);
+      for (const q of queries) expect(q.values.length).toBeLessThanOrEqual(MAX_IDS_PER_QUERY);
+      // No id dropped and none queried twice -- chunking must partition the
+      // batch, not sample it.
+      expect(queries.flatMap((q) => q.values)).toEqual(added.map((t) => t.transaction_id));
+    });
+
+    it("splits the removed-transaction delete into bounded chunks", async () => {
+      const removed = manyTxs(246, "gone").map((t) => ({ transaction_id: t.transaction_id }));
+      const { db, calls } = fakeDb({ tracked: { data: [{ account_id: "acct-1", resync_after_date: null }], error: null } });
+      const { client } = fakeClient([page({ removed })]);
+
+      await syncItemTransactions("item-1", client, db);
+
+      expect(calls.deletes.length).toBeGreaterThan(1);
+      for (const [, values] of calls.deletes) {
+        expect((values as unknown[]).length).toBeLessThanOrEqual(MAX_IDS_PER_QUERY);
+      }
+      expect(calls.deletes.flatMap(([, values]) => values as unknown[]))
+        .toEqual(removed.map((t) => t.transaction_id));
+    });
+
+    it("splits a very large upsert while preserving every row", async () => {
+      const added = manyTxs(1200);
+      const { db, calls, client } = happyPath({}, added);
+
+      await syncItemTransactions("item-1", client, db);
+
+      expect(calls.upserts.length).toBe(3);
+      const rows = calls.upserts.flatMap(([r]) => r as Record<string, unknown>[]);
+      expect(rows).toHaveLength(1200);
+      expect(rows.map((r) => r.plaid_transaction_id)).toEqual(added.map((t) => t.transaction_id));
+    });
+
+    it("advances the cursor after ingesting an oversized batch", async () => {
+      // The point of the fix: a backlog this size must actually complete,
+      // because a sync that throws leaves the cursor stuck and every
+      // subsequent webhook replays the same doomed batch.
+      const { db, calls, client } = happyPath({}, manyTxs(246));
+
+      await expect(syncItemTransactions("item-1", client, db)).resolves.toMatchObject({ added: 246 });
+      expect(calls.cursorUpdates).toHaveLength(1);
+      expect((calls.cursorUpdates[0][0] as { cursor: string }).cursor).toBe("cursor-1");
     });
   });
 });

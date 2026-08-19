@@ -47,6 +47,36 @@ function isTransferFor(tx: any, linkedAccountCount: number) {
   return (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") && linkedAccountCount >= 2;
 }
 
+// PostgREST serializes `.in(...)` into the query string, so one big batch
+// becomes one enormous URL. Plaid's sync stream is unbounded -- a
+// HISTORICAL_UPDATE delivers an account's entire backlog in a single
+// response -- and at 246 transactions the manually-edited lookup below
+// built a 9.9KB URL that Deno's fetch rejected outright with
+// "TypeError: Invalid URL", throwing before the cursor could advance.
+//
+// That failure mode is self-perpetuating, which is what made it serious:
+// the cursor only advances after every write succeeds, so the next
+// webhook re-fetched the same oversized backlog and failed identically.
+// Ingest stayed wedged from the first oversized batch onward, with each
+// webhook returning 500 and nothing else surfacing it. Chunking every
+// id-list query keeps each URL a bounded size no matter how large a batch
+// Plaid hands us.
+const ID_CHUNK_SIZE = 75;
+
+// The upsert is a POST body rather than a URL, so it isn't subject to the
+// same limit -- but it's unbounded for the same reason, and a whole
+// historical backfill in one request is a needlessly large payload.
+// Chunking it is safe because the upsert is idempotent on
+// plaid_transaction_id: a run that fails partway leaves the cursor
+// unadvanced, and the next sync simply re-applies the same rows.
+const UPSERT_CHUNK_SIZE = 500;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
 export async function syncItemTransactions(
   itemId: string,
   client: ReturnType<typeof plaidClient>,
@@ -114,11 +144,11 @@ export async function syncItemTransactions(
   const candidateAccountIds = [...new Set([...added, ...modified].map((tx: any) => tx.account_id))];
   let trackedAccountIds = new Set<string>();
   const resyncAfterDateByAccountId = new Map<string, string>();
-  if (candidateAccountIds.length > 0) {
+  for (const ids of chunk(candidateAccountIds, ID_CHUNK_SIZE)) {
     const { data: tracked, error: trackedError } = await db
       .from("plaid_accounts")
       .select("account_id, resync_after_date")
-      .in("account_id", candidateAccountIds);
+      .in("account_id", ids);
     if (trackedError) throw trackedError;
     for (const a of tracked || []) {
       trackedAccountIds.add(a.account_id);
@@ -133,11 +163,11 @@ export async function syncItemTransactions(
   // Once a row is manually edited, sync stops touching it entirely.
   const candidateTransactionIds = [...added, ...modified].map((tx: any) => tx.transaction_id);
   const manuallyEditedIds = new Set<string>();
-  if (candidateTransactionIds.length > 0) {
+  for (const ids of chunk(candidateTransactionIds, ID_CHUNK_SIZE)) {
     const { data: edited, error: editedError } = await db
       .from("transactions")
       .select("plaid_transaction_id")
-      .in("plaid_transaction_id", candidateTransactionIds)
+      .in("plaid_transaction_id", ids)
       .eq("manually_edited", true);
     if (editedError) throw editedError;
     for (const e of edited || []) manuallyEditedIds.add(e.plaid_transaction_id);
@@ -219,19 +249,19 @@ export async function syncItemTransactions(
       };
     });
 
-  if (upserts.length > 0) {
+  for (const rows of chunk(upserts, UPSERT_CHUNK_SIZE)) {
     const { error: upsertError } = await db
       .from("transactions")
-      .upsert(upserts, { onConflict: "plaid_transaction_id" });
+      .upsert(rows, { onConflict: "plaid_transaction_id" });
     if (upsertError) throw upsertError;
   }
 
-  if (removed.length > 0) {
-    const removedIds = removed.map((tx) => tx.transaction_id);
+  const removedIds = removed.map((tx) => tx.transaction_id);
+  for (const ids of chunk(removedIds, ID_CHUNK_SIZE)) {
     const { error: deleteError } = await db
       .from("transactions")
       .delete()
-      .in("plaid_transaction_id", removedIds);
+      .in("plaid_transaction_id", ids);
     if (deleteError) throw deleteError;
   }
 
