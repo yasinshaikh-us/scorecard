@@ -386,6 +386,33 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
+  // The chart's other failure mode, and the one only a screenshot shows:
+  // a DATE grouping over a long span. gifted-charts sizes bars in fixed
+  // pixels, so a series longer than the card was drawn past its right
+  // edge and turned the plot into a horizontal scroller -- data you had
+  // to swipe to reach, in a card that gives no hint there is more. The
+  // same screenshot is the check on the other two axis changes: x labels
+  // that name periods ("1 Aug '26", then bare day numbers) instead of
+  // repeating a full date under every bar, and y gridlines on round money
+  // rather than on quarters of the data maximum.
+  //
+  // Asserting only that a card comes back, same as the ranking spec
+  // above: which chart type Claude picks is not something a UI test
+  // should depend on. Any date grouping over this span exercises the
+  // geometry, and the screenshot is what is actually being inspected.
+  it("Ask: a long date range renders its chart inside the card", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "Show my spending by day over the last 3 months");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await captureScreen("ask-screen-long-date-range");
+    await element(by.id("query-card-close-button")).tap();
+
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
   it("Home: pull-to-refresh doesn't crash and content survives", async () => {
     // Only testable here -- RN's RefreshControl doesn't preserve custom
     // testIDs through ScrollView's native prop handling in Stage 1's JS

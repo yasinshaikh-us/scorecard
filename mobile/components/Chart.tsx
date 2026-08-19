@@ -5,6 +5,7 @@ import { fmtGroupKey, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { iconForCategory } from "../lib/categoryIcons";
 import { topCategory, type ChartDatum, type QuerySpec } from "../lib/logic";
+import { barGeometry, labelBudget, lineGeometry, niceScale, periodLabels, yAxisLabels } from "../lib/chartAxis";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
@@ -177,10 +178,29 @@ export default function Chart({
     );
   }
 
+  // Gridlines at round money -- 0/250/500/750/1000 rather than the equal
+  // slices of the data maximum the library picks on its own, which land
+  // on figures like $132.75 that say nothing when read against a bar. The
+  // scale's own max is what the bars are drawn against, so the tallest bar
+  // stops below the top gridline rather than at it; that headroom is the
+  // price of the axis being readable.
+  const scale = niceScale(Math.max(...data.map((d) => d.total)));
+  const axisScale = {
+    maxValue: scale.max,
+    noOfSections: scale.sections,
+    stepValue: scale.step,
+    yAxisLabelTexts: yAxisLabels(scale),
+  };
+
   if (spec.chartType === "line") {
-    const lineData = data.map((d) => ({
+    const labels = periodLabels(
+      data.map((d) => d.key),
+      spec.groupBy || "",
+      labelBudget(width)
+    );
+    const lineData = data.map((d, i) => ({
       value: d.total,
-      label: fmtGroupKey(d.key, spec.groupBy || ""),
+      label: labels[i],
       dataPointColor: selectedKey === d.key ? colors.accent : colors.surface,
       dataPointRadius: selectedKey === d.key ? 5 : 4,
       onPress: () => onSelect(d.key),
@@ -192,6 +212,9 @@ export default function Chart({
           width={width}
           height={200}
           yAxisLabelWidth={Y_AXIS_GUTTER}
+          {...lineGeometry(width, data.length)}
+          {...axisScale}
+          disableScroll
           color={colors.accent}
           thickness={2}
           dataPointsColor={colors.accent}
@@ -213,13 +236,19 @@ export default function Chart({
   // Rankings are handled by RankingChart above and never reach here.
   const iconAxis = spec.groupBy === "category";
 
-  const barData = data.map((d) => {
+  const labels = periodLabels(
+    data.map((d) => d.key),
+    spec.groupBy || "",
+    labelBudget(width)
+  );
+
+  const barData = data.map((d, i) => {
     const color = iconAxis ? catColor(d.key, CATS, topCategory, mode) : colors.accent;
     const category = iconAxis ? topCategory(d.key) : null;
     const Icon = category ? iconForCategory(category) : null;
     return {
       value: d.total,
-      label: iconAxis ? undefined : fmtGroupKey(d.key, spec.groupBy || ""),
+      label: iconAxis ? undefined : labels[i],
       labelComponent:
         Icon && category
           ? () => (
@@ -241,11 +270,11 @@ export default function Chart({
         width={width}
         height={200}
         yAxisLabelWidth={Y_AXIS_GUTTER}
-        barWidth={22}
-        spacing={18}
+        {...barGeometry(width, data.length)}
+        {...axisScale}
+        disableScroll
         xAxisLabelTextStyle={axisLabelStyle}
         yAxisTextStyle={axisLabelStyle}
-        noOfSections={4}
         isAnimated={false}
       />
     </View>
