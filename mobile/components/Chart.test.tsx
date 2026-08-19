@@ -4,6 +4,9 @@ import { renderWithTheme } from "../lib/testUtils";
 import { lightColors } from "../lib/theme";
 import Chart from "./Chart";
 import type { ChartDatum, QuerySpec } from "../lib/logic";
+// The chart's own arithmetic, reused here to assert the props the
+// component hands the library actually fit the card it was given.
+import { contentWidth } from "../lib/chartAxis";
 
 const mockBarChart: any = jest.fn((_props: any) => null);
 const mockLineChart: any = jest.fn((_props: any) => null);
@@ -177,6 +180,76 @@ describe("Chart", () => {
 
     await fireEvent.press(screen.getByTestId("chart-rank-row"));
     expect(onSelect).toHaveBeenCalledWith("Whole Foods");
+  });
+
+  // Bars used to be a fixed 22dp wide with a fixed 18dp gap, so any
+  // series past ~7 groups was drawn wider than the card and gifted-charts
+  // turned itself into a horizontal scroller -- the chart had to be
+  // swiped to be finished. Geometry is now derived from the width the
+  // card actually has.
+  it("fits a long series inside the card instead of making it scrollable", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
+    const data = Array.from({ length: 45 }, (_, i) => datum({ key: `2026-08-${String(i + 1).padStart(2, "0")}` }));
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(contentWidth(props, data.length)).toBeLessThanOrEqual(props.width);
+    expect(props.disableScroll).toBe(true);
+  });
+
+  it("still draws a short series at full bar width", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
+    const data = [datum({ key: "2026-08-01" }), datum({ key: "2026-08-02" })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    expect(mockBarChart.mock.calls[0][0].barWidth).toBe(22);
+  });
+
+  // A date axis showed "12 Aug 26" under every bar. Now the day number
+  // carries the position and the month/year appear only where they
+  // change, and labels are thinned to what the card can hold.
+  it("labels a date axis by period, not with a full date per bar", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
+    const data = ["2026-08-30", "2026-08-31", "2026-09-01"].map((key) => datum({ key }));
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(props.data.map((d: any) => d.label)).toEqual(["30 Aug '26", "31", "1 Sep"]);
+  });
+
+  it("thins the labels on a series too long to label every bar", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
+    const data = Array.from({ length: 45 }, (_, i) => datum({ key: `2026-08-${String(i + 1).padStart(2, "0")}` }));
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const labels = mockBarChart.mock.calls[0][0].data.map((d: any) => d.label);
+    expect(labels.filter((l: string) => l !== "").length).toBeLessThanOrEqual(7);
+    expect(labels[labels.length - 1]).not.toBe("");
+  });
+
+  // The library's own axis is the data maximum cut into equal parts, so a
+  // series topping out at $132.75 got gridlines at $33.19/$66.38/$99.56.
+  it("puts the y-axis gridlines on round money above the data", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
+    const data = [datum({ key: "2026-08-01", total: 132.75 }), datum({ key: "2026-08-02", total: 40 })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(props.yAxisLabelTexts).toEqual(["$0", "$50", "$100", "$150"]);
+    expect(props.maxValue).toBe(150);
+    expect(props.noOfSections).toBe(3);
+    expect(props.stepValue).toBe(50);
+  });
+
+  it("gives a line chart the same fitted geometry and round axis", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "week" };
+    const data = Array.from({ length: 20 }, (_, i) => datum({ key: `2026-01-${String(i + 1).padStart(2, "0")}`, total: 900 }));
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockLineChart.mock.calls[0][0];
+    expect(contentWidth(props, data.length)).toBeLessThanOrEqual(props.width);
+    expect(props.disableScroll).toBe(true);
+    expect(props.yAxisLabelTexts[props.yAxisLabelTexts.length - 1]).toBe("$1k");
   });
 
   it("dims non-selected bars once a key is selected", async () => {
