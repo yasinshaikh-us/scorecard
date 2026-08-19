@@ -107,7 +107,8 @@ To deploy by hand instead (e.g. before the secret exists):
 ```bash
 supabase functions deploy plaid-webhook test-login --no-verify-jwt --project-ref <ref>
 supabase functions deploy plaid-balance-refresh plaid-disconnect plaid-exchange \
-  plaid-link-token query test-plaid-link transactions --project-ref <ref>
+  plaid-link-token plaid-transaction-resync query test-plaid-link transactions \
+  --project-ref <ref>
 ```
 
 Set these as Edge Function secrets first (Project Settings → Edge Functions
@@ -118,12 +119,17 @@ action needed for those three:
 - `ANTHROPIC_API_KEY`
 - `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`
 
-All five of these functions expect `verify_jwt` enabled (the platform
-default) — the gateway rejects any request without a valid Supabase JWT on
-`Authorization` before the function code runs. `plaid-webhook` is the one
-exception in this project (deployed with `--no-verify-jwt`, since Plaid
-calls it directly, not a signed-in user) — see
-`supabase/functions/plaid-webhook`.
+Every function in that second `deploy` list expects `verify_jwt` enabled
+(the platform default) — the gateway rejects any request without a valid
+Supabase JWT on `Authorization` before the function code runs. The two in
+the first list are the exceptions: `plaid-webhook`, since Plaid calls it
+directly rather than a signed-in user (it authenticates the caller itself,
+via `verifyPlaidWebhook`), and `test-login`, which mints a session from a
+shared secret. Note that `plaid-balance-refresh` and
+`plaid-transaction-resync` are *not* exceptions despite being called by
+`pg_cron` rather than a user: the service-role key is itself a valid
+Supabase JWT, so the gateway accepts it and each function then checks it is
+specifically that key.
 
 Two of the deployed functions exist purely to support the app's automated
 testing (see `mobile/README.md`'s "Test login" / "Test Plaid Link"
@@ -156,6 +162,50 @@ values ('2026-01-15', 'Some Payee', 'Groceries', -42.50);
 
 No code changes or redeploys needed — the `transactions` Edge Function reads
 the table live every time the app loads.
+
+## Sync health
+
+Transactions reach the ledger one way: Plaid pushes a webhook, the
+`plaid-webhook` function calls `syncItemTransactions`, and that advances
+the Item's cursor **only after every write succeeds**. That last part is
+what makes the path fragile — a sync that throws leaves the cursor where it
+was, so the next webhook re-fetches exactly the same data and fails exactly
+the same way. It is a closed loop with no way out.
+
+That is not hypothetical. Between 2026-08-15 and 2026-08-19 an oversized
+historical batch made every webhook throw, and nothing recovered or
+complained for five days. The reason it went unnoticed is worth
+internalising: `plaid-balance-refresh` polls balances hourly on a
+completely independent path, so the app kept showing a live, correct
+balance next to a ledger frozen five days in the past. Both paths returned
+HTTP 200. Nothing anywhere said "stale".
+
+Two jobs now sit under that:
+
+| | Schedule | Job |
+|---|---|---|
+| Resync | every 6h | `plaid-transaction-resync` syncs every active Item the same way a webhook would, so a lost or failing webhook self-heals rather than freezing the ledger. |
+| Health check | hourly | `check_plaid_sync_health()` flags any active Item whose last successful sync is more than 24h old (four missed resync cycles) into `public.sync_health`. |
+
+They're deliberately coupled: `plaid_items.updated_at` is stamped on every
+successful sync, so once the 6h resync exists that column is a heartbeat
+that ticks whether or not the bank had any activity. Without it, a quiet
+account and a wedged one are indistinguishable.
+
+**The reporting half is not finished.** `check_plaid_sync_health()` writes
+`sync_health` and raises a `WARNING` into `postgres_logs`. Nothing pages
+anyone. As it stands you still have to go and look, which is the same
+failure mode that let the original outage run — the difference is only that
+the answer is now a single query rather than an investigation:
+
+```sql
+select item_id, last_synced_at, is_stale, stale_since from public.sync_health;
+```
+
+Closing it properly means picking a channel and wiring it up — a Supabase
+log-based alert on that `WARNING`, a push notification via the mobile app,
+or a banner in the UI (`sync_health` already has an owner-scoped `SELECT`
+policy so the client can read its own row without a further migration).
 
 ## Access control (Google sign-in + per-user RLS)
 
@@ -295,6 +345,7 @@ GitHub Actions workflows, not local commands.
 │   │   ├── categoryRules.ts      # applies category_rules to a row, shared by the sync path
 │   │   ├── syncItemTransactions.ts # pulls a Plaid Item's transactions into `transactions`
 │   │   ├── refreshAccountBalances.ts # shared by the hourly cron + every sync webhook
+│   │   ├── resyncItems.ts        # the 6h safety-net poll behind plaid-transaction-resync
 │   │   ├── verifyPlaidWebhook.ts # validates Plaid's webhook signature
 │   │   ├── plaidExchangeLogic.ts # pure duplicate-account detection logic
 │   │   ├── plaidExchangeLogic.test.ts
@@ -309,6 +360,7 @@ GitHub Actions workflows, not local commands.
 │   ├── query/index.ts            # holds the Anthropic key server-side
 │   ├── plaid-webhook/index.ts    # Plaid calls this directly, --no-verify-jwt
 │   ├── plaid-balance-refresh/index.ts  # hourly pg_cron job
+│   ├── plaid-transaction-resync/index.ts # 6h pg_cron job; floor under plaid-webhook
 │   ├── test-login/index.ts       # mobile testing only -- see mobile/README.md
 │   └── test-plaid-link/index.ts  # mobile testing only -- see mobile/README.md
 ├── supabase/migrations/     # schema history (see the "known gap" note above)
