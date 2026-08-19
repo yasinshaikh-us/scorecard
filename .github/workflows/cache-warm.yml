@@ -46,7 +46,7 @@ jobs:
       # exactly what needs its clock reset.
       - name: Warm the Gradle cache
         id: gradle
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.gradle/caches
@@ -61,7 +61,7 @@ jobs:
       # reporting success.
       - name: Warm the AVD snapshot cache
         id: avd
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.android/avd/*
