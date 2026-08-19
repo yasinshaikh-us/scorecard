@@ -170,12 +170,20 @@ create table if not exists cron.job (
   command text
 );
 
+-- Real pg_cron UPSERTS by name: scheduling an existing job name replaces
+-- it rather than adding a second copy. A plain insert here would let a
+-- migration that re-schedules a job (to change its cadence or its command)
+-- pass the tests while silently double-scheduling in production.
+create unique index if not exists cron_job_jobname_key on cron.job (jobname);
+
 create or replace function cron.schedule(job_name text, schedule text, command text)
 returns bigint
 language sql
 as $$
   insert into cron.job (jobname, schedule, command)
   values (job_name, schedule, command)
+  on conflict (jobname) do update
+    set schedule = excluded.schedule, command = excluded.command
   returning jobid
 $$;
 
@@ -186,7 +194,18 @@ as $$
   delete from cron.job where jobname = job_name returning true
 $$;
 
-create or replace function net.http_post(url text, headers jsonb default '{}', body jsonb default '{}')
+-- Signature copied from the real pg_net, parameter names, order and
+-- defaults included -- notably timeout_milliseconds, which defaults to
+-- 5000 and is easy to exceed: a call that omits it is a call that gives up
+-- after five seconds. A stub with a different signature would accept a
+-- call production rejects (or vice versa), which is worse than no stub.
+create or replace function net.http_post(
+  url text,
+  body jsonb default '{}'::jsonb,
+  params jsonb default '{}'::jsonb,
+  headers jsonb default '{"Content-Type": "application/json"}'::jsonb,
+  timeout_milliseconds integer default 5000
+)
 returns bigint
 language sql
 as $$ select 0::bigint $$;
