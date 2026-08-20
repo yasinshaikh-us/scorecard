@@ -5,7 +5,16 @@ import { fmtGroupKey, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { iconForCategory } from "../lib/categoryIcons";
 import { topCategory, type ChartDatum, type QuerySpec } from "../lib/logic";
-import { barGeometry, fmtAxisCount, fmtAxisMoney, labelBudget, lineGeometry, niceScale, periodLabels, yAxisLabels } from "../lib/chartAxis";
+import {
+  barGeometry,
+  fmtAxisCount,
+  fmtAxisMoney,
+  labelBudget,
+  lineGeometry,
+  periodLabels,
+  signedAxisLabels,
+  signedScale,
+} from "../lib/chartAxis";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
@@ -194,12 +203,17 @@ export default function Chart({
   // scale's own max is what the bars are drawn against, so the tallest bar
   // stops below the top gridline rather than at it; that headroom is the
   // price of the axis being readable.
-  const scale = niceScale(Math.max(...data.map((d) => d.total)), counting);
+  // Signed, because a net-cashflow bucket can be negative: the axis then
+  // needs sections below zero drawn at the same step as the ones above,
+  // and labels covering both.
+  const signed = signedScale(data.map((d) => d.total), counting);
   const axisScale = {
-    maxValue: scale.max,
-    noOfSections: scale.sections,
-    stepValue: scale.step,
-    yAxisLabelTexts: yAxisLabels(scale, fmtAxis),
+    maxValue: signed.scale.max,
+    noOfSections: signed.scale.sections,
+    stepValue: signed.scale.step,
+    noOfSectionsBelowXAxis: signed.sectionsBelow,
+    mostNegativeValue: signed.mostNegative,
+    yAxisLabelTexts: signedAxisLabels(signed, fmtAxis),
   };
 
   if (spec.chartType === "line") {

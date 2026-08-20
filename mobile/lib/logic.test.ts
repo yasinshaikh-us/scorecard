@@ -1,5 +1,10 @@
 import { describe, it, expect } from "@jest/globals";
 import {
+  budgetProgress,
+  comparePrevious,
+  filterRecurring,
+  median,
+  recurringPayees,
   topCategory,
   computeDataMeta,
   filterTransactions,
@@ -619,5 +624,205 @@ describe("findOutlier", () => {
     const even = Array.from({ length: 10 }, (_, i) => row(`2026-01-0${(i % 9) + 1}`, "A", "Groceries", -20));
     expect(findOutlier(even)).toBeNull();
     expect(findOutlier([row("2026-01-01", "A", "Groceries", -20)])).toBeNull();
+  });
+});
+
+
+// Question shapes the spec vocabulary could not express before: net
+// cashflow, the typical case, several merchants at once, subscriptions,
+// period-over-period, and a budget.
+
+describe("net and median metrics", () => {
+  const mixed = [
+    { ...row("2026-01-05", "Payroll", "Income:Salary", 3000) },
+    { ...row("2026-01-06", "Rent", "Home:Rent", -2000) },
+    { ...row("2026-01-07", "Chipotle", "Dining:Fast Food", -100) },
+  ];
+
+  it("nets income against spending, and can go negative", () => {
+    const data = buildChartData(mixed, { groupBy: "month", metric: "net", type: "all" } as any);
+    expect(data[0].total).toBe(900);
+    expect(data[0].sum).toBe(5100);
+
+    const spendOnly = buildChartData(mixed.slice(1), { groupBy: "month", metric: "net", type: "all" } as any);
+    expect(spendOnly[0].total).toBe(-2100);
+  });
+
+  it("takes the middle amount for median, not the mean a single big row drags", () => {
+    expect(median([10, 20, 30])).toBe(20);
+    expect(median([10, 20, 30, 40])).toBe(25);
+    expect(median([])).toBe(0);
+
+    const groceries = [
+      row("2026-01-01", "Store", "Groceries", -40),
+      row("2026-01-02", "Store", "Groceries", -50),
+      row("2026-01-03", "Store", "Groceries", -60),
+      row("2026-01-04", "Store", "Groceries", -800),
+    ];
+    const [bucket] = buildChartData(groceries, { groupBy: "month", metric: "median" } as any);
+    expect(bucket.total).toBe(55);
+    // The mean would have said $237.50.
+    expect(bucket.sum / bucket.count).toBeCloseTo(237.5, 5);
+  });
+});
+
+describe("payeeAny", () => {
+  const rows = [
+    row("2026-01-01", "Chipotle Mexican Grill", "Dining", -12),
+    row("2026-01-02", "Sweetgreen", "Dining", -15),
+    row("2026-01-03", "Whole Foods", "Groceries", -80),
+  ];
+
+  it("matches any one of several merchants", () => {
+    const kept = filterTransactions(rows, { payeeAny: ["chipotle", "sweetgreen"] } as any);
+    expect(kept.map((r) => r.Payee)).toEqual(["Chipotle Mexican Grill", "Sweetgreen"]);
+  });
+
+  it("is ignored when empty, rather than matching nothing", () => {
+    expect(filterTransactions(rows, { payeeAny: [] } as any)).toHaveLength(3);
+  });
+});
+
+describe("recurringPayees", () => {
+  const monthly = (payee: string, amount: number, months: number[], day = "05") =>
+    months.map((m) => row(`2026-${String(m).padStart(2, "0")}-${day}`, payee, "Bills:Subscriptions", -amount));
+
+  it("finds a monthly subscription and reports its cadence and cost", () => {
+    const found = recurringPayees(monthly("Netflix", 15.99, [1, 2, 3, 4, 5]));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ payee: "Netflix", cadence: "monthly", count: 5 });
+    expect(found[0].amount).toBeCloseTo(15.99, 2);
+    expect(found[0].perMonth).toBeCloseTo(15.99, 2);
+  });
+
+  it("finds a weekly one and prices it per month", () => {
+    const weekly = ["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26"].map((d) =>
+      row(d, "Cleaner", "Home:Services", -80)
+    );
+    const [found] = recurringPayees(weekly);
+    expect(found.cadence).toBe("weekly");
+    expect(found.perMonth).toBeCloseTo(80 * (30.44 / 7), 2);
+  });
+
+  it("finds a yearly one", () => {
+    const yearly = ["2024-03-01", "2025-03-02", "2026-03-01"].map((d) => row(d, "Domain", "Bills", -22));
+    expect(recurringPayees(yearly)[0]).toMatchObject({ cadence: "yearly" });
+  });
+
+  // The median gap here is 8.5 days, which lands inside the weekly
+  // window even though the actual gaps are 1, 15, 39 and 2 -- regularity
+  // has to be checked, not inferred from a middle value.
+  it("ignores a merchant visited often but irregularly", () => {
+    const chipotle = ["2026-01-03", "2026-01-04", "2026-01-19", "2026-02-27", "2026-03-01"].map((d) =>
+      row(d, "Chipotle", "Dining", -13)
+    );
+    expect(recurringPayees(chipotle)).toEqual([]);
+  });
+
+  it("ignores a regular cadence whose amount swings wildly", () => {
+    const utility = [
+      row("2026-01-05", "Casino", "Entertainment", -20),
+      row("2026-02-05", "Casino", "Entertainment", -400),
+      row("2026-03-05", "Casino", "Entertainment", -5),
+      row("2026-04-05", "Casino", "Entertainment", -900),
+    ];
+    expect(recurringPayees(utility)).toEqual([]);
+  });
+
+  it("needs at least three charges before calling anything recurring", () => {
+    expect(recurringPayees(monthly("Netflix", 15.99, [1, 2]))).toEqual([]);
+  });
+
+  it("narrows a set to recurring payees only when the spec asks", () => {
+    const rows = [...monthly("Netflix", 15.99, [1, 2, 3]), row("2026-01-08", "Chipotle", "Dining", -12)];
+    expect(filterRecurring(rows, { recurringOnly: true } as any).map((r) => r.Payee)).toEqual([
+      "Netflix",
+      "Netflix",
+      "Netflix",
+    ]);
+    expect(filterRecurring(rows, {} as any)).toHaveLength(4);
+  });
+
+  it("ranks the most expensive subscription first", () => {
+    const rows = [...monthly("Netflix", 15.99, [1, 2, 3]), ...monthly("Storage", 60, [1, 2, 3], "12")];
+    expect(recurringPayees(rows).map((r) => r.payee)).toEqual(["Storage", "Netflix"]);
+  });
+});
+
+describe("comparePrevious", () => {
+  const all = [
+    // Previous window: January.
+    row("2026-01-10", "Store", "Groceries", -100),
+    row("2026-01-20", "Store", "Groceries", -100),
+    // Current window: February.
+    row("2026-02-10", "Store", "Groceries", -150),
+    row("2026-02-20", "Store", "Groceries", -150),
+  ];
+  const spec = { dateStart: "2026-02-01", dateEnd: "2026-02-28", compareTo: "previous" } as any;
+
+  it("measures the equal-length window immediately before, and the delta", () => {
+    const current = summarize(filterTransactions(all, spec))!;
+    const previous = comparePrevious(all, spec, current)!;
+    // Feb 1-28 is a 27-day span, so the window before it is 4-31 Jan.
+    expect(previous.start).toBe("2026-01-04");
+    expect(previous.end).toBe("2026-01-31");
+    expect(previous.sum).toBe(200);
+    expect(previous.deltaPct).toBeCloseTo(0.5, 5);
+  });
+
+  it("reports no percentage when the previous window is empty", () => {
+    const emptyBefore = [row("2026-02-10", "Store", "Groceries", -150)];
+    const current = summarize(filterTransactions(emptyBefore, spec))!;
+    expect(comparePrevious(emptyBefore, spec, current)).toMatchObject({ sum: 0, deltaPct: null });
+  });
+
+  it("says nothing unless the question asked for a comparison", () => {
+    const current = summarize(all)!;
+    expect(comparePrevious(all, { ...spec, compareTo: null }, current)).toBeNull();
+    expect(comparePrevious(all, spec, null)).toBeNull();
+  });
+
+  it("falls back to the matching rows' own window when the spec has no bounds", () => {
+    const unbounded = { compareTo: "previous" } as any;
+    const current = summarize(filterTransactions(all, unbounded))!;
+    const previous = comparePrevious(all, unbounded, current)!;
+    // Rows span 10 Jan - 20 Feb (41 days), so the window before it ends 9 Jan.
+    expect(previous.end).toBe("2026-01-09");
+    expect(previous.start).toBe("2025-11-29");
+  });
+});
+
+describe("budgetProgress", () => {
+  const summary = (sum: number, end: string) => ({
+    sum,
+    count: 3,
+    average: sum / 3,
+    perMonth: sum,
+    start: "2026-02-01",
+    end,
+    months: 1,
+  });
+
+  it("measures spend against the named target", () => {
+    const progress = budgetProgress(summary(312, "2026-02-11"), {
+      target: 500,
+      dateStart: "2026-02-01",
+      dateEnd: "2026-02-28",
+    } as any)!;
+    expect(progress.spent).toBe(312);
+    expect(progress.target).toBe(500);
+    expect(progress.pct).toBeCloseTo(0.624, 3);
+    // 10 of 27 days elapsed.
+    expect(progress.elapsedPct).toBeCloseTo(10 / 27, 3);
+  });
+
+  it("has no pace to report without a bounded window", () => {
+    expect(budgetProgress(summary(312, "2026-02-11"), { target: 500 } as any)!.elapsedPct).toBeNull();
+  });
+
+  it("says nothing without a usable target", () => {
+    expect(budgetProgress(summary(312, "2026-02-11"), {} as any)).toBeNull();
+    expect(budgetProgress(summary(312, "2026-02-11"), { target: 0 } as any)).toBeNull();
+    expect(budgetProgress(null, { target: 500 } as any)).toBeNull();
   });
 });

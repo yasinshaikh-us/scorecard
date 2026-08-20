@@ -309,4 +309,23 @@ describe("Chart", () => {
     expect(screen.getByText("611")).toBeTruthy();
     expect(screen.queryByText(/\$/)).toBeNull();
   });
+
+  it("draws a negative net bucket below the axis", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month", metric: "net" };
+    const data = [datum({ key: "2026-01", total: 900 }), datum({ key: "2026-02", total: -2100 })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(props.noOfSectionsBelowXAxis).toBeGreaterThan(0);
+    expect(props.mostNegativeValue).toBeLessThanOrEqual(-2100);
+    expect(props.yAxisLabelTexts).toContain("$0");
+  });
+
+  it("keeps the axis entirely positive when nothing is negative", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    await renderWithTheme(
+      <Chart data={[datum({ key: "2026-01", total: 90 })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />
+    );
+    expect(mockBarChart.mock.calls[0][0].noOfSectionsBelowXAxis).toBe(0);
+  });
 });

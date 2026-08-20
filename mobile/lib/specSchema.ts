@@ -31,7 +31,7 @@ const GROUP_BYS = [
   "none",
 ] as const;
 const TYPES = ["expense", "income", "transfer", "all"] as const;
-const METRICS = ["sum", "count", "avg"] as const;
+const METRICS = ["sum", "count", "avg", "net", "median"] as const;
 
 // A ranking is drawn as one row or bar per entry, so a limit past this is
 // not a chart anyone reads -- and the model can emit any integer.
@@ -121,10 +121,18 @@ export function normalizeSpec(raw: any): { spec: QuerySpec; issues: SpecIssue[] 
   spec.excludeCategories = stringList(input.excludeCategories);
   spec.categoryContains = cleanString(input.categoryContains, MAX_CONTAINS);
   spec.payeeContains = cleanString(input.payeeContains, MAX_CONTAINS);
+  spec.payeeAny = stringList(input.payeeAny);
   spec.accountContains = cleanString(input.accountContains, MAX_CONTAINS);
   spec.title = cleanString(input.title, MAX_TITLE) || undefined;
 
   spec.includeTransfers = input.includeTransfers === true;
+  spec.recurringOnly = input.recurringOnly === true;
+  spec.compareTo = input.compareTo === "previous" ? "previous" : null;
+
+  // A budget of zero or less is not a target anyone set.
+  const target = finiteNumber(input.target);
+  if (input.target != null && (target === null || target <= 0)) issues.push("ignored an unusable budget target");
+  spec.target = target !== null && target > 0 ? target : null;
 
   const min = finiteNumber(input.amountMin);
   const max = finiteNumber(input.amountMax);

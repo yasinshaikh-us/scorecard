@@ -92,7 +92,7 @@ describe("buildSystemPrompt", () => {
         "isLedgerQuery", "categories", "categoryContains", "payeeContains",
         "accountContains", "dateStart", "dateEnd", "type", "includeTransfers",
         "amountMin", "amountMax", "limit", "chartType", "groupBy", "title",
-        "excludeCategories", "metric",
+        "excludeCategories", "metric", "payeeAny", "recurringOnly", "compareTo", "target",
       ]) {
         expect(prompt).toContain(`"${field}"`);
       }
@@ -161,6 +161,42 @@ describe("buildSystemPrompt", () => {
       expect(prompt).toContain('Use "count" when the question is about frequency rather than money');
       expect(prompt).toContain('Use "avg" when the question asks what a typical one costs');
       expect(prompt).toContain('When in doubt use "sum"');
+    });
+
+    it("offers median for the typical case and net for cashflow", () => {
+      const prompt = build();
+      expect(prompt).toContain('Use "median" when the question asks for the typical case');
+      expect(prompt).toContain('Use "net" for cashflow');
+      expect(prompt).toContain('pair it with type "all"');
+    });
+  });
+
+  // Question shapes the spec vocabulary could not express at all before:
+  // several merchants at once, subscriptions, period-over-period, and a
+  // budget to measure against.
+  describe("question shapes beyond a single filtered total", () => {
+    it("uses payeeAny for a multi-merchant comparison", () => {
+      const prompt = build();
+      expect(prompt).toContain('Set "payeeAny" instead of "payeeContains" when the question names more than one merchant');
+      expect(prompt).toContain('pair it with groupBy "payee"');
+    });
+
+    it("routes subscription questions to recurringOnly rather than a payee filter", () => {
+      const prompt = build();
+      expect(prompt).toContain('Set "recurringOnly": true when the question is about subscriptions');
+      expect(prompt).toContain("do NOT try to express that with a category or payee filter");
+    });
+
+    it("describes compareTo as the current window plus the one before it", () => {
+      const prompt = build();
+      expect(prompt).toContain('Set "compareTo": "previous" when the question compares this period against the one before it');
+      expect(prompt).toContain("the app measures the equal-length window immediately before it");
+    });
+
+    it("captures a named budget as target", () => {
+      const prompt = build();
+      expect(prompt).toContain('Set "target" to the number when the question names a budget');
+      expect(prompt).toContain("Leave null when no figure is named");
     });
   });
 

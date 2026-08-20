@@ -101,6 +101,31 @@ export function yAxisLabels(scale: Scale, format: (n: number) => string = fmtAxi
   return Array.from({ length: scale.sections + 1 }, (_, i) => format(round(scale.step * i)));
 }
 
+// A cashflow chart crosses zero: income above the axis, spending below.
+// gifted-charts draws that from a positive scale plus a count of
+// sections below the axis, all sharing one step -- so the same step has
+// to cover both directions, and the labels run bottom-to-top across the
+// whole range.
+export type SignedScale = { scale: Scale; sectionsBelow: number; mostNegative: number };
+
+export function signedScale(values: number[], integer = false): SignedScale {
+  const highest = Math.max(0, ...values);
+  const lowest = Math.min(0, ...values);
+  const scale = niceScale(Math.max(highest, Math.abs(lowest)), integer);
+  const sectionsBelow = lowest < 0 ? Math.ceil(Math.abs(lowest) / scale.step) : 0;
+  // Guarded so an all-positive series reports 0 rather than -0.
+  return { scale, sectionsBelow, mostNegative: sectionsBelow > 0 ? -round(sectionsBelow * scale.step) : 0 };
+}
+
+export function signedAxisLabels(
+  { scale, sectionsBelow }: SignedScale,
+  format: (n: number) => string = fmtAxisMoney
+): string[] {
+  const labels: string[] = [];
+  for (let i = -sectionsBelow; i <= scale.sections; i++) labels.push(format(round(scale.step * i)));
+  return labels;
+}
+
 // How many x-axis labels the card can hold. ~48dp each is what a
 // "12 Aug" reads at comfortably at 10pt with air between neighbours.
 export function labelBudget(plotWidth: number): number {

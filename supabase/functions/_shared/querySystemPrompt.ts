@@ -38,6 +38,7 @@ Otherwise respond with ONLY this JSON object, no markdown fences, no prose:
   "excludeCategories": [array of TOP-LEVEL category strings to leave OUT of an otherwise-matching set, or null],
   "categoryContains": "substring to match against the full Top:Sub category string, case-insensitive, or null",
   "payeeContains": "substring to match against Payee, case-insensitive, or null",
+  "payeeAny": [array of payee substrings, matching any one of them, or null],
   "accountContains": "substring to match against Account, case-insensitive, or null",
   "dateStart": "YYYY-MM-DD or null",
   "dateEnd": "YYYY-MM-DD or null",
@@ -46,7 +47,10 @@ Otherwise respond with ONLY this JSON object, no markdown fences, no prose:
   "amountMin": number or null,
   "amountMax": number or null,
   "limit": integer or null,
-  "metric": "sum" | "count" | "avg",
+  "metric": "sum" | "count" | "avg" | "net" | "median",
+  "recurringOnly": true | false,
+  "compareTo": "previous" | null,
+  "target": number or null,
   "chartType": "bar" | "pie" | "line",
   "groupBy": "category" | "day" | "week" | "month" | "quarter" | "year" | "payee" | "account" | "transaction",
   "title": "short 3-8 word title for this view, in plain language"
@@ -77,7 +81,11 @@ Rules:
   -- A question that filters down to ONE merchant, ONE subcategory or ONE account and asks how much/how many/whether ("how much did I spend at Chipotle", "how much is my rent", "do I still pay for Netflix") -> groupBy the time granularity from the span rule above, NOT "category". Grouping a single-merchant question by category collapses every matching transaction into one bar, which shows a total and nothing else; the total is already displayed above the chart, so the chart's job is the trend over time.
   -- Never pick a groupBy that can only produce one bucket for the filtered set. If the filter already pins the category (categoryContains), the merchant (payeeContains) or the account (accountContains), group by time instead.
   -- A single-number, yes/no, or list-only question with no filter that pins one group and no obvious time angle -> chartType "bar", groupBy "category" so a chart is always present.
-- "metric" is what each bucket measures. "sum" (the default) totals the amounts. Use "count" when the question is about frequency rather than money -- "how often do I go to Chipotle", "how many times did I fill up", "how many transactions in July" -- so each bucket is a number of transactions. Use "avg" when the question asks what a typical one costs -- "average grocery run", "what do I usually spend on coffee". When in doubt use "sum".
+- "metric" is what each bucket measures. "sum" (the default) totals the amounts. Use "count" when the question is about frequency rather than money -- "how often do I go to Chipotle", "how many times did I fill up", "how many transactions in July" -- so each bucket is a number of transactions. Use "avg" when the question asks what a typical one costs -- "average grocery run", "what do I usually spend on coffee". Use "median" when the question asks for the typical case and a few huge entries would distort a mean -- "typical grocery run", "what's a normal month look like". Use "net" for cashflow: money in minus money out in one figure ("am I net positive", "what's my cashflow", "did I save anything this month"), and pair it with type "all" so both sides are counted -- every other metric measures magnitudes, so only "net" can go negative. When in doubt use "sum".
+- Set "payeeAny" instead of "payeeContains" when the question names more than one merchant ("Chipotle vs Sweetgreen", "how much at Starbucks and Peets"), and pair it with groupBy "payee" so the chart compares them. Use "payeeContains" for a single merchant.
+- Set "recurringOnly": true when the question is about subscriptions, recurring charges, or regular bills ("what am I subscribed to", "what recurring charges do I have", "which bills hit every month"). The app then keeps only payees that actually bill on a regular cadence for a stable amount, which is what such a question means -- do NOT try to express that with a category or payee filter. Pair it with groupBy "payee".
+- Set "compareTo": "previous" when the question compares this period against the one before it ("more or less than last month", "how does this month compare", "am I spending more than usual this week"). Give the CURRENT period the normal dateStart/dateEnd; the app measures the equal-length window immediately before it and reports the difference. Leave it null otherwise.
+- Set "target" to the number when the question names a budget or a goal to measure against ("am I on track for $500 on dining this month", "keep groceries under $800"). The app shows how much of it is spent and whether that is ahead of the period's pace. Leave null when no figure is named.
 - "excludeCategories" leaves a top-level bucket out of an otherwise-matching set. Use it when the question says so outright ("everything except rent", "spending other than investments"). Also use it for a general spending-over-time question when the ledger has a category that holds occasional very large one-offs (Investments is the usual one) -- a single six-figure purchase makes every other period on the chart a sliver, and the question was about everyday spending. Do NOT exclude anything when the question is actually about that category, names it, or asks for a complete total.
 - Set "limit" to the specific count whenever the question asks for a bounded top/bottom ranking of any kind -- individual transactions, merchants, or categories ("top 10", "5 biggest", "largest 3"). A bare superlative with no explicit number ("biggest expense", "smallest deposit") means limit 1. Leave "limit" null when the question doesn't ask for a specific count -- a sensible default (10) still applies automatically for merchant ("payee") and individual-transaction ("transaction") rankings so those charts never render an unbounded list.
 - title should read naturally, e.g. "Dining spend by week" not "category=Dining".

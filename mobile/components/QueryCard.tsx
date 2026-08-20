@@ -3,7 +3,18 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import Chart from "./Chart";
 import TransactionRow from "./TransactionRow";
 import QueryStats from "./QueryStats";
-import { buildChartData, filterTransactions, findOutlier, groupKeyOf, resolveSpec, summarize, type QueryResult } from "../lib/logic";
+import {
+  budgetProgress,
+  buildChartData,
+  comparePrevious,
+  filterRecurring,
+  filterTransactions,
+  findOutlier,
+  groupKeyOf,
+  resolveSpec,
+  summarize,
+  type QueryResult,
+} from "../lib/logic";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 import type { Transaction } from "../lib/types";
@@ -32,7 +43,13 @@ export default function QueryCard({
   const spec = "spec" in card ? card.spec : undefined;
   const issues = "issues" in card && card.issues ? card.issues : [];
 
-  const baseFiltered = useMemo(() => filterTransactions(transactions, spec ?? null), [transactions, spec]);
+  const baseFiltered = useMemo(
+    // Recurrence is a property of a payee's history rather than of a row,
+    // so a "what am I subscribed to" question narrows the set after the
+    // row-wise filter has run.
+    () => filterRecurring(filterTransactions(transactions, spec ?? null), spec ?? null),
+    [transactions, spec]
+  );
   // Not the spec the model returned: a grouping that collapses to a
   // single bucket is re-grouped over time here (see resolveSpec), so
   // everything downstream -- chart, labels, tap-to-filter -- has to read
@@ -41,6 +58,13 @@ export default function QueryCard({
   const chartData = useMemo(() => buildChartData(baseFiltered, chartSpec), [baseFiltered, chartSpec]);
   const summary = useMemo(() => summarize(baseFiltered), [baseFiltered]);
   const outlier = useMemo(() => findOutlier(baseFiltered), [baseFiltered]);
+  // Against the whole ledger, not the filtered set: the previous window's
+  // rows are by definition outside this one's date bounds.
+  const comparison = useMemo(
+    () => comparePrevious(transactions, spec ?? null, summary),
+    [transactions, spec, summary]
+  );
+  const budget = useMemo(() => budgetProgress(summary, spec ?? null), [summary, spec]);
   const displayed = useMemo(() => {
     if (!selectedKey || !chartSpec) return baseFiltered;
     // A capped pie's "Other" slice stands for several group keys at once,
@@ -134,7 +158,7 @@ export default function QueryCard({
         </Text>
       ) : null}
 
-      {summary ? <QueryStats summary={summary} outlier={outlier} /> : null}
+      {summary ? <QueryStats summary={summary} outlier={outlier} comparison={comparison} budget={budget} /> : null}
 
       {chartSpec && chartSpec.chartType !== "none" && chartData.length > 0 && (
         <>
