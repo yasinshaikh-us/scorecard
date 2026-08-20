@@ -339,23 +339,20 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
-  // The list used to mount every matching row. The seeded ledger holds
-  // ~360 rows inside the last twelve months, so a broad question clears
-  // the 200-row cap and the note is reachable.
-  it("Ask: a broad question caps the list instead of rendering everything", async () => {
-    await element(by.id("nav-ask-button")).tap();
-    await setInputText("ask-input", "List every transaction from the last twelve months");
-    await element(by.id("ask-button")).tap();
-
-    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
-    // Below 200 rows of list, so it has to be scrolled to.
-    await scrollIntoView("query-row-cap", "ask-feed");
-    await expect(element(by.id("query-row-cap"))).toBeVisible();
-    await captureScreen("ask-screen-row-cap");
-
-    await element(by.id("nav-home-button")).tap();
-    await expect(element(by.id("home-screen"))).toBeVisible();
-  });
+  // The 200-row cap is NOT asserted here, and the attempt is worth
+  // recording. A spec asking "list every transaction from the last twelve
+  // months" reached the card with groupBy "transaction" -- which the
+  // prompt maps that phrasing to, quite correctly -- and in that mode the
+  // list renders the chart's own capped ranking rather than every
+  // matching row (QueryCard.tsx), so the cap note never appears and the
+  // scroll ran to the end looking for it.
+  //
+  // The premise depended on which grouping Claude chose, which is the
+  // trap the spec above is careful to avoid. The cap itself is covered
+  // deterministically in Stage 1 (components/QueryCard.test.tsx renders
+  // 250 rows and asserts both the 200 shown and the "showing 200 of 250"
+  // note); what Stage 2 would have added is only that it renders on a
+  // device, which is not worth a test whose outcome a model decides.
 
   it("Ask: a suggestion produces a card that can be closed", async () => {
     await element(by.id("nav-ask-button")).tap();
