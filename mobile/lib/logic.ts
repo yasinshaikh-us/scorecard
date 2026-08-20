@@ -5,7 +5,8 @@
 // content-wise as the web version, just typed.
 
 import type { Transaction } from "./types";
-import { fmtDate, isDateKey } from "./format";
+import { daysBefore, fmtDate, isDateKey } from "./format";
+import { normalizeSpec } from "./specSchema";
 
 export const topCategory = (cat: string) => (cat || "Uncategorized").split(":")[0];
 
@@ -46,6 +47,9 @@ export type QuerySpec = {
   excludeCategories?: string[] | null;
   categoryContains?: string | null;
   payeeContains?: string | null;
+  // Several merchants at once: "Chipotle vs Sweetgreen" is one question,
+  // and a single substring can't express it.
+  payeeAny?: string[] | null;
   accountContains?: string | null;
   dateStart?: string | null;
   dateEnd?: string | null;
@@ -58,7 +62,27 @@ export type QuerySpec = {
   groupBy?: "category" | "day" | "week" | "month" | "quarter" | "year" | "payee" | "account" | "transaction" | "none";
   // What each bucket measures. Everything used to be a sum of amounts,
   // which left "how often do I go there" answerable only in dollars.
-  metric?: "sum" | "count" | "avg";
+  metric?: "sum" | "count" | "avg" | "net" | "median";
+  // A SECOND grouping dimension, drawn as stacked bars or one line per
+  // value: "dining by month, split by account" is two axes, and one
+  // groupBy can only carry one of them.
+  seriesBy?: "category" | "account" | "payee" | null;
+  // Extends a date-grouped chart with projected buckets. They are drawn
+  // as projections, carry no transactions, and are never counted in the
+  // totals above the chart.
+  forecast?: boolean;
+  // Restricts the set to payees that bill on a regular cadence -- what a
+  // question about subscriptions is actually asking for. Not a row-wise
+  // filter (regularity is a property of a payee's whole history), so it
+  // is applied by filterRecurring rather than by filterTransactions.
+  recurringOnly?: boolean;
+  // Re-runs the same filter over the equal-length window immediately
+  // before this one, so the card can answer "more or less than last
+  // time".
+  compareTo?: "previous" | null;
+  // A number the question named to measure spending against ("am I on
+  // track for $500 on dining?").
+  target?: number | null;
   title?: string;
 };
 
@@ -85,6 +109,10 @@ export function filterTransactions(rows: Transaction[], spec: QuerySpec | null):
     if (spec.excludeCategories && spec.excludeCategories.includes(topCategory(d.Category))) return false;
     if (spec.categoryContains && !d.Category.toLowerCase().includes(spec.categoryContains.toLowerCase())) return false;
     if (spec.payeeContains && !d.Payee.toLowerCase().includes(spec.payeeContains.toLowerCase())) return false;
+    if (spec.payeeAny && spec.payeeAny.length) {
+      const payee = d.Payee.toLowerCase();
+      if (!spec.payeeAny.some((p) => payee.includes(p.toLowerCase()))) return false;
+    }
     if (spec.accountContains && !(d.Account || "").toLowerCase().includes(spec.accountContains.toLowerCase())) return false;
     if (spec.dateStart && d.Date < spec.dateStart) return false;
     if (spec.dateEnd && d.Date > spec.dateEnd) return false;
@@ -145,10 +173,19 @@ export type ChartDatum = {
   key: string;
   total: number;
   sum: number;
+  // Signed, unlike `sum`: income counts up and expenses count down, which
+  // is what a cashflow question is asking for and what `sum` (built on
+  // magnitudes) can never express. Optional so a hand-built datum (tests,
+  // fixtures) doesn't have to state it; buildChartData always does.
+  net?: number;
   count: number;
   category?: string;
   row?: Transaction;
   keys?: string[];
+  // A bucket with no transactions behind it: drawn as a projection,
+  // ignored by the totals above the chart, and not selectable, since
+  // there is nothing to filter the list down to.
+  projected?: boolean;
 };
 
 // Builds the {key, total, count} chart series from already-filtered rows:
@@ -169,6 +206,7 @@ export function buildChartData(filteredRows: Transaction[], spec: QuerySpec | nu
       key: groupKeyOf(spec, d),
       total: Math.abs(d.Amount),
       sum: Math.abs(d.Amount),
+      net: d.Amount,
       count: 1,
       category: topCategory(d.Category),
       row: d,
@@ -182,11 +220,16 @@ export function buildChartData(filteredRows: Transaction[], spec: QuerySpec | nu
   // labelled with whichever category accounts for most of it.
   const categoryTotals: Record<string, Record<string, number>> = {};
   const map: Record<string, ChartDatum> = {};
+  // Kept beside the buckets rather than on them: a median needs every
+  // amount in the bucket, and nothing downstream wants to carry that.
+  const amounts: Record<string, number[]> = {};
   filteredRows.forEach((d) => {
     const k = groupKeyOf(spec, d);
-    if (!map[k]) map[k] = { key: k, total: 0, sum: 0, count: 0 };
+    if (!map[k]) map[k] = { key: k, total: 0, sum: 0, net: 0, count: 0 };
     map[k].sum += Math.abs(d.Amount);
+    map[k].net = (map[k].net ?? 0) + d.Amount;
     map[k].count += 1;
+    (amounts[k] ||= []).push(Math.abs(d.Amount));
 
     const cat = topCategory(d.Category);
     if (!categoryTotals[k]) categoryTotals[k] = {};
@@ -195,7 +238,7 @@ export function buildChartData(filteredRows: Transaction[], spec: QuerySpec | nu
   for (const k of Object.keys(map)) {
     const totals = categoryTotals[k];
     map[k].category = Object.keys(totals).reduce((best, cat) => (totals[cat] > totals[best] ? cat : best));
-    map[k].total = metricValue(map[k], spec.metric);
+    map[k].total = spec.metric === "median" ? median(amounts[k]) : metricValue(map[k], spec.metric);
   }
   let arr = Object.values(map);
   if (isDateKey(spec.groupBy || "")) {
@@ -210,10 +253,21 @@ export function buildChartData(filteredRows: Transaction[], spec: QuerySpec | nu
   return arr;
 }
 
-export function metricValue(d: { sum: number; count: number }, metric: QuerySpec["metric"]): number {
+export function metricValue(d: { sum: number; count: number; net?: number }, metric: QuerySpec["metric"]): number {
   if (metric === "count") return d.count;
   if (metric === "avg") return d.count > 0 ? d.sum / d.count : 0;
+  if (metric === "net") return d.net ?? 0;
   return d.sum;
+}
+
+// The middle amount, which answers "what does a typical one cost" in a
+// way an average cannot: one $400 grocery haul drags a mean of $60
+// upward, and the median stays where most of the runs actually are.
+export function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 // A donut of nineteen categories is a colour wheel, not a comparison: the
@@ -228,8 +282,8 @@ export function capPieSlices(sorted: ChartDatum[], metric: QuerySpec["metric"]):
   const kept = sorted.slice(0, PIE_SLICES - 1);
   const rest = sorted.slice(PIE_SLICES - 1);
   const merged = rest.reduce(
-    (acc, d) => ({ sum: acc.sum + d.sum, count: acc.count + d.count }),
-    { sum: 0, count: 0 }
+    (acc, d) => ({ sum: acc.sum + d.sum, net: acc.net + (d.net ?? 0), count: acc.count + d.count }),
+    { sum: 0, net: 0, count: 0 }
   );
   return [
     ...kept,
@@ -237,6 +291,7 @@ export function capPieSlices(sorted: ChartDatum[], metric: QuerySpec["metric"]):
       key: "Other",
       total: metricValue(merged, metric),
       sum: merged.sum,
+      net: merged.net,
       count: merged.count,
       keys: rest.map((d) => d.key),
     },
@@ -343,6 +398,328 @@ export function summarize(filteredRows: Transaction[]): QuerySummary | null {
   };
 }
 
+// "Did I spend more this month than last?" -- one spec describes one
+// window, so the comparison is made by re-running the same filter over
+// the equal-length window immediately before it. The window comes from
+// the spec's own bounds when it has them and from the matching rows
+// otherwise, so an unbounded question still compares like for like.
+export type Comparison = { sum: number; count: number; start: string; end: string; deltaPct: number | null };
+
+export function comparePrevious(
+  allRows: Transaction[],
+  spec: QuerySpec | null,
+  current: QuerySummary | null
+): Comparison | null {
+  if (!spec || spec.compareTo !== "previous" || !current) return null;
+
+  const end = spec.dateEnd && isIsoDateish(spec.dateEnd) ? spec.dateEnd : current.end;
+  const start = spec.dateStart && isIsoDateish(spec.dateStart) ? spec.dateStart : current.start;
+  const length = daysBetween(start, end);
+  // A window has to have length before "the one before it" means
+  // anything.
+  if (length < 1) return null;
+
+  const previousEnd = daysBefore(start, 1);
+  const previousStart = daysBefore(previousEnd, length);
+  const rows = filterTransactions(allRows, { ...spec, dateStart: previousStart, dateEnd: previousEnd });
+  const previous = summarize(rows);
+  if (!previous) return { sum: 0, count: 0, start: previousStart, end: previousEnd, deltaPct: null };
+
+  return {
+    sum: previous.sum,
+    count: previous.count,
+    start: previousStart,
+    end: previousEnd,
+    // Undefined rather than infinite when the previous window is empty:
+    // "up 100%" from nothing is not a fact about spending.
+    deltaPct: previous.sum > 0 ? (current.sum - previous.sum) / previous.sum : null,
+  };
+}
+
+const isIsoDateish = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+function daysBetween(start: string, end: string): number {
+  const [y1, m1, d1] = start.split("-").map(Number);
+  const [y2, m2, d2] = end.split("-").map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+}
+
+// What a question about subscriptions is really asking: which payees
+// bill on a regular cadence for a stable amount. Regularity is a
+// property of a payee's whole history, not of any one row, so this
+// cannot be expressed as a filter field -- it runs over the matching set
+// and narrows it afterwards.
+export type Recurring = {
+  payee: string;
+  cadence: "weekly" | "monthly" | "yearly";
+  amount: number;
+  count: number;
+  lastDate: string;
+  perMonth: number;
+};
+
+// Windows around the cadences a bill actually arrives on: monthly is
+// wide because "the 1st" drifts across weekends and month lengths.
+const CADENCES: { cadence: Recurring["cadence"]; min: number; max: number; perMonth: number }[] = [
+  { cadence: "weekly", min: 5, max: 9, perMonth: 30.44 / 7 },
+  { cadence: "monthly", min: 25, max: 38, perMonth: 1 },
+  { cadence: "yearly", min: 345, max: 385, perMonth: 1 / 12 },
+];
+
+// Three charges is the fewest that can establish an interval at all: two
+// give one gap, which is indistinguishable from a coincidence.
+const MIN_CHARGES = 3;
+// A subscription's amount moves (tax, tier changes), but not by much.
+const AMOUNT_TOLERANCE = 0.2;
+
+export function recurringPayees(rows: Transaction[]): Recurring[] {
+  const byPayee: Record<string, Transaction[]> = {};
+  for (const r of rows) {
+    const key = r.Payee.trim().toLowerCase();
+    (byPayee[key] ||= []).push(r);
+  }
+
+  const found: Recurring[] = [];
+  for (const group of Object.values(byPayee)) {
+    if (group.length < MIN_CHARGES) continue;
+    const dates = group.map((r) => r.Date).sort();
+    const gaps: number[] = [];
+    for (let i = 1; i < dates.length; i++) gaps.push(daysBetween(dates[i - 1], dates[i]));
+    const typicalGap = median(gaps);
+    const match = CADENCES.find((c) => typicalGap >= c.min && typicalGap <= c.max);
+    if (!match) continue;
+    // The median alone is not regularity: a merchant visited on the 3rd,
+    // 4th, 19th, then not for six weeks has gaps of 1, 15, 39, 2 -- whose
+    // median is 8.5, squarely "weekly". Most of the gaps have to sit in
+    // the cadence's own window before this is a bill rather than a habit.
+    const onCadence = gaps.filter((g) => g >= match.min && g <= match.max).length;
+    if (onCadence / gaps.length < 0.6) continue;
+
+    const amountsSeen = group.map((r) => Math.abs(r.Amount));
+    const typicalAmount = median(amountsSeen);
+    if (typicalAmount <= 0) continue;
+    // Most of the charges have to sit near that amount -- otherwise this
+    // is a merchant visited regularly, not a subscription.
+    const steady = amountsSeen.filter((a) => Math.abs(a - typicalAmount) / typicalAmount <= AMOUNT_TOLERANCE);
+    if (steady.length / amountsSeen.length < 0.6) continue;
+
+    found.push({
+      payee: group[0].Payee,
+      cadence: match.cadence,
+      amount: typicalAmount,
+      count: group.length,
+      lastDate: dates[dates.length - 1],
+      perMonth: typicalAmount * match.perMonth,
+    });
+  }
+
+  return found.sort((a, b) => b.perMonth - a.perMonth);
+}
+
+export function filterRecurring(rows: Transaction[], spec: QuerySpec | null): Transaction[] {
+  if (!spec?.recurringOnly) return rows;
+  const keep = new Set(recurringPayees(rows).map((r) => r.payee.trim().toLowerCase()));
+  return rows.filter((r) => keep.has(r.Payee.trim().toLowerCase()));
+}
+
+// Spending measured against a number the question named. Pace compares
+// how much of the budget is gone with how much of the window is, so
+// "62% spent" reads differently on day 3 than on day 25.
+export type BudgetProgress = { spent: number; target: number; pct: number; elapsedPct: number | null };
+
+export function budgetProgress(summary: QuerySummary | null, spec: QuerySpec | null): BudgetProgress | null {
+  if (!summary || !spec?.target || spec.target <= 0) return null;
+
+  let elapsedPct: number | null = null;
+  if (spec.dateStart && spec.dateEnd && isIsoDateish(spec.dateStart) && isIsoDateish(spec.dateEnd)) {
+    const window = daysBetween(spec.dateStart, spec.dateEnd);
+    if (window > 0) {
+      const elapsed = daysBetween(spec.dateStart, summary.end);
+      elapsedPct = Math.min(Math.max(elapsed / window, 0), 1);
+    }
+  }
+
+  return { spent: summary.sum, target: spec.target, pct: summary.sum / spec.target, elapsedPct };
+}
+
+// "At this pace, ~$780 by 31 Aug" -- the projection people actually want,
+// and the only one that needs no new chart: a partially-elapsed window
+// scaled to its full length.
+//
+// Deliberately not a model of anything. It answers "if the rest of this
+// month looks like the part I've had", which is exactly as much as a
+// run rate can honestly claim, and it refuses to answer at all until
+// there is enough of the window (and enough transactions in it) for the
+// rate to mean something.
+export type Projection = { projected: number; through: string; windowEnd: string; elapsedPct: number };
+
+const MIN_PROJECTION_DAYS = 3;
+const MIN_PROJECTION_ROWS = 3;
+
+export function projectRunRate(
+  summary: QuerySummary | null,
+  spec: QuerySpec | null,
+  today: string
+): Projection | null {
+  if (!summary || !spec?.dateStart || !spec?.dateEnd) return null;
+  if (!isIsoDateish(spec.dateStart) || !isIsoDateish(spec.dateEnd) || !isIsoDateish(today)) return null;
+  // Nothing to project once the window is over.
+  if (today >= spec.dateEnd || today < spec.dateStart) return null;
+
+  const window = daysBetween(spec.dateStart, spec.dateEnd);
+  const elapsed = daysBetween(spec.dateStart, today);
+  if (window < 7 || elapsed < MIN_PROJECTION_DAYS || summary.count < MIN_PROJECTION_ROWS) return null;
+
+  return {
+    projected: (summary.sum / elapsed) * window,
+    through: today,
+    windowEnd: spec.dateEnd,
+    elapsedPct: elapsed / window,
+  };
+}
+
+// The second grouping dimension. Kept to the low-cardinality fields --
+// a chart with one series per payee across 300 merchants is not a chart.
+export function seriesKeyOf(spec: QuerySpec | null, d: Transaction): string {
+  if (spec?.seriesBy === "category") return topCategory(d.Category);
+  if (spec?.seriesBy === "account") return d.Account || "Manual entry";
+  if (spec?.seriesBy === "payee") return d.Payee;
+  return "";
+}
+
+export type SeriesDatum = { name: string; values: number[]; sum: number; keys?: string[] };
+export type SeriesData = { buckets: string[]; series: SeriesDatum[] };
+
+// Six is what a legend can name and a stack can still be read as parts
+// of a bar; the rest becomes one "Other" band that remembers what it
+// holds, same as a capped pie.
+const MAX_SERIES = 6;
+
+type Cell = { sum: number; net: number; count: number; amounts: number[] };
+const emptyCell = (): Cell => ({ sum: 0, net: 0, count: 0, amounts: [] });
+
+function cellValue(cell: Cell, metric: QuerySpec["metric"]): number {
+  if (metric === "median") return median(cell.amounts);
+  return metricValue(cell, metric);
+}
+
+// A matrix rather than a list: bucket on one axis, series on the other.
+// buildChartData's flat shape can't express it, so this is a separate
+// path the chart switches to when spec.seriesBy is set -- rather than
+// bending ChartDatum into something two-dimensional that every existing
+// caller would have to understand.
+export function buildSeriesData(filteredRows: Transaction[], spec: QuerySpec | null): SeriesData | null {
+  if (!spec?.seriesBy || !spec.groupBy || spec.groupBy === "none" || spec.groupBy === "transaction") return null;
+  if (filteredRows.length === 0) return null;
+
+  const cells: Record<string, Record<string, Cell>> = {};
+  const bucketTotals: Record<string, number> = {};
+  const seriesTotals: Record<string, number> = {};
+
+  for (const d of filteredRows) {
+    const bucket = groupKeyOf(spec, d);
+    const name = seriesKeyOf(spec, d) || "Unlabelled";
+    const cell = ((cells[name] ||= {})[bucket] ||= emptyCell());
+    cell.sum += Math.abs(d.Amount);
+    cell.net += d.Amount;
+    cell.count += 1;
+    cell.amounts.push(Math.abs(d.Amount));
+    bucketTotals[bucket] = (bucketTotals[bucket] || 0) + Math.abs(d.Amount);
+    seriesTotals[name] = (seriesTotals[name] || 0) + Math.abs(d.Amount);
+  }
+
+  const buckets = Object.keys(bucketTotals).sort((a, b) =>
+    isDateKey(spec.groupBy || "") ? a.localeCompare(b) : bucketTotals[b] - bucketTotals[a]
+  );
+  const ranked = Object.keys(seriesTotals).sort((a, b) => seriesTotals[b] - seriesTotals[a]);
+  const kept = ranked.slice(0, MAX_SERIES - (ranked.length > MAX_SERIES ? 1 : 0));
+  const folded = ranked.slice(kept.length);
+
+  const series: SeriesDatum[] = kept.map((name) => ({
+    name,
+    values: buckets.map((b) => cellValue(cells[name][b] || emptyCell(), spec.metric)),
+    sum: seriesTotals[name],
+  }));
+
+  if (folded.length) {
+    series.push({
+      name: "Other",
+      keys: folded,
+      values: buckets.map((b) => {
+        const merged = folded.reduce((acc, name) => {
+          const cell = cells[name][b];
+          if (!cell) return acc;
+          return {
+            sum: acc.sum + cell.sum,
+            net: acc.net + cell.net,
+            count: acc.count + cell.count,
+            amounts: [...acc.amounts, ...cell.amounts],
+          };
+        }, emptyCell());
+        return cellValue(merged, spec.metric);
+      }),
+      sum: folded.reduce((acc, name) => acc + seriesTotals[name], 0),
+    });
+  }
+
+  return { buckets, series };
+}
+
+// The next bucket key along, and the last day a bucket covers. Both are
+// pure key arithmetic -- no clock, no locale -- so a projected bucket
+// lands where the real ones would have.
+export function nextPeriodKey(key: string, groupBy: string): string {
+  if (groupBy === "day") return daysBefore(key, -1);
+  if (groupBy === "week") return daysBefore(key, -7);
+  if (groupBy === "year") return String(Number(key) + 1);
+  if (groupBy === "quarter") {
+    const [y, q] = key.split("-Q").map(Number);
+    return q === 4 ? `${y + 1}-Q1` : `${y}-Q${q + 1}`;
+  }
+  const [y, m] = key.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+export function periodEnd(key: string, groupBy: string): string {
+  if (groupBy === "day") return key;
+  if (groupBy === "week") return daysBefore(key, -6);
+  // The rest are "the day before the next period starts", which is the
+  // only definition that gets February and leap years right for free.
+  const next = nextPeriodKey(key, groupBy);
+  if (groupBy === "year") return daysBefore(`${next}-01-01`, 1);
+  if (groupBy === "quarter") {
+    const [y, q] = next.split("-Q").map(Number);
+    return daysBefore(`${y}-${String((q - 1) * 3 + 1).padStart(2, "0")}-01`, 1);
+  }
+  return daysBefore(`${next}-01`, 1);
+}
+
+// How far ahead each granularity projects. A year of projected years is
+// fiction; three months is a quarter's visibility.
+const FORECAST_BUCKETS: Record<string, number> = { day: 7, week: 4, month: 3, quarter: 2, year: 1 };
+// Averaged over the last few COMPLETE buckets: the current one is
+// usually partial, and a half-finished month averaged in drags every
+// projection down.
+const FORECAST_BASIS = 3;
+
+export function forecastBuckets(data: ChartDatum[], spec: QuerySpec | null, today: string): ChartDatum[] {
+  const groupBy = spec?.groupBy || "";
+  if (!spec?.forecast || !isDateKey(groupBy) || data.length < 2) return data;
+
+  const complete = data.filter((d) => periodEnd(d.key, groupBy) <= today);
+  const basisFrom = (complete.length ? complete : data).slice(-FORECAST_BASIS);
+  if (basisFrom.length === 0) return data;
+  const basis = basisFrom.reduce((acc, d) => acc + d.total, 0) / basisFrom.length;
+
+  const out = [...data];
+  let key = data[data.length - 1].key;
+  for (let i = 0; i < (FORECAST_BUCKETS[groupBy] ?? 1); i++) {
+    key = nextPeriodKey(key, groupBy);
+    out.push({ key, total: basis, sum: basis, net: basis, count: 0, projected: true });
+  }
+  return out;
+}
+
 // A period whose total is really one purchase wearing a trend's clothes.
 // Verified against real data: a single $170,000 Investments row sits in
 // one month of an otherwise ~$14,000/month ledger, so the honest reading
@@ -369,7 +746,14 @@ export function findOutlier(filteredRows: Transaction[]): Outlier | null {
   return null;
 }
 
-export type QueryResult = { error: string } | { offTopic: true } | { spec: QuerySpec };
+export type QueryResult =
+  | { error: string }
+  | { offTopic: true }
+  // `issues` names anything the model asked for that the app refused to
+  // run -- an unreadable date, an unknown grouping, an absurd limit. It
+  // is rendered on the card, because a dropped filter changes the answer
+  // and a silently-changed answer is the failure mode worth avoiding.
+  | { spec: QuerySpec; issues: string[] };
 
 // Interprets the `query` Edge Function's response into exactly one of
 // {error}/{offTopic}/{spec}.
@@ -390,7 +774,11 @@ export function parseQueryResponse(ok: boolean, data: any): QueryResult {
   const raw = textBlock.text.replace(/```json/g, "").replace(/```/g, "").trim();
   try {
     const parsed = JSON.parse(raw);
-    return parsed.isLedgerQuery === false ? { offTopic: true } : { spec: parsed };
+    if (parsed?.isLedgerQuery === false) return { offTopic: true };
+    // Never trust the parsed object as a spec: normalizeSpec is what
+    // stands between a model typo and a card that silently answers a
+    // different question (see lib/specSchema.ts).
+    return normalizeSpec(parsed);
   } catch (e: any) {
     return { error: String(e.message || e) };
   }

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageCircleQuestion } from "lucide-react-native";
@@ -12,20 +12,14 @@ import QueryCard from "../../components/QueryCard";
 import RisingSuggestions from "../../components/RisingSuggestions";
 import ScreenHeader from "../../components/ScreenHeader";
 import CategoryRulesPanel from "../../components/CategoryRulesPanel";
+import { SUGGESTIONS, pickSuggestions } from "../../lib/suggestions";
 
-// Idle-state suggestions. Rendered by RisingSuggestions as a slow upward
-// drift of bare text, scattered left/centre/right -- see that component
-// for why they are not chips.
-const SUGGESTIONS = [
-  "How much did I spend on dining last month?",
-  "What's my biggest expense this year?",
-  "Top 10 expenses this month",
-  "How much did I spend at Chipotle?",
-  "What's my average grocery purchase?",
-  "Which category do I spend the most on?",
-  "Show me my recent transactions",
-  "How much have I spent this month?",
-];
+// Which idle-state suggestions this visit shows. The pool lives in
+// lib/suggestions.ts (fifty of them, covering every question shape the
+// app can answer); a random handful is drawn per mount, because fifty
+// drifting up the screen at once is noise and a fixed eight is what made
+// the app look narrower than it is.
+const SHOWN_SUGGESTIONS = 8;
 
 type Card = { id: number; question: string; pending?: boolean } & Partial<QueryResult>;
 
@@ -37,6 +31,9 @@ type Card = { id: number; question: string; pending?: boolean } & Partial<QueryR
 // sees the actual ledger data for this call, only the question.
 export default function Ask() {
   const { session, signOut } = useAuth();
+  // Sampled once per mount, not per render: re-drawing them on every
+  // keystroke would reshuffle the screen under the reader.
+  const suggestions = useMemo(() => pickSuggestions(SUGGESTIONS, SHOWN_SUGGESTIONS), []);
   const { transactions, dataStatus, CATS, refresh } = useData();
   const { colors } = useTheme();
   // Same reason as Home: nothing reserves the navigation bar's space now
@@ -132,7 +129,7 @@ export default function Ask() {
         keyboardShouldPersistTaps="handled"
       >
         {cards.length === 0 && (
-          <RisingSuggestions suggestions={SUGGESTIONS} disabled={dataStatus !== "ready"} onPick={runQuery} />
+          <RisingSuggestions suggestions={suggestions} disabled={dataStatus !== "ready"} onPick={runQuery} />
         )}
 
         {cards.map((c) => (

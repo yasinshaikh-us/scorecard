@@ -1,6 +1,8 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   barGeometry,
+  signedAxisLabels,
+  signedScale,
   contentWidth,
   fmtAxisCount,
   fmtAxisMoney,
@@ -208,5 +210,36 @@ describe("count axis", () => {
 
   it("labels a count scale without currency", () => {
     expect(yAxisLabels(niceScale(12, true), fmtAxisCount)).toEqual(["0", "5", "10", "15"]);
+  });
+});
+
+
+// Net cashflow is the only metric that can go below zero, and
+// gifted-charts draws that as sections below the axis sharing the step
+// of the ones above.
+describe("signedScale", () => {
+  it("stays entirely above the axis when nothing is negative", () => {
+    const signed = signedScale([10, 40, 90]);
+    expect(signed.sectionsBelow).toBe(0);
+    expect(signed.mostNegative).toBe(0);
+    expect(signedAxisLabels(signed)[0]).toBe("$0");
+  });
+
+  it("adds sections below the axis for a negative month", () => {
+    const signed = signedScale([900, -2100]);
+    expect(signed.scale.max).toBeGreaterThanOrEqual(900);
+    expect(signed.mostNegative).toBeLessThanOrEqual(-2100);
+    expect(signed.sectionsBelow).toBeGreaterThan(0);
+    // Same step either side of zero, and zero itself is a gridline.
+    const labels = signedAxisLabels(signed);
+    expect(labels).toContain("$0");
+    expect(labels[0]).toMatch(/^-\$/);
+    expect(labels).toHaveLength(signed.sectionsBelow + signed.scale.sections + 1);
+  });
+
+  it("covers an all-negative series", () => {
+    const signed = signedScale([-50, -120]);
+    expect(signed.mostNegative).toBeLessThanOrEqual(-120);
+    expect(signedAxisLabels(signed)).toContain("$0");
   });
 });

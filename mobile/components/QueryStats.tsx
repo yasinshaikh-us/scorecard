@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { fmtDate, fmtMoney } from "../lib/format";
-import type { Outlier, QuerySummary } from "../lib/logic";
+import type { BudgetProgress, Comparison, Outlier, Projection, QuerySummary } from "../lib/logic";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
@@ -44,8 +44,23 @@ function Stat({ label, value, testID }: { label: string; value: string; testID: 
   );
 }
 
-export default function QueryStats({ summary, outlier }: { summary: QuerySummary; outlier: Outlier | null }) {
+export default function QueryStats({
+  summary,
+  outlier,
+  comparison,
+  budget,
+  projection,
+}: {
+  summary: QuerySummary;
+  outlier: Outlier | null;
+  comparison?: Comparison | null;
+  budget?: BudgetProgress | null;
+  projection?: Projection | null;
+}) {
   const { colors } = useTheme();
+  // Up is not automatically bad (income) and down is not automatically
+  // good, so the delta is coloured by direction only, not by judgement.
+  const delta = comparison?.deltaPct ?? null;
 
   return (
     <View testID="query-stats" style={styles.wrap}>
@@ -55,6 +70,42 @@ export default function QueryStats({ summary, outlier }: { summary: QuerySummary
         <Stat testID="query-stat-average" label="average" value={fmtMoney(summary.average)} />
       </View>
       <Text style={[styles.span, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>{fmtSpan(summary)}</Text>
+
+      {comparison ? (
+        <Text
+          testID="query-stats-comparison"
+          style={[styles.compare, { color: colors.textMuted, fontFamily: fontFamily.regular }]}
+        >
+          {delta === null
+            ? `nothing in the previous ${fmtDate(comparison.start)} – ${fmtDate(comparison.end)}`
+            : `${delta >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(delta * 100))}% vs ${fmtMoney(comparison.sum)} the previous period`}
+        </Text>
+      ) : null}
+
+      {projection ? (
+        // Deliberately hedged wording: this is the window's own rate
+        // carried forward, not a forecast of anything.
+        <Text
+          testID="query-stats-projection"
+          style={[styles.compare, { color: colors.textMuted, fontFamily: fontFamily.regular }]}
+        >
+          at this pace, ~{fmtMoney(projection.projected)} by {fmtDate(projection.windowEnd)}
+        </Text>
+      ) : null}
+
+      {budget ? (
+        <Text
+          testID="query-stats-budget"
+          style={[styles.compare, { color: colors.textMuted, fontFamily: fontFamily.regular }]}
+        >
+          {fmtMoney(budget.spent)} of {fmtMoney(budget.target)} · {Math.round(budget.pct * 100)}%
+          {budget.elapsedPct === null
+            ? ""
+            : budget.pct > budget.elapsedPct
+              ? ` · ahead of pace (${Math.round(budget.elapsedPct * 100)}% through)`
+              : ` · on track (${Math.round(budget.elapsedPct * 100)}% through)`}
+        </Text>
+      ) : null}
       {outlier ? (
         // Without this, one $170,000 Investments row reads as a month when
         // spending tripled rather than as a single purchase -- and every
@@ -78,5 +129,6 @@ const styles = StyleSheet.create({
   value: { fontSize: 15 },
   label: { fontSize: 10, textTransform: "lowercase" },
   span: { fontSize: 11, textAlign: "center", marginTop: 6 },
+  compare: { fontSize: 11, textAlign: "center", marginTop: 6 },
   outlier: { fontSize: 11, textAlign: "center", marginTop: 6 },
 });

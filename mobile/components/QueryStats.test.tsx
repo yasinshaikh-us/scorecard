@@ -62,6 +62,83 @@ describe("QueryStats", () => {
     await renderWithTheme(<QueryStats summary={summary({ count: 1 })} outlier={null} />);
     expect(screen.getByText("transaction")).toBeTruthy();
   });
+
+  it("shows a period-over-period delta when the question asked for one", async () => {
+    await renderWithTheme(
+      <QueryStats
+        summary={summary({ sum: 300 })}
+        outlier={null}
+        comparison={{ sum: 200, count: 4, start: "2026-01-04", end: "2026-01-31", deltaPct: 0.5 }}
+      />
+    );
+    const note = screen.getByTestId("query-stats-comparison");
+    expect(note).toHaveTextContent(/↑ 50%/);
+    expect(note).toHaveTextContent(/\$200\.00/);
+  });
+
+  it("marks a fall with a down arrow rather than a negative percentage", async () => {
+    await renderWithTheme(
+      <QueryStats
+        summary={summary({ sum: 100 })}
+        outlier={null}
+        comparison={{ sum: 200, count: 4, start: "2026-01-04", end: "2026-01-31", deltaPct: -0.5 }}
+      />
+    );
+    expect(screen.getByTestId("query-stats-comparison")).toHaveTextContent(/↓ 50%/);
+  });
+
+  it("says the previous period was empty instead of claiming an infinite rise", async () => {
+    await renderWithTheme(
+      <QueryStats
+        summary={summary()}
+        outlier={null}
+        comparison={{ sum: 0, count: 0, start: "2026-01-04", end: "2026-01-31", deltaPct: null }}
+      />
+    );
+    expect(screen.getByTestId("query-stats-comparison")).toHaveTextContent(/nothing in the previous/);
+  });
+
+  it("tracks a budget against the period's own pace", async () => {
+    await renderWithTheme(
+      <QueryStats
+        summary={summary({ sum: 312 })}
+        outlier={null}
+        budget={{ spent: 312, target: 500, pct: 0.624, elapsedPct: 0.37 }}
+      />
+    );
+    const note = screen.getByTestId("query-stats-budget");
+    expect(note).toHaveTextContent(/\$312\.00 of \$500\.00/);
+    expect(note).toHaveTextContent(/62%/);
+    expect(note).toHaveTextContent(/ahead of pace \(37% through\)/);
+  });
+
+  it("says on track when spend is behind the pace", async () => {
+    await renderWithTheme(
+      <QueryStats summary={summary({ sum: 100 })} outlier={null} budget={{ spent: 100, target: 500, pct: 0.2, elapsedPct: 0.5 }} />
+    );
+    expect(screen.getByTestId("query-stats-budget")).toHaveTextContent(/on track \(50% through\)/);
+  });
+
+  it("omits every optional note when the question asked for none of them", async () => {
+    await renderWithTheme(<QueryStats summary={summary()} outlier={null} />);
+    expect(screen.queryByTestId("query-stats-comparison")).toBeNull();
+    expect(screen.queryByTestId("query-stats-budget")).toBeNull();
+    expect(screen.queryByTestId("query-stats-projection")).toBeNull();
+  });
+
+  it("carries the window's rate forward, hedged as a pace rather than a forecast", async () => {
+    await renderWithTheme(
+      <QueryStats
+        summary={summary({ sum: 260 })}
+        outlier={null}
+        projection={{ projected: 780, through: "2026-08-11", windowEnd: "2026-08-31", elapsedPct: 1 / 3 }}
+      />
+    );
+    const note = screen.getByTestId("query-stats-projection");
+    expect(note).toHaveTextContent(/at this pace/);
+    expect(note).toHaveTextContent(/\$780\.00/);
+    expect(note).toHaveTextContent(/31 Aug 26/);
+  });
 });
 
 describe("fmtSpan", () => {
