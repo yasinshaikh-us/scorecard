@@ -179,27 +179,35 @@ flow some institutions use may need additional native configuration
 entries) that Plaid's own setup docs cover in more depth than this PR
 attempted to verify blind.
 
-## Stage 2's ledger is empty
+## Stage 2's ledger is seeded
 
 `synthetic-monitor@scorecard.test` -- the account Stage 2 signs in as --
-has **no transactions** (0 rows, confirmed against the database). Every
-Ask flow on that stage therefore renders a card reading "No matching
-transactions": no chart, no stat block, no list.
+had **no transactions at all**, so every Ask flow rendered "No matching
+transactions": no chart, no stat block, no list. Two consequences, both
+easy to mistake for coverage:
 
-Two consequences, both easy to mistake for coverage:
+* the Ask specs could only assert that a card came back, and specs
+  asserting anything about its contents failed;
+* every `ask-screen-*` screenshot in every `detox-results` artifact was
+  of that empty card, and was **not** evidence that any chart rendered.
 
-* Stage 2's Ask specs can only assert that a card came back. Anything
-  about its contents -- the total, the chart type, the number of
-  buckets, the 200-row cap -- has nothing to match against, and specs
-  asserting those were removed after failing for exactly that reason.
-* The `ask-screen-*` screenshots in the `detox-results` artifact show
-  that empty card. They are not evidence that any chart renders
-  correctly, and should not be read as such.
+`e2e/globalSetup.js` now seeds a ledger before the emulator boots
+(`e2e/seedLedger.js`: ~360 rows across the last twelve months, one
+weekly merchant, two real subscriptions, twice-monthly income, one
+outlier purchase), and `globalTeardown.js` removes it again.
 
-Fixing it means giving the monitor account a deterministic ledger of its
-own (a seeded fixture, cleaned up per run), not more assertions.
-`mobile/lib/testLedger.ts` already generates a realistic one for the
-Stage 1 tests and would be the obvious source.
+Every seeded row carries `source = 'e2e'`. That marker is what makes the
+cleanup safe to express as a single equality filter, and it keeps the
+rows invisible to the sync and Plaid-link paths, which only ever filter
+on `source = 'plaid'`. RLS bounds it further: the account's own JWT can
+reach only its own transactions, never the real user's, which live in
+the same table.
+
+Not to be confused with [`lib/testLedger.ts`](lib/testLedger.ts), which
+generates ~5,200 rows across six years for the Stage 1 tests. That one
+exists to meet the shapes that only appear at scale; this one is small
+because it is written over the network to a shared database before every
+Stage 2 run.
 
 ## Automated testing
 

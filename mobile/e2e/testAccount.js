@@ -28,6 +28,8 @@
 // table under a different user_id and would otherwise be one missing
 // filter away from deletion.
 
+const { buildE2eLedger, E2E_SOURCE } = require("./seedLedger");
+
 const E2E_RULE_PREFIX = "e2e-";
 
 // Namespaces this run's rows so two runs (a PR smoke run and the nightly
@@ -185,8 +187,76 @@ async function cleanupSandboxBank(accessToken) {
   return disconnected;
 }
 
+// The user this JWT belongs to, read from its own `sub` claim. Needed
+// because RLS checks `auth.uid() = user_id` on INSERT as well as SELECT,
+// so a row has to name its owner -- and asking the token is better than
+// hardcoding an id that would silently rot if the dummy account were
+// ever recreated.
+function userIdFromToken(accessToken) {
+  const payload = accessToken.split(".")[1];
+  if (!payload) throw new Error("access token is not a JWT");
+  const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+  if (!claims.sub) throw new Error("access token carries no sub claim");
+  return claims.sub;
+}
+
+// Writes the Stage 2 ledger (e2e/seedLedger.js) to the shared account.
+//
+// Every row carries source = 'e2e', which is what makes both halves of
+// this safe: the sync and Plaid-link paths only ever filter on
+// source = 'plaid', so they cannot see these rows, and the cleanup below
+// only ever deletes rows that carry the marker. RLS bounds it further --
+// the account's own JWT can only touch its own transactions, never the
+// real user's, which live in the same table.
+async function seedE2eLedger(accessToken) {
+  const { supabaseUrl, anonKey } = requiredEnv();
+  const token = accessToken || (await signInTestAccount());
+  const userId = userIdFromToken(token);
+  const rows = buildE2eLedger().map((r) => ({ ...r, user_id: userId }));
+
+  const resp = await fetch(`${supabaseUrl}/rest/v1/transactions`, {
+    method: "POST",
+    headers: {
+      apikey: anonKey,
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      prefer: "return=minimal",
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!resp.ok) {
+    throw new Error(`transactions insert returned ${resp.status}: ${await resp.text()}`);
+  }
+  return rows.length;
+}
+
+// Removes it again. Scoped to the marker, so a bug here can only destroy
+// rows this suite wrote -- the Sandbox-synced rows (source = 'plaid') and
+// anything else on the account are untouched.
+async function clearE2eLedger(accessToken) {
+  const { supabaseUrl, anonKey } = requiredEnv();
+  const token = accessToken || (await signInTestAccount());
+
+  const resp = await fetch(`${supabaseUrl}/rest/v1/transactions?source=eq.${E2E_SOURCE}`, {
+    method: "DELETE",
+    headers: {
+      apikey: anonKey,
+      authorization: `Bearer ${token}`,
+      prefer: "return=representation",
+    },
+  });
+  if (!resp.ok) {
+    throw new Error(`transactions delete returned ${resp.status}: ${await resp.text()}`);
+  }
+  const deleted = await resp.json();
+  return Array.isArray(deleted) ? deleted.length : 0;
+}
+
 module.exports = {
   E2E_RULE_PREFIX,
+  E2E_SOURCE,
+  seedE2eLedger,
+  clearE2eLedger,
   RUN_ID,
   runScopedRuleValue,
   signInTestAccount,

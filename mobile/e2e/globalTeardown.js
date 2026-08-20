@@ -23,7 +23,7 @@
 // safety net for a run that never reaches teardown (a cancelled job, a
 // crashed emulator).
 const detoxTeardown = require("detox/runners/jest/globalTeardown");
-const { cleanupSandboxBank } = require("./testAccount");
+const { cleanupSandboxBank, clearE2eLedger } = require("./testAccount");
 
 // Deliberately non-fatal. A cleanup failure must not turn an otherwise
 // green Stage 2 run red -- the next run's start-of-run cleanup will
@@ -38,7 +38,19 @@ async function removeSandboxBank() {
   console.log(`[sandbox-cleanup] disconnected ${disconnected} Sandbox item(s)`);
 }
 
+// Same best-effort contract as the Sandbox cleanup: leftover rows are
+// the next run's start-of-run problem, not this run's verdict.
+async function removeSeededLedger() {
+  const deleted = await clearE2eLedger();
+  console.log(`[e2e-ledger] removed ${deleted} seeded row(s)`);
+}
+
 module.exports = async function globalTeardown(globalConfig) {
+  try {
+    await removeSeededLedger();
+  } catch (err) {
+    console.error("[e2e-ledger] cleanup FAILED -- the next run's globalSetup will clear it:", err);
+  }
   try {
     await removeSandboxBank();
   } catch (err) {

@@ -306,23 +306,57 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("linked-account-row")).atIndex(0)).toBeVisible();
   });
 
-  // NOT asserted here, deliberately: the total, the count, the span, the
-  // 200-row cap -- everything the card puts above and below the chart.
+  // The Ask specs used to assert only that a card came back, because the
+  // shared account had no transactions at all: every result rendered "No
+  // matching transactions", so there was nothing else to match -- and
+  // every ask-screen-* screenshot was of an empty card, which is a poor
+  // thing to offer as visual proof that a chart renders.
   //
-  // Stage 2 signs in as synthetic-monitor@scorecard.test, and that
-  // account's ledger is EMPTY (0 rows, confirmed against the database).
-  // So every Ask result on this stage renders a card with a title and
-  // "No matching transactions": no chart, no stat block, no list, and
-  // nothing for a content assertion to find. Two specs asserting the
-  // stat block and the row cap were written here and failed for exactly
-  // that reason -- twice, identically, which is what told them apart
-  // from flake.
+  // globalSetup now seeds a ledger (e2e/seedLedger.js), so the card has
+  // real contents to assert.
   //
-  // That also bounds what the screenshots from this stage can show: an
-  // empty card, whatever the question. Making Stage 2 able to assert (or
-  // screenshot) a real chart needs the monitor account to have a
-  // deterministic ledger of its own, which is a fixture change, not a
-  // test change -- see mobile/README.md.
+  // What is asserted is deliberately STRUCTURAL: the stat block, a
+  // chart, rows in the list. Exact totals and chart types are not,
+  // because those depend on the spec Claude returns for a given
+  // question, and a UI test that asserts a model's judgement is a coin
+  // flip wearing a test's clothes.
+  it("Ask: a result leads with the stat block and draws a chart", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "How much did I spend at Chipotle this year?");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(10000);
+    await expect(element(by.id("query-stat-total"))).toBeVisible();
+    await expect(element(by.id("query-stat-count"))).toBeVisible();
+    await expect(element(by.id("query-stat-average"))).toBeVisible();
+    // A seeded merchant with 52 charges cannot answer as an empty set.
+    await expect(element(by.id("transaction-row")).atIndex(0)).toBeVisible();
+    await captureScreen("ask-screen-stats");
+
+    await element(by.id("query-card-close-button")).tap();
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
+  // The list used to mount every matching row. The seeded ledger holds
+  // ~360 rows inside the last twelve months, so a broad question clears
+  // the 200-row cap and the note is reachable.
+  it("Ask: a broad question caps the list instead of rendering everything", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "List every transaction from the last twelve months");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    // Below 200 rows of list, so it has to be scrolled to.
+    await scrollIntoView("query-row-cap", "ask-feed");
+    await expect(element(by.id("query-row-cap"))).toBeVisible();
+    await captureScreen("ask-screen-row-cap");
+
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
   it("Ask: a suggestion produces a card that can be closed", async () => {
     await element(by.id("nav-ask-button")).tap();
     await expect(element(by.id("ask-input"))).toBeVisible();
