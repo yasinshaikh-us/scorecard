@@ -179,6 +179,28 @@ flow some institutions use may need additional native configuration
 entries) that Plaid's own setup docs cover in more depth than this PR
 attempted to verify blind.
 
+## Stage 2's ledger is empty
+
+`synthetic-monitor@scorecard.test` -- the account Stage 2 signs in as --
+has **no transactions** (0 rows, confirmed against the database). Every
+Ask flow on that stage therefore renders a card reading "No matching
+transactions": no chart, no stat block, no list.
+
+Two consequences, both easy to mistake for coverage:
+
+* Stage 2's Ask specs can only assert that a card came back. Anything
+  about its contents -- the total, the chart type, the number of
+  buckets, the 200-row cap -- has nothing to match against, and specs
+  asserting those were removed after failing for exactly that reason.
+* The `ask-screen-*` screenshots in the `detox-results` artifact show
+  that empty card. They are not evidence that any chart renders
+  correctly, and should not be read as such.
+
+Fixing it means giving the monitor account a deterministic ledger of its
+own (a seeded fixture, cleaned up per run), not more assertions.
+`mobile/lib/testLedger.ts` already generates a realistic one for the
+Stage 1 tests and would be the obvious source.
+
 ## Automated testing
 
 A three-stage pyramid: the bulk of testing is automated and runs without
