@@ -7,9 +7,9 @@ import type { QuerySpec } from "../lib/logic";
 
 jest.mock("./Chart", () => {
   const { View: RNView, Pressable: RNPressable, Text: RNText } = require("react-native");
-  return function MockChart({ data, selectedKey, onSelect }: any) {
+  return function MockChart({ data, spec, selectedKey, onSelect }: any) {
     return (
-      <RNView testID="chart">
+      <RNView testID="chart" accessibilityLabel={`${spec?.groupBy}/${spec?.chartType}`}>
         {data.map((d: any) => (
           <RNPressable key={d.key} testID={`chart-item-${d.key}`} onPress={() => onSelect(d.key)}>
             <RNText>{selectedKey === d.key ? "selected" : "unselected"}</RNText>
@@ -146,5 +146,55 @@ describe("QueryCard", () => {
     await renderWithTheme(<QueryCard card={{ id: 1, question: "spending?", spec }} transactions={[]} CATS={CATS} onRemove={jest.fn()} />);
     expect(screen.queryByTestId("chart")).toBeNull();
     expect(screen.getByText("No matching transactions")).toBeTruthy();
+  });
+
+  // The card's answer to "how much did I spend at Chipotle?" used to be a
+  // bar and nothing else. These cover the three pieces that changed that:
+  // the stat line, the single-bucket re-grouping, and the capped pie's
+  // "Other" slice.
+  it("leads a result with the total, count and span of the matching rows", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
+    const rows = [
+      tx({ Id: 1, Date: "2026-01-01", Payee: "Chipotle", Amount: -10 }),
+      tx({ Id: 2, Date: "2026-03-01", Payee: "Chipotle", Amount: -30 }),
+    ];
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "q", spec }} transactions={rows} CATS={["Groceries"]} onRemove={jest.fn()} />
+    );
+
+    expect(screen.getByTestId("query-stat-total")).toHaveTextContent("$40.00");
+    expect(screen.getByTestId("query-stat-count")).toHaveTextContent("2");
+    expect(screen.getByText(/1 Jan 26 – 1 Mar 26/)).toBeTruthy();
+  });
+
+  it("re-groups a single-bucket category chart over time instead of drawing one bar", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "category", payeeContains: "Chipotle" };
+    const rows = [
+      tx({ Id: 1, Date: "2026-01-05", Payee: "Chipotle", Category: "Dining:Fast Food", Amount: -10 }),
+      tx({ Id: 2, Date: "2026-05-05", Payee: "Chipotle", Category: "Dining:Fast Food", Amount: -20 }),
+      tx({ Id: 3, Date: "2026-08-05", Payee: "Chipotle", Category: "Dining:Fast Food", Amount: -30 }),
+    ];
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "q", spec }} transactions={rows} CATS={["Dining"]} onRemove={jest.fn()} />
+    );
+
+    // month/line, not the category/bar the model asked for.
+    expect(screen.getByTestId("chart").props.accessibilityLabel).toBe("month/line");
+    expect(screen.getAllByTestId(/^chart-item-/)).toHaveLength(3);
+  });
+
+  it("filters the list to every group a capped pie's Other slice stands for", async () => {
+    const spec: QuerySpec = { chartType: "pie", groupBy: "category" };
+    // Nine categories: five keep their own slice, four fold into Other.
+    const rows = Array.from({ length: 9 }, (_, i) =>
+      tx({ Id: i + 1, Date: "2026-01-01", Payee: `P${i}`, Category: `Cat${i}:Sub`, Amount: -(i + 1) * 10 })
+    );
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "q", spec }} transactions={rows} CATS={[]} onRemove={jest.fn()} />
+    );
+
+    await fireEvent.press(screen.getByTestId("chart-item-Other"));
+    // Cat0..Cat3 are the four smallest, so those are the rows Other holds.
+    expect(screen.getAllByTestId("tx-row").map((r) => r.props.children).sort()).toEqual(["P0", "P1", "P2", "P3"]);
   });
 });

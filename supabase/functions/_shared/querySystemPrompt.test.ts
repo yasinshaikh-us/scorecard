@@ -92,6 +92,7 @@ describe("buildSystemPrompt", () => {
         "isLedgerQuery", "categories", "categoryContains", "payeeContains",
         "accountContains", "dateStart", "dateEnd", "type", "includeTransfers",
         "amountMin", "amountMax", "limit", "chartType", "groupBy", "title",
+        "excludeCategories", "metric",
       ]) {
         expect(prompt).toContain(`"${field}"`);
       }
@@ -99,7 +100,7 @@ describe("buildSystemPrompt", () => {
 
     it("documents every groupBy and chartType value the app can render", () => {
       const prompt = build();
-      for (const groupBy of ["category", "day", "week", "month", "payee", "account", "transaction"]) {
+      for (const groupBy of ["category", "day", "week", "month", "quarter", "year", "payee", "account", "transaction"]) {
         expect(prompt).toContain(`"${groupBy}"`);
       }
       for (const chartType of ["bar", "pie", "line"]) {
@@ -109,6 +110,66 @@ describe("buildSystemPrompt", () => {
 
     it("states that internal transfers are excluded by default", () => {
       expect(build()).toContain("are excluded by default from every query");
+    });
+  });
+
+  // A question with no date range used to cover the entire ledger
+  // silently: "how much did I spend at Chipotle" answered with six years
+  // of totals and nothing on screen saying so.
+  describe("time window", () => {
+    it("defaults an unscoped question to the last 12 months", () => {
+      const prompt = build();
+      expect(prompt).toContain("Default the window to the last 12 months");
+      expect(prompt).toContain("set dateStart to exactly one year before today");
+    });
+
+    it("keeps an explicit all-time question unbounded", () => {
+      const prompt = build();
+      expect(prompt).toContain('"all time"');
+      expect(prompt).toContain("leave dateStart null");
+    });
+
+    it("extends the granularity ladder past month, so a multi-year span isn't ~80 bars", () => {
+      const prompt = build();
+      expect(prompt).toContain('groupBy "quarter"');
+      expect(prompt).toContain('groupBy "year"');
+    });
+  });
+
+  // The defect this whole pass started from: "How much did I spend at
+  // Chipotle?" grouped by category, and every matching transaction shares
+  // one category, so the chart was a single bar.
+  describe("chart selection", () => {
+    it("forbids grouping a single-merchant question by category", () => {
+      const prompt = build();
+      expect(prompt).toContain('groupBy the time granularity from the span rule above, NOT "category"');
+      expect(prompt).toContain("Never pick a groupBy that can only produce one bucket");
+    });
+
+    it("says the total is already shown above the chart", () => {
+      expect(build()).toContain("the total is already displayed above the chart");
+    });
+
+    it("keeps a pie down to a readable number of slices", () => {
+      expect(build()).toContain("up to about six slices");
+    });
+  });
+
+  describe("metric", () => {
+    it("maps frequency questions to count and typical-amount questions to avg", () => {
+      const prompt = build();
+      expect(prompt).toContain('Use "count" when the question is about frequency rather than money');
+      expect(prompt).toContain('Use "avg" when the question asks what a typical one costs');
+      expect(prompt).toContain('When in doubt use "sum"');
+    });
+  });
+
+  describe("excludeCategories", () => {
+    it("explains both the explicit exclusion and the outlier-swamping case", () => {
+      const prompt = build();
+      expect(prompt).toContain("everything except rent");
+      expect(prompt).toContain("a single six-figure purchase makes every other period on the chart a sliver");
+      expect(prompt).toContain("Do NOT exclude anything when the question is actually about that category");
     });
   });
 });

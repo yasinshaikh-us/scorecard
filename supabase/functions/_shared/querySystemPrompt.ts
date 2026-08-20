@@ -35,6 +35,7 @@ Otherwise respond with ONLY this JSON object, no markdown fences, no prose:
 {
   "isLedgerQuery": true,
   "categories": [array of TOP-LEVEL category strings that match the question, or null for all],
+  "excludeCategories": [array of TOP-LEVEL category strings to leave OUT of an otherwise-matching set, or null],
   "categoryContains": "substring to match against the full Top:Sub category string, case-insensitive, or null",
   "payeeContains": "substring to match against Payee, case-insensitive, or null",
   "accountContains": "substring to match against Account, case-insensitive, or null",
@@ -45,8 +46,9 @@ Otherwise respond with ONLY this JSON object, no markdown fences, no prose:
   "amountMin": number or null,
   "amountMax": number or null,
   "limit": integer or null,
+  "metric": "sum" | "count" | "avg",
   "chartType": "bar" | "pie" | "line",
-  "groupBy": "category" | "day" | "week" | "month" | "payee" | "account" | "transaction",
+  "groupBy": "category" | "day" | "week" | "month" | "quarter" | "year" | "payee" | "account" | "transaction",
   "title": "short 3-8 word title for this view, in plain language"
 }
 
@@ -58,18 +60,25 @@ Rules:
 - Internal transfers between the user's own linked accounts (IsTransfer=true, e.g. moving money from savings to checking) are excluded by default from every query, including type="all" — they aren't real spending or income, and once the ledger has more than one linked account, leaving them in double-counts the same transfer as both an expense and income. Only set includeTransfers=true (and normally type="transfer") when the question explicitly asks about transfers, moving money between accounts, or account-to-account activity.
 - If the question is about spending/expenses, type="expense". About income/deposits/payroll, type="income". About transfers between the user's own accounts, type="transfer" (and includeTransfers=true). Otherwise "all".
 - amountMin/amountMax filter on the transaction's magnitude (absolute value), regardless of sign. "less than $1,000" -> amountMax=1000. "more than $50" -> amountMin=50. "between $20 and $100" -> amountMin=20, amountMax=100. Leave null if the question has no dollar threshold.
+- Default the window to the last 12 months. If the question implies no date range at all ("how much did I spend at Chipotle", "what do I spend on groceries"), set dateStart to exactly one year before today and leave dateEnd null. Only reach further back when the question actually asks for it -- "all time", "ever", "lifetime", "since I started", "all my history", or a named older period ("in 2022", "over the last 5 years") -- in which case leave dateStart null (or set the named range) and let the span rule below pick the granularity. A total covering six years of ledger, presented as if it were recent, is the wrong answer to a question that never mentioned six years.
 - When the question is about spending/income over time (or any time-bounded list like "last year", "last N months", or an unscoped list like "show me everything"), choose the time-grouping granularity from the span actually being covered — never default to "day" without checking the span first:
   -- Compute the span from dateStart/dateEnd if the question gives one, otherwise from the full data range above (MIN_DATE to MAX_DATE) — "show me everything" with a multi-year dataset is a multi-year span, not a shortcut to "day".
   -- span under ~3 weeks: groupBy "day"
   -- span from ~3 weeks up to ~4 months: groupBy "week"
-  -- span longer than ~4 months (e.g. "last N months" where N >= 3, "this year", "over time" with a multi-year dataset): groupBy "month"
-  -- A 7-month question should produce roughly 7 bars (month), not ~210 (day); an unscoped "everything" question over several years of data should produce a handful of monthly points, not thousands of daily ones.
+  -- span from ~4 months up to ~3 years (e.g. "last N months" where N >= 3, "this year"): groupBy "month"
+  -- span from ~3 up to ~8 years: groupBy "quarter"
+  -- span beyond ~8 years: groupBy "year"
+  -- A 7-month question should produce roughly 7 bars (month), not ~210 (day); a six-year "everything" question should produce ~24 quarterly points, not ~72 monthly ones and certainly not thousands of daily ones.
 - Pick chartType/groupBy that best visualizes the question:
-  -- Comparing a handful of named categories/groups as parts of a whole ("breakdown", "breakup", "split", "percentage", "share of spend", "versus" between categories) -> chartType "pie", groupBy "category" (or restrict via the categories field to just the named groups).
+  -- Comparing a handful of named categories/groups as parts of a whole ("breakdown", "breakup", "split", "percentage", "share of spend", "versus" between categories) -> chartType "pie", groupBy "category" (or restrict via the categories field to just the named groups). A pie only reads as parts of a whole up to about six slices, so prefer "pie" when the question names or implies a small set and "bar" when it would span every category on the ledger.
   -- Ranking or comparing many categories/merchants by their TOTAL ("top merchants", "which places do I spend the most at", "which category do I spend the most on") -> chartType "bar", groupBy "category" or "payee" -- each bar is a sum across every matching transaction for that merchant/category, not one transaction.
   -- Ranking individual transactions by their own size ("top 10 expenses", "5 biggest purchases", "largest transaction this year", "smallest 3 deposits", "my biggest expense in April") -> chartType "bar", groupBy "transaction" -- each bar is exactly one transaction. This is different from ranking merchants/categories above: a bare "top N expenses/purchases" with no merchant or category framing means individual transactions, not merchant totals.
   -- Spending/income over time, or any request scoped to a date range (e.g. "list of X over the last year") -> groupBy chosen per the granularity rule above, then pick chartType from that granularity: groupBy "month" (the longer spans -- 6+ months, "this year", "over time", multi-year) -> chartType "line", since a trend across many months reads as a continuous line, not a wall of thin bars; groupBy "day" or "week" (shorter spans) -> chartType "bar", since each bucket is a small, meaningfully discrete comparison.
-  -- A single-number, yes/no, or list-only question with no obvious time or category angle -> still default to chartType "bar", groupBy "category" (or "day"/"week"/"month" if a date range is implied, applying the same month->line, day/week->bar rule above) so a chart is always present.
+  -- A question that filters down to ONE merchant, ONE subcategory or ONE account and asks how much/how many/whether ("how much did I spend at Chipotle", "how much is my rent", "do I still pay for Netflix") -> groupBy the time granularity from the span rule above, NOT "category". Grouping a single-merchant question by category collapses every matching transaction into one bar, which shows a total and nothing else; the total is already displayed above the chart, so the chart's job is the trend over time.
+  -- Never pick a groupBy that can only produce one bucket for the filtered set. If the filter already pins the category (categoryContains), the merchant (payeeContains) or the account (accountContains), group by time instead.
+  -- A single-number, yes/no, or list-only question with no filter that pins one group and no obvious time angle -> chartType "bar", groupBy "category" so a chart is always present.
+- "metric" is what each bucket measures. "sum" (the default) totals the amounts. Use "count" when the question is about frequency rather than money -- "how often do I go to Chipotle", "how many times did I fill up", "how many transactions in July" -- so each bucket is a number of transactions. Use "avg" when the question asks what a typical one costs -- "average grocery run", "what do I usually spend on coffee". When in doubt use "sum".
+- "excludeCategories" leaves a top-level bucket out of an otherwise-matching set. Use it when the question says so outright ("everything except rent", "spending other than investments"). Also use it for a general spending-over-time question when the ledger has a category that holds occasional very large one-offs (Investments is the usual one) -- a single six-figure purchase makes every other period on the chart a sliver, and the question was about everyday spending. Do NOT exclude anything when the question is actually about that category, names it, or asks for a complete total.
 - Set "limit" to the specific count whenever the question asks for a bounded top/bottom ranking of any kind -- individual transactions, merchants, or categories ("top 10", "5 biggest", "largest 3"). A bare superlative with no explicit number ("biggest expense", "smallest deposit") means limit 1. Leave "limit" null when the question doesn't ask for a specific count -- a sensible default (10) still applies automatically for merchant ("payee") and individual-transaction ("transaction") rankings so those charts never render an unbounded list.
 - title should read naturally, e.g. "Dining spend by week" not "category=Dining".
 - Respond with raw JSON only.`;

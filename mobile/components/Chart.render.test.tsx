@@ -15,6 +15,7 @@ const days = (n: number, total = (i: number) => 20 + i): ChartDatum[] =>
   Array.from({ length: n }, (_, i) => ({
     key: `2026-08-${String(i + 1).padStart(2, "0")}`,
     total: total(i),
+    sum: total(i),
     count: 1,
   }));
 
@@ -85,9 +86,9 @@ describe("Chart (real gifted-charts)", () => {
   it("draws period x-axis labels, not a full date per bar", async () => {
     const spec: QuerySpec = { chartType: "bar", groupBy: "day" };
     const data = [
-      { key: "2026-08-30", total: 10, count: 1 },
-      { key: "2026-08-31", total: 20, count: 1 },
-      { key: "2026-09-01", total: 30, count: 1 },
+      { key: "2026-08-30", total: 10, sum: 10, count: 1 },
+      { key: "2026-08-31", total: 20, sum: 20, count: 1 },
+      { key: "2026-09-01", total: 30, sum: 30, count: 1 },
     ];
     await renderWithTheme(<Chart data={data} spec={spec} CATS={[]} selectedKey={null} onSelect={jest.fn()} />);
 

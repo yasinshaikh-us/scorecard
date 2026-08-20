@@ -2,6 +2,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   barGeometry,
   contentWidth,
+  fmtAxisCount,
   fmtAxisMoney,
   labelBudget,
   lineGeometry,
@@ -178,5 +179,34 @@ describe("lineGeometry", () => {
   it("uses most of the plot once there are enough points to fill it", () => {
     const g = lineGeometry(PLOT, 30);
     expect(g.initialSpacing + 29 * g.spacing).toBeGreaterThan(PLOT * 0.9);
+  });
+});
+
+
+// A count axis is a tally: "2.5 transactions" is not a gridline, and the
+// dollar sign would be a lie.
+describe("count axis", () => {
+  it("formats counts as whole numbers, compacting past a thousand", () => {
+    expect(fmtAxisCount(0)).toBe("0");
+    expect(fmtAxisCount(7)).toBe("7");
+    expect(fmtAxisCount(1200)).toBe("1.2k");
+  });
+
+  it("keeps every gridline a whole number", () => {
+    for (const max of [1, 3, 7, 12, 45, 611]) {
+      const scale = niceScale(max, true);
+      expect(scale.max).toBeGreaterThanOrEqual(max);
+      expect(Number.isInteger(scale.step)).toBe(true);
+      expect(scale.step).toBeGreaterThanOrEqual(1);
+      for (const label of yAxisLabels(scale, fmtAxisCount)) expect(label).not.toContain(".");
+    }
+  });
+
+  it("still allows fractional money steps when not counting", () => {
+    expect(yAxisLabels(niceScale(9))).toEqual(["$0", "$2.5", "$5", "$7.5", "$10"]);
+  });
+
+  it("labels a count scale without currency", () => {
+    expect(yAxisLabels(niceScale(12, true), fmtAxisCount)).toEqual(["0", "5", "10", "15"]);
   });
 });
