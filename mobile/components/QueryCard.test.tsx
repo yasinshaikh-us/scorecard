@@ -197,4 +197,48 @@ describe("QueryCard", () => {
     // Cat0..Cat3 are the four smallest, so those are the rows Other holds.
     expect(screen.getAllByTestId("tx-row").map((r) => r.props.children).sort()).toEqual(["P0", "P1", "P2", "P3"]);
   });
+
+  it("caps a huge result set and says how much it is showing", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    const transactions = Array.from({ length: 250 }, (_, i) =>
+      tx({ Id: i + 1, Date: `2026-0${(i % 8) + 1}-01`, Payee: `P${i}` })
+    );
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "everything", spec }} transactions={transactions} CATS={CATS} onRemove={jest.fn()} />
+    );
+
+    expect(screen.getAllByTestId("tx-row")).toHaveLength(200);
+    expect(screen.getByTestId("query-row-cap")).toHaveTextContent(/showing 200 of 250/);
+  });
+
+  it("says nothing about a cap when the whole result fits", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "q", spec }} transactions={[tx()]} CATS={CATS} onRemove={jest.fn()} />
+    );
+    expect(screen.queryByTestId("query-row-cap")).toBeNull();
+  });
+
+  // A spec the app had to correct changes the answer, so the correction
+  // is shown rather than applied silently.
+  it("names anything normalizeSpec had to drop", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
+    await renderWithTheme(
+      <QueryCard
+        card={{ id: 1, question: "q", spec, issues: ["ignored an unreadable start date"] }}
+        transactions={[tx()]}
+        CATS={CATS}
+        onRemove={jest.fn()}
+      />
+    );
+    expect(screen.getByTestId("query-card-issues")).toHaveTextContent(/ignored an unreadable start date/);
+  });
+
+  it("shows no correction note for a clean spec", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "q", spec, issues: [] }} transactions={[tx()]} CATS={CATS} onRemove={jest.fn()} />
+    );
+    expect(screen.queryByTestId("query-card-issues")).toBeNull();
+  });
 });

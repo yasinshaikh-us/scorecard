@@ -30,6 +30,7 @@ export default function QueryCard({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const spec = "spec" in card ? card.spec : undefined;
+  const issues = "issues" in card && card.issues ? card.issues : [];
 
   const baseFiltered = useMemo(() => filterTransactions(transactions, spec ?? null), [transactions, spec]);
   // Not the spec the model returned: a grouping that collapses to a
@@ -55,6 +56,13 @@ export default function QueryCard({
     }
     return displayed.slice().sort((a, b) => b.Date.localeCompare(a.Date));
   }, [displayed, selectedKey, chartSpec, chartData]);
+  // Every matching row used to be mounted at once, so "show me
+  // everything" built six thousand row components inside a ScrollView.
+  // A FlatList is not the fix here -- nesting one inside the Ask
+  // screen's own ScrollView breaks its windowing and warns -- so the
+  // list is bounded instead, and says so rather than pretending the
+  // ledger ends at row 200.
+  const visibleRows = useMemo(() => sortedRows.slice(0, ROW_CAP), [sortedRows]);
 
   function toggleSelect(key: string) {
     setSelectedKey((prev) => (prev === key ? null : key));
@@ -117,6 +125,15 @@ export default function QueryCard({
         </Pressable>
       </View>
 
+      {issues.length > 0 ? (
+        <Text
+          testID="query-card-issues"
+          style={[styles.issues, { color: colors.textMuted, fontFamily: fontFamily.regular }]}
+        >
+          Adjusted this question: {issues.join("; ")}.
+        </Text>
+      ) : null}
+
       {summary ? <QueryStats summary={summary} outlier={outlier} /> : null}
 
       {chartSpec && chartSpec.chartType !== "none" && chartData.length > 0 && (
@@ -133,9 +150,17 @@ export default function QueryCard({
       )}
 
       <View>
-        {sortedRows.map((d, i) => (
+        {visibleRows.map((d, i) => (
           <TransactionRow key={d.Id ?? i} row={d} CATS={CATS} onEdited={onTransactionEdited} />
         ))}
+        {sortedRows.length > visibleRows.length ? (
+          <Text
+            testID="query-row-cap"
+            style={[styles.muted, styles.rowCap, { color: colors.textFaint, fontFamily: fontFamily.regular }]}
+          >
+            showing {visibleRows.length} of {sortedRows.length} — narrow the question to see the rest
+          </Text>
+        ) : null}
         {sortedRows.length === 0 ? (
           <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>No matching transactions</Text>
         ) : null}
@@ -143,6 +168,9 @@ export default function QueryCard({
     </View>
   );
 }
+
+// One card renders one screenful plus scroll, not a whole ledger.
+const ROW_CAP = 200;
 
 const styles = StyleSheet.create({
   card: {
@@ -164,6 +192,8 @@ const styles = StyleSheet.create({
   error: { fontSize: 13 },
   muted: { fontSize: 13 },
   empty: { textAlign: "center", paddingVertical: 16 },
+  rowCap: { textAlign: "center", paddingVertical: 12, fontSize: 11 },
+  issues: { fontSize: 11, marginBottom: 8 },
   filterChip: {
     alignSelf: "center",
     borderRadius: 14,

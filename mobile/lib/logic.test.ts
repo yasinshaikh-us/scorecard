@@ -125,9 +125,15 @@ describe("parseQueryResponse", () => {
     expect(parseQueryResponse(true, data)).toEqual({ offTopic: true });
   });
 
-  it("returns the parsed spec for a well-formed ledger query response", () => {
+  // The spec is rebuilt field by field rather than passed through (see
+  // lib/specSchema.ts), so the response's own keys don't survive as-is:
+  // what comes back is exactly what the app is willing to run.
+  it("returns a normalized spec for a well-formed ledger query response", () => {
     const data = { content: [{ type: "text", text: '{"isLedgerQuery": true, "chartType": "bar"}' }] };
-    expect(parseQueryResponse(true, data)).toEqual({ spec: { isLedgerQuery: true, chartType: "bar" } });
+    const result: any = parseQueryResponse(true, data);
+    expect(result.issues).toEqual([]);
+    expect(result.spec).toMatchObject({ chartType: "bar", groupBy: "category", type: "all", metric: "sum" });
+    expect(result.spec.isLedgerQuery).toBeUndefined();
   });
 
   it("strips markdown code fences before parsing", () => {
@@ -526,6 +532,27 @@ describe("capPieSlices", () => {
     expect(pie[5].key).toBe("Other");
     const bar = buildChartData(rows, { groupBy: "category", chartType: "bar" } as any);
     expect(bar).toHaveLength(9);
+  });
+});
+
+describe("parseQueryResponse normalization", () => {
+  const respond = (text: string) => parseQueryResponse(true, { content: [{ type: "text", text }] });
+
+  it("normalizes the spec rather than trusting the model's JSON", () => {
+    const result: any = respond('{"isLedgerQuery":true,"groupBy":"merchant","limit":9999,"dateStart":"yesterday"}');
+    expect(result.spec.groupBy).toBe("category");
+    expect(result.spec.limit).toBe(50);
+    expect(result.spec.dateStart).toBeUndefined();
+    expect(result.issues.length).toBe(3);
+  });
+
+  it("still reports an off-topic question as off-topic", () => {
+    expect(respond('{"isLedgerQuery":false}')).toEqual({ offTopic: true });
+  });
+
+  it("carries an empty issue list for a clean spec", () => {
+    const result: any = respond('{"isLedgerQuery":true,"groupBy":"month","chartType":"line"}');
+    expect(result.issues).toEqual([]);
   });
 });
 

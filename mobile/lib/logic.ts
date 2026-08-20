@@ -6,6 +6,7 @@
 
 import type { Transaction } from "./types";
 import { fmtDate, isDateKey } from "./format";
+import { normalizeSpec } from "./specSchema";
 
 export const topCategory = (cat: string) => (cat || "Uncategorized").split(":")[0];
 
@@ -369,7 +370,14 @@ export function findOutlier(filteredRows: Transaction[]): Outlier | null {
   return null;
 }
 
-export type QueryResult = { error: string } | { offTopic: true } | { spec: QuerySpec };
+export type QueryResult =
+  | { error: string }
+  | { offTopic: true }
+  // `issues` names anything the model asked for that the app refused to
+  // run -- an unreadable date, an unknown grouping, an absurd limit. It
+  // is rendered on the card, because a dropped filter changes the answer
+  // and a silently-changed answer is the failure mode worth avoiding.
+  | { spec: QuerySpec; issues: string[] };
 
 // Interprets the `query` Edge Function's response into exactly one of
 // {error}/{offTopic}/{spec}.
@@ -390,7 +398,11 @@ export function parseQueryResponse(ok: boolean, data: any): QueryResult {
   const raw = textBlock.text.replace(/```json/g, "").replace(/```/g, "").trim();
   try {
     const parsed = JSON.parse(raw);
-    return parsed.isLedgerQuery === false ? { offTopic: true } : { spec: parsed };
+    if (parsed?.isLedgerQuery === false) return { offTopic: true };
+    // Never trust the parsed object as a spec: normalizeSpec is what
+    // stands between a model typo and a card that silently answers a
+    // different question (see lib/specSchema.ts).
+    return normalizeSpec(parsed);
   } catch (e: any) {
     return { error: String(e.message || e) };
   }
