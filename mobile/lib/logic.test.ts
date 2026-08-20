@@ -1,6 +1,12 @@
 import { describe, it, expect } from "@jest/globals";
 import {
+  buildSeriesData,
   budgetProgress,
+  forecastBuckets,
+  nextPeriodKey,
+  periodEnd,
+  projectRunRate,
+  seriesKeyOf,
   comparePrevious,
   filterRecurring,
   median,
@@ -824,5 +830,154 @@ describe("budgetProgress", () => {
     expect(budgetProgress(summary(312, "2026-02-11"), {} as any)).toBeNull();
     expect(budgetProgress(summary(312, "2026-02-11"), { target: 0 } as any)).toBeNull();
     expect(budgetProgress(null, { target: 500 } as any)).toBeNull();
+  });
+});
+
+
+describe("projectRunRate", () => {
+  const summary = (sum: number, count: number, end: string) => ({
+    sum,
+    count,
+    average: sum / count,
+    perMonth: sum,
+    start: "2026-08-01",
+    end,
+    months: 1,
+  });
+  const spec = { dateStart: "2026-08-01", dateEnd: "2026-08-31" } as any;
+
+  it("carries the window's own rate forward to its end", () => {
+    // 10 of 30 days in, $260 spent.
+    const projection = projectRunRate(summary(260, 12, "2026-08-11"), spec, "2026-08-11")!;
+    expect(projection.projected).toBeCloseTo(780, 5);
+    expect(projection.windowEnd).toBe("2026-08-31");
+    expect(projection.elapsedPct).toBeCloseTo(10 / 30, 5);
+  });
+
+  it("says nothing once the window has closed", () => {
+    expect(projectRunRate(summary(260, 12, "2026-08-31"), spec, "2026-08-31")).toBeNull();
+    expect(projectRunRate(summary(260, 12, "2026-09-05"), spec, "2026-09-05")).toBeNull();
+  });
+
+  it("refuses to extrapolate from too little of the window, or too few rows", () => {
+    expect(projectRunRate(summary(50, 12, "2026-08-02"), spec, "2026-08-02")).toBeNull();
+    expect(projectRunRate(summary(50, 2, "2026-08-11"), spec, "2026-08-11")).toBeNull();
+  });
+
+  it("needs a bounded window to project into", () => {
+    expect(projectRunRate(summary(260, 12, "2026-08-11"), { dateStart: "2026-08-01" } as any, "2026-08-11")).toBeNull();
+  });
+});
+
+describe("buildSeriesData", () => {
+  const rows = [
+    row("2026-01-05", "Store", "Groceries:Super", -100),
+    row("2026-01-06", "Cafe", "Dining:Coffee", -20),
+    row("2026-02-05", "Store", "Groceries:Super", -150),
+    row("2026-02-06", "Cafe", "Dining:Coffee", -30),
+  ];
+  const spec = { groupBy: "month", seriesBy: "category", chartType: "bar" } as any;
+
+  it("returns a bucket axis and one series per split value", () => {
+    const data = buildSeriesData(rows, spec)!;
+    expect(data.buckets).toEqual(["2026-01", "2026-02"]);
+    expect(data.series.map((s) => s.name)).toEqual(["Groceries", "Dining"]);
+    expect(data.series[0].values).toEqual([100, 150]);
+    expect(data.series[1].values).toEqual([20, 30]);
+  });
+
+  it("fills a bucket a series has nothing in with zero, so the bands line up", () => {
+    const sparse = [...rows, row("2026-03-05", "Store", "Groceries:Super", -50)];
+    const data = buildSeriesData(sparse, spec)!;
+    expect(data.buckets).toHaveLength(3);
+    expect(data.series.find((s) => s.name === "Dining")!.values).toEqual([20, 30, 0]);
+  });
+
+  it("keeps the six biggest series and folds the rest into Other", () => {
+    const many = Array.from({ length: 9 }, (_, i) =>
+      row("2026-01-05", `P${i}`, `Cat${i}:Sub`, -(i + 1) * 10)
+    );
+    const data = buildSeriesData(many, spec)!;
+    expect(data.series).toHaveLength(6);
+    expect(data.series[5].name).toBe("Other");
+    // The four smallest: 10 + 20 + 30 + 40.
+    expect(data.series[5].values[0]).toBe(100);
+    expect(data.series[5].keys).toHaveLength(4);
+  });
+
+  it("honours the metric per cell", () => {
+    const counted = buildSeriesData(rows, { ...spec, metric: "count" })!;
+    expect(counted.series[0].values).toEqual([1, 1]);
+  });
+
+  it("returns nothing without a second dimension, or for a ranking", () => {
+    expect(buildSeriesData(rows, { groupBy: "month" } as any)).toBeNull();
+    expect(buildSeriesData(rows, { groupBy: "transaction", seriesBy: "category" } as any)).toBeNull();
+    expect(buildSeriesData([], spec)).toBeNull();
+  });
+
+  it("keys a series by the split field", () => {
+    expect(seriesKeyOf({ seriesBy: "account" } as any, rows[0])).toBe("Manual entry");
+    expect(seriesKeyOf({ seriesBy: "payee" } as any, rows[0])).toBe("Store");
+    expect(seriesKeyOf({ seriesBy: null } as any, rows[0])).toBe("");
+  });
+});
+
+describe("period key arithmetic", () => {
+  it("steps to the next bucket for every date granularity", () => {
+    expect(nextPeriodKey("2026-08-19", "day")).toBe("2026-08-20");
+    expect(nextPeriodKey("2026-08-02", "week")).toBe("2026-08-09");
+    expect(nextPeriodKey("2026-12", "month")).toBe("2027-01");
+    expect(nextPeriodKey("2026-Q4", "quarter")).toBe("2027-Q1");
+    expect(nextPeriodKey("2026", "year")).toBe("2027");
+  });
+
+  it("knows the last day each bucket covers, leap years included", () => {
+    expect(periodEnd("2026-01", "month")).toBe("2026-01-31");
+    expect(periodEnd("2024-02", "month")).toBe("2024-02-29");
+    expect(periodEnd("2026-Q1", "quarter")).toBe("2026-03-31");
+    expect(periodEnd("2026", "year")).toBe("2026-12-31");
+    expect(periodEnd("2026-08-02", "week")).toBe("2026-08-08");
+  });
+});
+
+describe("forecastBuckets", () => {
+  const monthly = (totals: number[]) =>
+    totals.map((total, i) => ({
+      key: `2026-0${i + 1}`,
+      total,
+      sum: total,
+      count: 1,
+    }));
+
+  it("extends a monthly chart with projected buckets averaged from the complete ones", () => {
+    const data = forecastBuckets(monthly([100, 200, 300]), { groupBy: "month", forecast: true } as any, "2026-03-31");
+    expect(data).toHaveLength(6);
+    expect(data.slice(3).every((d) => d.projected)).toBe(true);
+    expect(data[3].key).toBe("2026-04");
+    expect(data[3].total).toBe(200);
+    // Projections carry no transactions.
+    expect(data.slice(3).every((d) => d.count === 0)).toBe(true);
+  });
+
+  it("ignores a partial trailing period when working out the average", () => {
+    // March is still running on the 10th, and its $30 is not a month.
+    const data = forecastBuckets(monthly([100, 200, 30]), { groupBy: "month", forecast: true } as any, "2026-03-10");
+    expect(data[3].total).toBe(150);
+  });
+
+  it("projects fewer periods the coarser the bucket", () => {
+    const years = [
+      { key: "2024", total: 10, sum: 10, count: 1 },
+      { key: "2025", total: 20, sum: 20, count: 1 },
+    ];
+    expect(forecastBuckets(years, { groupBy: "year", forecast: true } as any, "2025-12-31")).toHaveLength(3);
+  });
+
+  it("leaves the data alone unless the question asked for a projection", () => {
+    const data = monthly([100, 200, 300]);
+    expect(forecastBuckets(data, { groupBy: "month" } as any, "2026-03-31")).toBe(data);
+    expect(forecastBuckets(data, { groupBy: "category", forecast: true } as any, "2026-03-31")).toBe(data);
+    expect(forecastBuckets(data.slice(0, 1), { groupBy: "month", forecast: true } as any, "2026-01-31")).toHaveLength(1);
   });
 });

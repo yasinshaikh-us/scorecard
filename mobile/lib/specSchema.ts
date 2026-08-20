@@ -32,6 +32,9 @@ const GROUP_BYS = [
 ] as const;
 const TYPES = ["expense", "income", "transfer", "all"] as const;
 const METRICS = ["sum", "count", "avg", "net", "median"] as const;
+// Deliberately narrow: a second dimension is only readable across a
+// handful of values, and these are the fields that have them.
+const SERIES_BYS = ["category", "account", "payee"] as const;
 
 // A ranking is drawn as one row or bar per entry, so a limit past this is
 // not a chart anyone reads -- and the model can emit any integer.
@@ -127,6 +130,12 @@ export function normalizeSpec(raw: any): { spec: QuerySpec; issues: SpecIssue[] 
 
   spec.includeTransfers = input.includeTransfers === true;
   spec.recurringOnly = input.recurringOnly === true;
+  spec.forecast = input.forecast === true;
+
+  const seriesBy = oneOf(input.seriesBy, SERIES_BYS);
+  if (input.seriesBy != null && !seriesBy) issues.push(`can't split by "${String(input.seriesBy).slice(0, 20)}"`);
+  // Splitting a dimension by itself is one dimension, not two.
+  spec.seriesBy = seriesBy && seriesBy !== spec.groupBy ? seriesBy : null;
   spec.compareTo = input.compareTo === "previous" ? "previous" : null;
 
   // A budget of zero or less is not a target anyone set.

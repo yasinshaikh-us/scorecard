@@ -93,6 +93,7 @@ describe("buildSystemPrompt", () => {
         "accountContains", "dateStart", "dateEnd", "type", "includeTransfers",
         "amountMin", "amountMax", "limit", "chartType", "groupBy", "title",
         "excludeCategories", "metric", "payeeAny", "recurringOnly", "compareTo", "target",
+        "seriesBy", "forecast",
       ]) {
         expect(prompt).toContain(`"${field}"`);
       }
@@ -191,6 +192,20 @@ describe("buildSystemPrompt", () => {
       const prompt = build();
       expect(prompt).toContain('Set "compareTo": "previous" when the question compares this period against the one before it');
       expect(prompt).toContain("the app measures the equal-length window immediately before it");
+    });
+
+    it("describes seriesBy as a split of one grouping by another", () => {
+      const prompt = build();
+      expect(prompt).toContain('Set "seriesBy" when the question asks for a SPLIT of one grouping by another');
+      expect(prompt).toContain("seriesBy must differ from groupBy");
+      expect(prompt).toContain("Leave it null for an ordinary one-dimensional question");
+    });
+
+    it("keeps forecast for forward-looking questions only, and says the run rate covers the open period", () => {
+      const prompt = build();
+      expect(prompt).toContain('Set "forecast": true only when the question asks what is coming');
+      expect(prompt).toContain("Never set it for a question purely about what already happened");
+      expect(prompt).toContain("the app already reports the run rate for a window that is still open");
     });
 
     it("captures a named budget as target", () => {

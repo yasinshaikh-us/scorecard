@@ -119,10 +119,25 @@ describe("QueryStats", () => {
     expect(screen.getByTestId("query-stats-budget")).toHaveTextContent(/on track \(50% through\)/);
   });
 
-  it("omits both notes when the question asked for neither", async () => {
+  it("omits every optional note when the question asked for none of them", async () => {
     await renderWithTheme(<QueryStats summary={summary()} outlier={null} />);
     expect(screen.queryByTestId("query-stats-comparison")).toBeNull();
     expect(screen.queryByTestId("query-stats-budget")).toBeNull();
+    expect(screen.queryByTestId("query-stats-projection")).toBeNull();
+  });
+
+  it("carries the window's rate forward, hedged as a pace rather than a forecast", async () => {
+    await renderWithTheme(
+      <QueryStats
+        summary={summary({ sum: 260 })}
+        outlier={null}
+        projection={{ projected: 780, through: "2026-08-11", windowEnd: "2026-08-31", elapsedPct: 1 / 3 }}
+      />
+    );
+    const note = screen.getByTestId("query-stats-projection");
+    expect(note).toHaveTextContent(/at this pace/);
+    expect(note).toHaveTextContent(/\$780\.00/);
+    expect(note).toHaveTextContent(/31 Aug 26/);
   });
 });
 

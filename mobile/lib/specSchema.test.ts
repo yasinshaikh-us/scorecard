@@ -132,4 +132,21 @@ describe("normalizeSpec", () => {
     expect((spec as any).sqlInjection).toBeUndefined();
     expect((spec as any).evil).toBeUndefined();
   });
+
+  it("only accepts a split by a field with few enough values to draw", () => {
+    expect(normalizeSpec({ seriesBy: "account" }).spec.seriesBy).toBe("account");
+    const { spec, issues } = normalizeSpec({ seriesBy: "date" });
+    expect(spec.seriesBy).toBeNull();
+    expect(issues).toEqual(expect.arrayContaining([expect.stringContaining("date")]));
+  });
+
+  it("drops a split that repeats the grouping, which is one dimension not two", () => {
+    expect(normalizeSpec({ groupBy: "category", seriesBy: "category" }).spec.seriesBy).toBeNull();
+  });
+
+  it("treats forecast as strictly opt-in", () => {
+    expect(normalizeSpec({}).spec.forecast).toBe(false);
+    expect(normalizeSpec({ forecast: "yes" }).spec.forecast).toBe(false);
+    expect(normalizeSpec({ forecast: true }).spec.forecast).toBe(true);
+  });
 });

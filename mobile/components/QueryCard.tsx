@@ -6,6 +6,10 @@ import QueryStats from "./QueryStats";
 import {
   budgetProgress,
   buildChartData,
+  buildSeriesData,
+  forecastBuckets,
+  projectRunRate,
+  seriesKeyOf,
   comparePrevious,
   filterRecurring,
   filterTransactions,
@@ -39,6 +43,11 @@ export default function QueryCard({
 }) {
   const { colors } = useTheme();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // A second selection axis, for the second grouping dimension: tapping a
+  // legend entry narrows to that band, tapping a bar still narrows to
+  // that bucket. One at a time -- two simultaneous filters on a card this
+  // size is more state than it is worth.
+  const [selectedSeries, setSelectedSeries] = useState<string | null>(null);
 
   const spec = "spec" in card ? card.spec : undefined;
   const issues = "issues" in card && card.issues ? card.issues : [];
@@ -55,7 +64,18 @@ export default function QueryCard({
   // everything downstream -- chart, labels, tap-to-filter -- has to read
   // from the resolved one or they disagree about what a bucket is.
   const chartSpec = useMemo(() => resolveSpec(baseFiltered, spec ?? null), [baseFiltered, spec]);
-  const chartData = useMemo(() => buildChartData(baseFiltered, chartSpec), [baseFiltered, chartSpec]);
+  // The ledger's own last date is "today" everywhere in this card: the
+  // system prompt anchors relative ranges to it too, so a projection and
+  // the question that asked for it agree on when now is.
+  const today = useMemo(
+    () => transactions.reduce((latest, d) => (d.Date > latest ? d.Date : latest), ""),
+    [transactions]
+  );
+  const chartData = useMemo(
+    () => forecastBuckets(buildChartData(baseFiltered, chartSpec), chartSpec, today),
+    [baseFiltered, chartSpec, today]
+  );
+  const seriesData = useMemo(() => buildSeriesData(baseFiltered, chartSpec), [baseFiltered, chartSpec]);
   const summary = useMemo(() => summarize(baseFiltered), [baseFiltered]);
   const outlier = useMemo(() => findOutlier(baseFiltered), [baseFiltered]);
   // Against the whole ledger, not the filtered set: the previous window's
@@ -65,15 +85,24 @@ export default function QueryCard({
     [transactions, spec, summary]
   );
   const budget = useMemo(() => budgetProgress(summary, spec ?? null), [summary, spec]);
+  const projection = useMemo(() => projectRunRate(summary, spec ?? null, today), [summary, spec, today]);
   const displayed = useMemo(() => {
-    if (!selectedKey || !chartSpec) return baseFiltered;
+    if (!chartSpec) return baseFiltered;
+    if (selectedSeries) {
+      // "Other" on a legend stands for the series it folded in, same as
+      // the pie's own Other slice.
+      const band = seriesData?.series.find((s) => s.name === selectedSeries);
+      const names = band?.keys ?? [selectedSeries];
+      return baseFiltered.filter((d) => names.includes(seriesKeyOf(chartSpec, d)));
+    }
+    if (!selectedKey) return baseFiltered;
     // A capped pie's "Other" slice stands for several group keys at once,
     // so selection matches against the set it swallowed rather than
     // against its own label, which belongs to no transaction.
     const selected = chartData.find((c) => c.key === selectedKey);
     const keys = selected?.keys ?? [selectedKey];
     return baseFiltered.filter((d) => keys.includes(groupKeyOf(chartSpec, d)));
-  }, [baseFiltered, selectedKey, chartSpec, chartData]);
+  }, [baseFiltered, selectedKey, selectedSeries, chartSpec, chartData, seriesData]);
   const sortedRows = useMemo(() => {
     if (chartSpec?.groupBy === "transaction" && !selectedKey) {
       return chartData.map((c) => c.row!).filter(Boolean);
@@ -89,7 +118,13 @@ export default function QueryCard({
   const visibleRows = useMemo(() => sortedRows.slice(0, ROW_CAP), [sortedRows]);
 
   function toggleSelect(key: string) {
+    setSelectedSeries(null);
     setSelectedKey((prev) => (prev === key ? null : key));
+  }
+
+  function toggleSeries(name: string) {
+    setSelectedKey(null);
+    setSelectedSeries((prev) => (prev === name ? null : name));
   }
 
   if (card.pending) {
@@ -158,15 +193,32 @@ export default function QueryCard({
         </Text>
       ) : null}
 
-      {summary ? <QueryStats summary={summary} outlier={outlier} comparison={comparison} budget={budget} /> : null}
+      {summary ? (
+        <QueryStats summary={summary} outlier={outlier} comparison={comparison} budget={budget} projection={projection} />
+      ) : null}
 
       {chartSpec && chartSpec.chartType !== "none" && chartData.length > 0 && (
         <>
-          <Chart data={chartData} spec={chartSpec} CATS={CATS} selectedKey={selectedKey} onSelect={toggleSelect} />
-          {selectedKey && (
-            <Pressable style={[styles.filterChip, { backgroundColor: colors.surfaceRecessed }]} onPress={() => setSelectedKey(null)}>
+          <Chart
+            data={chartData}
+            spec={chartSpec}
+            CATS={CATS}
+            seriesData={seriesData}
+            selectedKey={selectedKey}
+            selectedSeries={selectedSeries}
+            onSelect={toggleSelect}
+            onSelectSeries={toggleSeries}
+          />
+          {(selectedKey || selectedSeries) && (
+            <Pressable
+              style={[styles.filterChip, { backgroundColor: colors.surfaceRecessed }]}
+              onPress={() => {
+                setSelectedKey(null);
+                setSelectedSeries(null);
+              }}
+            >
               <Text style={[styles.filterChipText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>
-                filtered to <Text style={{ fontFamily: fontFamily.bold }}>{selectedKey}</Text> ×
+                filtered to <Text style={{ fontFamily: fontFamily.bold }}>{selectedSeries ?? selectedKey}</Text> ×
               </Text>
             </Pressable>
           )}

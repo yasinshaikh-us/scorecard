@@ -7,12 +7,17 @@ import type { QuerySpec } from "../lib/logic";
 
 jest.mock("./Chart", () => {
   const { View: RNView, Pressable: RNPressable, Text: RNText } = require("react-native");
-  return function MockChart({ data, spec, selectedKey, onSelect }: any) {
+  return function MockChart({ data, spec, seriesData, selectedKey, onSelect, onSelectSeries }: any) {
     return (
       <RNView testID="chart" accessibilityLabel={`${spec?.groupBy}/${spec?.chartType}`}>
         {data.map((d: any) => (
           <RNPressable key={d.key} testID={`chart-item-${d.key}`} onPress={() => onSelect(d.key)}>
             <RNText>{selectedKey === d.key ? "selected" : "unselected"}</RNText>
+          </RNPressable>
+        ))}
+        {(seriesData?.series ?? []).map((s: any) => (
+          <RNPressable key={s.name} testID={`chart-series-${s.name}`} onPress={() => onSelectSeries(s.name)}>
+            <RNText>{s.name}</RNText>
           </RNPressable>
         ))}
       </RNView>
@@ -240,5 +245,43 @@ describe("QueryCard", () => {
       <QueryCard card={{ id: 1, question: "q", spec, issues: [] }} transactions={[tx()]} CATS={CATS} onRemove={jest.fn()} />
     );
     expect(screen.queryByTestId("query-card-issues")).toBeNull();
+  });
+
+  it("filters the list to a series when its legend entry is tapped", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month", seriesBy: "category" };
+    const transactions = [
+      tx({ Id: 1, Date: "2026-01-05", Payee: "Store", Category: "Groceries:Super", Amount: -100 }),
+      tx({ Id: 2, Date: "2026-01-06", Payee: "Cafe", Category: "Dining:Coffee", Amount: -20 }),
+      tx({ Id: 3, Date: "2026-02-05", Payee: "Store", Category: "Groceries:Super", Amount: -150 }),
+    ];
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "split", spec }} transactions={transactions} CATS={CATS} onRemove={jest.fn()} />
+    );
+
+    await fireEvent.press(screen.getByTestId("chart-series-Dining"));
+    expect(screen.getAllByTestId("tx-row").map((r) => r.props.children)).toEqual(["Cafe"]);
+    expect(screen.getByText(/filtered to/)).toBeTruthy();
+
+    // Selecting a bucket clears the series filter rather than stacking on it.
+    await fireEvent.press(screen.getByTestId("chart-item-2026-02"));
+    expect(screen.getAllByTestId("tx-row").map((r) => r.props.children)).toEqual(["Store"]);
+  });
+
+  it("extends a forecast question's chart with projected buckets that hold no rows", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "month", forecast: true };
+    const transactions = [
+      tx({ Id: 1, Date: "2026-01-15", Amount: -100 }),
+      tx({ Id: 2, Date: "2026-02-15", Amount: -200 }),
+      tx({ Id: 3, Date: "2026-03-15", Amount: -300 }),
+    ];
+    await renderWithTheme(
+      <QueryCard card={{ id: 1, question: "what's coming", spec }} transactions={transactions} CATS={CATS} onRemove={jest.fn()} />
+    );
+
+    // Three real months plus three projected ones.
+    expect(screen.getAllByTestId(/^chart-item-/)).toHaveLength(6);
+    // The stat line counts only what actually happened.
+    expect(screen.getByTestId("query-stat-total")).toHaveTextContent("$600.00");
+    expect(screen.getByTestId("query-stat-count")).toHaveTextContent("3");
   });
 });

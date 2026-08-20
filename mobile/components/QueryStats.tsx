@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { fmtDate, fmtMoney } from "../lib/format";
-import type { BudgetProgress, Comparison, Outlier, QuerySummary } from "../lib/logic";
+import type { BudgetProgress, Comparison, Outlier, Projection, QuerySummary } from "../lib/logic";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
@@ -49,11 +49,13 @@ export default function QueryStats({
   outlier,
   comparison,
   budget,
+  projection,
 }: {
   summary: QuerySummary;
   outlier: Outlier | null;
   comparison?: Comparison | null;
   budget?: BudgetProgress | null;
+  projection?: Projection | null;
 }) {
   const { colors } = useTheme();
   // Up is not automatically bad (income) and down is not automatically
@@ -77,6 +79,17 @@ export default function QueryStats({
           {delta === null
             ? `nothing in the previous ${fmtDate(comparison.start)} – ${fmtDate(comparison.end)}`
             : `${delta >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(delta * 100))}% vs ${fmtMoney(comparison.sum)} the previous period`}
+        </Text>
+      ) : null}
+
+      {projection ? (
+        // Deliberately hedged wording: this is the window's own rate
+        // carried forward, not a forecast of anything.
+        <Text
+          testID="query-stats-projection"
+          style={[styles.compare, { color: colors.textMuted, fontFamily: fontFamily.regular }]}
+        >
+          at this pace, ~{fmtMoney(projection.projected)} by {fmtDate(projection.windowEnd)}
         </Text>
       ) : null}
 

@@ -328,4 +328,128 @@ describe("Chart", () => {
     );
     expect(mockBarChart.mock.calls[0][0].noOfSectionsBelowXAxis).toBe(0);
   });
+
+  // Two grouping dimensions at once: buckets on the x-axis, one band or
+  // line per series, which the flat ChartDatum path cannot express.
+  const seriesData = {
+    buckets: ["2026-01", "2026-02"],
+    series: [
+      { name: "Groceries", values: [100, 150], sum: 250 },
+      { name: "Dining", values: [20, 30], sum: 50 },
+    ],
+  };
+
+  it("draws a split grouping as stacked bars with a legend", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month", seriesBy: "category" };
+    await renderWithTheme(
+      <Chart
+        data={[datum({ key: "2026-01", total: 120 })]}
+        spec={spec}
+        CATS={["Groceries", "Dining"]}
+        seriesData={seriesData}
+        selectedKey={null}
+        onSelect={jest.fn()}
+      />
+    );
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(props.stackData).toHaveLength(2);
+    expect(props.stackData[0].stacks.map((s: any) => s.value)).toEqual([100, 20]);
+    // The axis is measured on the column total, not on either band.
+    expect(props.maxValue).toBeGreaterThanOrEqual(120);
+    expect(screen.getByTestId("chart-legend-Groceries")).toBeTruthy();
+    expect(screen.getByTestId("chart-legend-Dining")).toBeTruthy();
+  });
+
+  it("draws a split line grouping as one dataset per series", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "month", seriesBy: "account" };
+    await renderWithTheme(
+      <Chart
+        data={[datum({ key: "2026-01", total: 120 })]}
+        spec={spec}
+        CATS={[]}
+        seriesData={seriesData}
+        selectedKey={null}
+        onSelect={jest.fn()}
+      />
+    );
+
+    const props = mockLineChart.mock.calls[0][0];
+    expect(props.dataSet).toHaveLength(2);
+    expect(props.dataSet[0].data.map((d: any) => d.value)).toEqual([100, 150]);
+  });
+
+  it("tapping a legend entry selects that series", async () => {
+    const onSelectSeries = jest.fn();
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month", seriesBy: "category" };
+    await renderWithTheme(
+      <Chart
+        data={[datum()]}
+        spec={spec}
+        CATS={[]}
+        seriesData={seriesData}
+        selectedKey={null}
+        selectedSeries={null}
+        onSelect={jest.fn()}
+        onSelectSeries={onSelectSeries}
+      />
+    );
+
+    await fireEvent.press(screen.getByTestId("chart-legend-Dining"));
+    expect(onSelectSeries).toHaveBeenCalledWith("Dining");
+  });
+
+  it("tapping a stacked bar still selects its bucket", async () => {
+    const onSelect = jest.fn();
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month", seriesBy: "category" };
+    await renderWithTheme(
+      <Chart data={[datum()]} spec={spec} CATS={[]} seriesData={seriesData} selectedKey={null} onSelect={onSelect} />
+    );
+
+    mockBarChart.mock.calls[0][0].stackData[1].onPress();
+    expect(onSelect).toHaveBeenCalledWith("2026-02");
+  });
+
+  // A projected bucket has no transactions behind it, so it is drawn as a
+  // projection and cannot be selected -- selecting it could only filter
+  // the list to nothing.
+  it("draws projected buckets faded, inert, and labelled as projections", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    const data = [
+      datum({ key: "2026-01", total: 100 }),
+      datum({ key: "2026-02", total: 200 }),
+      { key: "2026-03", total: 150, sum: 150, count: 0, projected: true },
+    ];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(props.data[2].opacity).toBe(0.3);
+    expect(props.data[2].onPress).toBeUndefined();
+    expect(props.data[0].onPress).toBeDefined();
+    expect(screen.getByTestId("chart-projected-note")).toBeTruthy();
+  });
+
+  it("dashes the projected tail of a line and leaves the real part solid", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "month" };
+    const data = [
+      datum({ key: "2026-01", total: 100 }),
+      datum({ key: "2026-02", total: 200 }),
+      { key: "2026-03", total: 150, sum: 150, count: 0, projected: true },
+    ];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockLineChart.mock.calls[0][0];
+    expect(props.dataSet).toHaveLength(2);
+    expect(props.dataSet[1].strokeDashArray).toEqual([5, 5]);
+    expect(props.dataSet[1].startIndex).toBe(1);
+    expect(screen.getByTestId("chart-projected-note")).toBeTruthy();
+  });
+
+  it("says nothing about projections when there are none", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    await renderWithTheme(
+      <Chart data={[datum({ key: "2026-01" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />
+    );
+    expect(screen.queryByTestId("chart-projected-note")).toBeNull();
+  });
 });

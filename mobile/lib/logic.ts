@@ -63,6 +63,14 @@ export type QuerySpec = {
   // What each bucket measures. Everything used to be a sum of amounts,
   // which left "how often do I go there" answerable only in dollars.
   metric?: "sum" | "count" | "avg" | "net" | "median";
+  // A SECOND grouping dimension, drawn as stacked bars or one line per
+  // value: "dining by month, split by account" is two axes, and one
+  // groupBy can only carry one of them.
+  seriesBy?: "category" | "account" | "payee" | null;
+  // Extends a date-grouped chart with projected buckets. They are drawn
+  // as projections, carry no transactions, and are never counted in the
+  // totals above the chart.
+  forecast?: boolean;
   // Restricts the set to payees that bill on a regular cadence -- what a
   // question about subscriptions is actually asking for. Not a row-wise
   // filter (regularity is a property of a payee's whole history), so it
@@ -174,6 +182,10 @@ export type ChartDatum = {
   category?: string;
   row?: Transaction;
   keys?: string[];
+  // A bucket with no transactions behind it: drawn as a projection,
+  // ignored by the totals above the chart, and not selectable, since
+  // there is nothing to filter the list down to.
+  projected?: boolean;
 };
 
 // Builds the {key, total, count} chart series from already-filtered rows:
@@ -528,6 +540,184 @@ export function budgetProgress(summary: QuerySummary | null, spec: QuerySpec | n
   }
 
   return { spent: summary.sum, target: spec.target, pct: summary.sum / spec.target, elapsedPct };
+}
+
+// "At this pace, ~$780 by 31 Aug" -- the projection people actually want,
+// and the only one that needs no new chart: a partially-elapsed window
+// scaled to its full length.
+//
+// Deliberately not a model of anything. It answers "if the rest of this
+// month looks like the part I've had", which is exactly as much as a
+// run rate can honestly claim, and it refuses to answer at all until
+// there is enough of the window (and enough transactions in it) for the
+// rate to mean something.
+export type Projection = { projected: number; through: string; windowEnd: string; elapsedPct: number };
+
+const MIN_PROJECTION_DAYS = 3;
+const MIN_PROJECTION_ROWS = 3;
+
+export function projectRunRate(
+  summary: QuerySummary | null,
+  spec: QuerySpec | null,
+  today: string
+): Projection | null {
+  if (!summary || !spec?.dateStart || !spec?.dateEnd) return null;
+  if (!isIsoDateish(spec.dateStart) || !isIsoDateish(spec.dateEnd) || !isIsoDateish(today)) return null;
+  // Nothing to project once the window is over.
+  if (today >= spec.dateEnd || today < spec.dateStart) return null;
+
+  const window = daysBetween(spec.dateStart, spec.dateEnd);
+  const elapsed = daysBetween(spec.dateStart, today);
+  if (window < 7 || elapsed < MIN_PROJECTION_DAYS || summary.count < MIN_PROJECTION_ROWS) return null;
+
+  return {
+    projected: (summary.sum / elapsed) * window,
+    through: today,
+    windowEnd: spec.dateEnd,
+    elapsedPct: elapsed / window,
+  };
+}
+
+// The second grouping dimension. Kept to the low-cardinality fields --
+// a chart with one series per payee across 300 merchants is not a chart.
+export function seriesKeyOf(spec: QuerySpec | null, d: Transaction): string {
+  if (spec?.seriesBy === "category") return topCategory(d.Category);
+  if (spec?.seriesBy === "account") return d.Account || "Manual entry";
+  if (spec?.seriesBy === "payee") return d.Payee;
+  return "";
+}
+
+export type SeriesDatum = { name: string; values: number[]; sum: number; keys?: string[] };
+export type SeriesData = { buckets: string[]; series: SeriesDatum[] };
+
+// Six is what a legend can name and a stack can still be read as parts
+// of a bar; the rest becomes one "Other" band that remembers what it
+// holds, same as a capped pie.
+const MAX_SERIES = 6;
+
+type Cell = { sum: number; net: number; count: number; amounts: number[] };
+const emptyCell = (): Cell => ({ sum: 0, net: 0, count: 0, amounts: [] });
+
+function cellValue(cell: Cell, metric: QuerySpec["metric"]): number {
+  if (metric === "median") return median(cell.amounts);
+  return metricValue(cell, metric);
+}
+
+// A matrix rather than a list: bucket on one axis, series on the other.
+// buildChartData's flat shape can't express it, so this is a separate
+// path the chart switches to when spec.seriesBy is set -- rather than
+// bending ChartDatum into something two-dimensional that every existing
+// caller would have to understand.
+export function buildSeriesData(filteredRows: Transaction[], spec: QuerySpec | null): SeriesData | null {
+  if (!spec?.seriesBy || !spec.groupBy || spec.groupBy === "none" || spec.groupBy === "transaction") return null;
+  if (filteredRows.length === 0) return null;
+
+  const cells: Record<string, Record<string, Cell>> = {};
+  const bucketTotals: Record<string, number> = {};
+  const seriesTotals: Record<string, number> = {};
+
+  for (const d of filteredRows) {
+    const bucket = groupKeyOf(spec, d);
+    const name = seriesKeyOf(spec, d) || "Unlabelled";
+    const cell = ((cells[name] ||= {})[bucket] ||= emptyCell());
+    cell.sum += Math.abs(d.Amount);
+    cell.net += d.Amount;
+    cell.count += 1;
+    cell.amounts.push(Math.abs(d.Amount));
+    bucketTotals[bucket] = (bucketTotals[bucket] || 0) + Math.abs(d.Amount);
+    seriesTotals[name] = (seriesTotals[name] || 0) + Math.abs(d.Amount);
+  }
+
+  const buckets = Object.keys(bucketTotals).sort((a, b) =>
+    isDateKey(spec.groupBy || "") ? a.localeCompare(b) : bucketTotals[b] - bucketTotals[a]
+  );
+  const ranked = Object.keys(seriesTotals).sort((a, b) => seriesTotals[b] - seriesTotals[a]);
+  const kept = ranked.slice(0, MAX_SERIES - (ranked.length > MAX_SERIES ? 1 : 0));
+  const folded = ranked.slice(kept.length);
+
+  const series: SeriesDatum[] = kept.map((name) => ({
+    name,
+    values: buckets.map((b) => cellValue(cells[name][b] || emptyCell(), spec.metric)),
+    sum: seriesTotals[name],
+  }));
+
+  if (folded.length) {
+    series.push({
+      name: "Other",
+      keys: folded,
+      values: buckets.map((b) => {
+        const merged = folded.reduce((acc, name) => {
+          const cell = cells[name][b];
+          if (!cell) return acc;
+          return {
+            sum: acc.sum + cell.sum,
+            net: acc.net + cell.net,
+            count: acc.count + cell.count,
+            amounts: [...acc.amounts, ...cell.amounts],
+          };
+        }, emptyCell());
+        return cellValue(merged, spec.metric);
+      }),
+      sum: folded.reduce((acc, name) => acc + seriesTotals[name], 0),
+    });
+  }
+
+  return { buckets, series };
+}
+
+// The next bucket key along, and the last day a bucket covers. Both are
+// pure key arithmetic -- no clock, no locale -- so a projected bucket
+// lands where the real ones would have.
+export function nextPeriodKey(key: string, groupBy: string): string {
+  if (groupBy === "day") return daysBefore(key, -1);
+  if (groupBy === "week") return daysBefore(key, -7);
+  if (groupBy === "year") return String(Number(key) + 1);
+  if (groupBy === "quarter") {
+    const [y, q] = key.split("-Q").map(Number);
+    return q === 4 ? `${y + 1}-Q1` : `${y}-Q${q + 1}`;
+  }
+  const [y, m] = key.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+export function periodEnd(key: string, groupBy: string): string {
+  if (groupBy === "day") return key;
+  if (groupBy === "week") return daysBefore(key, -6);
+  // The rest are "the day before the next period starts", which is the
+  // only definition that gets February and leap years right for free.
+  const next = nextPeriodKey(key, groupBy);
+  if (groupBy === "year") return daysBefore(`${next}-01-01`, 1);
+  if (groupBy === "quarter") {
+    const [y, q] = next.split("-Q").map(Number);
+    return daysBefore(`${y}-${String((q - 1) * 3 + 1).padStart(2, "0")}-01`, 1);
+  }
+  return daysBefore(`${next}-01`, 1);
+}
+
+// How far ahead each granularity projects. A year of projected years is
+// fiction; three months is a quarter's visibility.
+const FORECAST_BUCKETS: Record<string, number> = { day: 7, week: 4, month: 3, quarter: 2, year: 1 };
+// Averaged over the last few COMPLETE buckets: the current one is
+// usually partial, and a half-finished month averaged in drags every
+// projection down.
+const FORECAST_BASIS = 3;
+
+export function forecastBuckets(data: ChartDatum[], spec: QuerySpec | null, today: string): ChartDatum[] {
+  const groupBy = spec?.groupBy || "";
+  if (!spec?.forecast || !isDateKey(groupBy) || data.length < 2) return data;
+
+  const complete = data.filter((d) => periodEnd(d.key, groupBy) <= today);
+  const basisFrom = (complete.length ? complete : data).slice(-FORECAST_BASIS);
+  if (basisFrom.length === 0) return data;
+  const basis = basisFrom.reduce((acc, d) => acc + d.total, 0) / basisFrom.length;
+
+  const out = [...data];
+  let key = data[data.length - 1].key;
+  for (let i = 0; i < (FORECAST_BUCKETS[groupBy] ?? 1); i++) {
+    key = nextPeriodKey(key, groupBy);
+    out.push({ key, total: basis, sum: basis, net: basis, count: 0, projected: true });
+  }
+  return out;
 }
 
 // A period whose total is really one purchase wearing a trend's clothes.
