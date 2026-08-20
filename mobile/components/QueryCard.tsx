@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import Chart from "./Chart";
 import TransactionRow from "./TransactionRow";
-import { buildChartData, filterTransactions, groupKeyOf, type QueryResult } from "../lib/logic";
+import QueryStats from "./QueryStats";
+import { buildChartData, filterTransactions, findOutlier, groupKeyOf, resolveSpec, summarize, type QueryResult } from "../lib/logic";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 import type { Transaction } from "../lib/types";
@@ -31,17 +32,29 @@ export default function QueryCard({
   const spec = "spec" in card ? card.spec : undefined;
 
   const baseFiltered = useMemo(() => filterTransactions(transactions, spec ?? null), [transactions, spec]);
-  const chartData = useMemo(() => buildChartData(baseFiltered, spec ?? null), [baseFiltered, spec]);
+  // Not the spec the model returned: a grouping that collapses to a
+  // single bucket is re-grouped over time here (see resolveSpec), so
+  // everything downstream -- chart, labels, tap-to-filter -- has to read
+  // from the resolved one or they disagree about what a bucket is.
+  const chartSpec = useMemo(() => resolveSpec(baseFiltered, spec ?? null), [baseFiltered, spec]);
+  const chartData = useMemo(() => buildChartData(baseFiltered, chartSpec), [baseFiltered, chartSpec]);
+  const summary = useMemo(() => summarize(baseFiltered), [baseFiltered]);
+  const outlier = useMemo(() => findOutlier(baseFiltered), [baseFiltered]);
   const displayed = useMemo(() => {
-    if (!selectedKey || !spec) return baseFiltered;
-    return baseFiltered.filter((d) => groupKeyOf(spec, d) === selectedKey);
-  }, [baseFiltered, selectedKey, spec]);
+    if (!selectedKey || !chartSpec) return baseFiltered;
+    // A capped pie's "Other" slice stands for several group keys at once,
+    // so selection matches against the set it swallowed rather than
+    // against its own label, which belongs to no transaction.
+    const selected = chartData.find((c) => c.key === selectedKey);
+    const keys = selected?.keys ?? [selectedKey];
+    return baseFiltered.filter((d) => keys.includes(groupKeyOf(chartSpec, d)));
+  }, [baseFiltered, selectedKey, chartSpec, chartData]);
   const sortedRows = useMemo(() => {
-    if (spec?.groupBy === "transaction" && !selectedKey) {
+    if (chartSpec?.groupBy === "transaction" && !selectedKey) {
       return chartData.map((c) => c.row!).filter(Boolean);
     }
     return displayed.slice().sort((a, b) => b.Date.localeCompare(a.Date));
-  }, [displayed, selectedKey, spec, chartData]);
+  }, [displayed, selectedKey, chartSpec, chartData]);
 
   function toggleSelect(key: string) {
     setSelectedKey((prev) => (prev === key ? null : key));
@@ -104,9 +117,11 @@ export default function QueryCard({
         </Pressable>
       </View>
 
-      {spec.chartType !== "none" && chartData.length > 0 && (
+      {summary ? <QueryStats summary={summary} outlier={outlier} /> : null}
+
+      {chartSpec && chartSpec.chartType !== "none" && chartData.length > 0 && (
         <>
-          <Chart data={chartData} spec={spec} CATS={CATS} selectedKey={selectedKey} onSelect={toggleSelect} />
+          <Chart data={chartData} spec={chartSpec} CATS={CATS} selectedKey={selectedKey} onSelect={toggleSelect} />
           {selectedKey && (
             <Pressable style={[styles.filterChip, { backgroundColor: colors.surfaceRecessed }]} onPress={() => setSelectedKey(null)}>
               <Text style={[styles.filterChipText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>

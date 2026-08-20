@@ -5,7 +5,7 @@ import { fmtGroupKey, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { iconForCategory } from "../lib/categoryIcons";
 import { topCategory, type ChartDatum, type QuerySpec } from "../lib/logic";
-import { barGeometry, labelBudget, lineGeometry, niceScale, periodLabels, yAxisLabels } from "../lib/chartAxis";
+import { barGeometry, fmtAxisCount, fmtAxisMoney, labelBudget, lineGeometry, niceScale, periodLabels, yAxisLabels } from "../lib/chartAxis";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
 
@@ -49,12 +49,14 @@ function RankingChart({
   data,
   colors,
   iconFor,
+  fmtValue,
   selectedKey,
   onSelect,
 }: {
   data: ChartDatum[];
   colors: ReturnType<typeof useTheme>["colors"];
   iconFor: (d: ChartDatum) => { Icon: ReturnType<typeof iconForCategory> | null; category?: string };
+  fmtValue: (n: number) => string;
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
@@ -73,7 +75,7 @@ function RankingChart({
           <Pressable
             key={d.key}
             testID="chart-rank-row"
-            accessibilityLabel={`${fmtGroupKey(d.key, "payee")}, ${fmtMoney(d.total)}`}
+            accessibilityLabel={`${fmtGroupKey(d.key, "payee")}, ${fmtValue(d.total)}`}
             onPress={() => onSelect(d.key)}
             style={[styles.rankRow, dimmed ? styles.rankRowDimmed : null]}
           >
@@ -103,7 +105,7 @@ function RankingChart({
               style={[styles.rankAmount, { color: colors.textMuted, fontFamily: fontFamily.mono }]}
               numberOfLines={1}
             >
-              {fmtMoney(d.total)}
+              {fmtValue(d.total)}
             </Text>
           </Pressable>
         );
@@ -143,6 +145,13 @@ export default function Chart({
 
   if (data.length === 0) return null;
 
+  // A count axis is a tally of transactions, not an amount, so both the
+  // gridlines and the ranking rows drop the currency -- and the scale is
+  // held to whole numbers, since "2.5 transactions" is not a landmark.
+  const counting = spec.metric === "count";
+  const fmtValue = counting ? (n: number) => `${Math.round(n)}` : fmtMoney;
+  const fmtAxis = counting ? fmtAxisCount : fmtAxisMoney;
+
   const longLabelChart = spec.groupBy === "payee" || spec.groupBy === "transaction";
   // What's left for the plot itself once the axis gutter has its share.
   const width = available - Y_AXIS_GUTTER;
@@ -155,6 +164,7 @@ export default function Chart({
       <RankingChart
         data={data}
         colors={colors}
+        fmtValue={fmtValue}
         iconFor={(d) => ({ Icon: d.category ? iconForCategory(d.category) : null, category: d.category })}
         selectedKey={selectedKey}
         onSelect={onSelect}
@@ -184,12 +194,12 @@ export default function Chart({
   // scale's own max is what the bars are drawn against, so the tallest bar
   // stops below the top gridline rather than at it; that headroom is the
   // price of the axis being readable.
-  const scale = niceScale(Math.max(...data.map((d) => d.total)));
+  const scale = niceScale(Math.max(...data.map((d) => d.total)), counting);
   const axisScale = {
     maxValue: scale.max,
     noOfSections: scale.sections,
     stepValue: scale.step,
-    yAxisLabelTexts: yAxisLabels(scale),
+    yAxisLabelTexts: yAxisLabels(scale, fmtAxis),
   };
 
   if (spec.chartType === "line") {

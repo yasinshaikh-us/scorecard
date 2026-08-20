@@ -40,11 +40,14 @@ const SECTION_CHOICES = [4, 5, 3];
 
 export type Scale = { max: number; step: number; sections: number };
 
-// Smallest round step that is at least `rough`.
-function niceStep(rough: number): number {
+// Smallest round step that is at least `rough`. `integer` is for a
+// count axis, where "2.5 transactions" is not a gridline anyone can read:
+// the fractional mantissas drop out and the step never falls below 1.
+function niceStep(rough: number, integer: boolean): number {
   const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
-  const mantissa = STEP_MANTISSAS.find((m) => m * magnitude >= rough - 1e-9) ?? 10;
-  return round(mantissa * magnitude);
+  const candidates = STEP_MANTISSAS.map((m) => round(m * magnitude)).filter((v) => !integer || Number.isInteger(v));
+  const step = candidates.find((v) => v >= rough - 1e-9) ?? round(10 * magnitude);
+  return integer ? Math.max(1, Math.ceil(step)) : step;
 }
 
 // Picks the axis: a round step, and a maximum that is a whole number of
@@ -52,12 +55,12 @@ function niceStep(rough: number): number {
 // lowest ceiling wins -- that is the one that leaves the least dead space
 // above the tallest bar -- with ties going to the earlier (more
 // conventional) count.
-export function niceScale(maxValue: number): Scale {
+export function niceScale(maxValue: number, integer = false): Scale {
   if (!Number.isFinite(maxValue) || maxValue <= 0) return { max: 1, step: 1, sections: 1 };
 
   let best: Scale | null = null;
   for (const sections of SECTION_CHOICES) {
-    const step = niceStep(maxValue / sections);
+    const step = niceStep(maxValue / sections, integer);
     const max = round(step * sections);
     if (!best || max < best.max) best = { max, step, sections };
   }
@@ -82,10 +85,20 @@ export function fmtAxisMoney(value: number): string {
   return `${sign}$${trim(abs, 2)}`;
 }
 
+// A count axis is a tally, not money: no currency, no cents, and the
+// same compaction past a thousand so a busy merchant's visit count still
+// fits the gutter.
+export function fmtAxisCount(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1000) return `${sign}${trim(abs / 1000, 1)}k`;
+  return `${sign}${Math.round(abs)}`;
+}
+
 // Bottom-to-top gridline labels, which is the order gifted-charts'
 // yAxisLabelTexts wants.
-export function yAxisLabels(scale: Scale): string[] {
-  return Array.from({ length: scale.sections + 1 }, (_, i) => fmtAxisMoney(round(scale.step * i)));
+export function yAxisLabels(scale: Scale, format: (n: number) => string = fmtAxisMoney): string[] {
+  return Array.from({ length: scale.sections + 1 }, (_, i) => format(round(scale.step * i)));
 }
 
 // How many x-axis labels the card can hold. ~48dp each is what a

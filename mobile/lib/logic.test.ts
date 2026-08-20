@@ -5,8 +5,16 @@ import {
   filterTransactions,
   groupKeyOf,
   buildChartData,
+  capPieSlices,
+  chartTypeForGranularity,
   cleanRows,
+  findOutlier,
+  granularityForSpan,
+  metricValue,
   parseQueryResponse,
+  resolveSpec,
+  spanDays,
+  summarize,
 } from "./logic";
 import type { Transaction } from "./types";
 
@@ -341,5 +349,248 @@ describe("buildChartData", () => {
       const out = buildChartData([target], { groupBy: "transaction" });
       expect(out[0].row).toBe(target);
     });
+  });
+});
+
+
+// Everything below covers the "one bar holding six years of spending"
+// class of defect: a question that filters to a single merchant used to
+// group by category, collapse to one bucket, and report a total with no
+// span, no trend and no frequency.
+
+describe("quarter and year grouping", () => {
+  const spec = (groupBy: any) => ({ groupBy }) as any;
+
+  it("keys a quarter as YYYY-Qn", () => {
+    expect(groupKeyOf(spec("quarter"), row("2026-01-15", "A", "Groceries", -5))).toBe("2026-Q1");
+    expect(groupKeyOf(spec("quarter"), row("2026-03-31", "A", "Groceries", -5))).toBe("2026-Q1");
+    expect(groupKeyOf(spec("quarter"), row("2026-04-01", "A", "Groceries", -5))).toBe("2026-Q2");
+    expect(groupKeyOf(spec("quarter"), row("2026-12-31", "A", "Groceries", -5))).toBe("2026-Q4");
+  });
+
+  it("keys a year as YYYY", () => {
+    expect(groupKeyOf(spec("year"), row("2026-08-19", "A", "Groceries", -5))).toBe("2026");
+  });
+
+  it("sorts quarter and year buckets chronologically, like the other date groupings", () => {
+    const rows = [
+      row("2024-05-01", "A", "Groceries", -10),
+      row("2026-02-01", "A", "Groceries", -30),
+      row("2025-08-01", "A", "Groceries", -20),
+    ];
+    expect(buildChartData(rows, { groupBy: "quarter" } as any).map((d) => d.key)).toEqual([
+      "2024-Q2",
+      "2025-Q3",
+      "2026-Q1",
+    ]);
+    expect(buildChartData(rows, { groupBy: "year" } as any).map((d) => d.key)).toEqual(["2024", "2025", "2026"]);
+  });
+});
+
+describe("granularityForSpan", () => {
+  it("climbs from day to year as the span grows", () => {
+    expect(granularityForSpan(10)).toBe("day");
+    expect(granularityForSpan(60)).toBe("week");
+    expect(granularityForSpan(365)).toBe("month");
+    // ~6.5 years of ledger: 78 monthly points, 26 quarterly ones.
+    expect(granularityForSpan(6.5 * 365)).toBe("quarter");
+    expect(granularityForSpan(12 * 365)).toBe("year");
+  });
+
+  it("pairs discrete buckets with bars and trends with a line", () => {
+    expect(chartTypeForGranularity("day")).toBe("bar");
+    expect(chartTypeForGranularity("week")).toBe("bar");
+    expect(chartTypeForGranularity("month")).toBe("line");
+    expect(chartTypeForGranularity("quarter")).toBe("line");
+    expect(chartTypeForGranularity("year")).toBe("line");
+  });
+});
+
+describe("spanDays", () => {
+  it("measures first to last date, whatever order the rows arrive in", () => {
+    const rows = [row("2026-03-01", "A", "Groceries", -1), row("2026-01-01", "A", "Groceries", -1)];
+    expect(spanDays(rows)).toBe(59);
+    expect(spanDays([])).toBe(0);
+  });
+});
+
+describe("resolveSpec", () => {
+  // The Chipotle case, in miniature: one merchant, one category, so a
+  // category grouping is a single bar covering the whole span.
+  const chipotle = [
+    row("2025-01-05", "Chipotle", "Dining & Drinks:Restaurants", -13.95),
+    row("2025-06-05", "Chipotle", "Dining & Drinks:Restaurants", -21.95),
+    row("2026-08-05", "Chipotle", "Dining & Drinks:Fast Food", -10.97),
+  ];
+
+  it("re-groups a single-bucket category chart over time", () => {
+    const spec = { groupBy: "category", chartType: "bar", payeeContains: "Chipotle" } as any;
+    const resolved = resolveSpec(chipotle, spec)!;
+    expect(resolved.groupBy).toBe("month");
+    expect(resolved.chartType).toBe("line");
+    expect(buildChartData(chipotle, resolved).length).toBe(3);
+  });
+
+  it("leaves a grouping that already has more than one bucket alone", () => {
+    const rows = [
+      row("2026-01-05", "Whole Foods", "Groceries:Supermarket", -50),
+      row("2026-01-06", "Chipotle", "Dining & Drinks:Fast Food", -12),
+    ];
+    const spec = { groupBy: "category", chartType: "bar" } as any;
+    expect(resolveSpec(rows, spec)).toBe(spec);
+  });
+
+  it("leaves rankings, empty results and single rows alone", () => {
+    const spec = { groupBy: "transaction", chartType: "bar" } as any;
+    expect(resolveSpec(chipotle, spec)).toBe(spec);
+    const categorySpec = { groupBy: "category", chartType: "bar" } as any;
+    expect(resolveSpec([], categorySpec)).toBe(categorySpec);
+    // A single transaction has no trend to expose; the stat line says it all.
+    expect(resolveSpec(chipotle.slice(0, 1), categorySpec)).toBe(categorySpec);
+  });
+
+  it("does not re-group when the data is already at that granularity", () => {
+    const sameDay = [
+      row("2026-08-05", "Chipotle", "Dining & Drinks:Fast Food", -10),
+      row("2026-08-05", "Chipotle", "Dining & Drinks:Fast Food", -12),
+    ];
+    const spec = { groupBy: "day", chartType: "bar" } as any;
+    expect(resolveSpec(sameDay, spec)).toBe(spec);
+  });
+});
+
+describe("metric", () => {
+  const rows = [
+    row("2026-01-05", "Chipotle", "Dining & Drinks:Fast Food", -10),
+    row("2026-01-06", "Chipotle", "Dining & Drinks:Fast Food", -30),
+    row("2026-02-06", "Chipotle", "Dining & Drinks:Fast Food", -20),
+  ];
+
+  it("sums by default", () => {
+    const data = buildChartData(rows, { groupBy: "month" } as any);
+    expect(data.map((d) => d.total)).toEqual([40, 20]);
+  });
+
+  it("counts transactions under metric 'count', leaving sum available for the stat line", () => {
+    const data = buildChartData(rows, { groupBy: "month", metric: "count" } as any);
+    expect(data.map((d) => d.total)).toEqual([2, 1]);
+    expect(data.map((d) => d.sum)).toEqual([40, 20]);
+  });
+
+  it("averages the bucket under metric 'avg'", () => {
+    const data = buildChartData(rows, { groupBy: "month", metric: "avg" } as any);
+    expect(data.map((d) => d.total)).toEqual([20, 20]);
+  });
+
+  it("never divides by zero for an empty bucket", () => {
+    expect(metricValue({ sum: 0, count: 0 }, "avg")).toBe(0);
+  });
+});
+
+describe("excludeCategories", () => {
+  it("drops a top-level bucket from an otherwise-matching set", () => {
+    const rows = [
+      row("2026-01-05", "Bitcoin", "Investments:Crypto", -170000),
+      row("2026-01-06", "Whole Foods", "Groceries:Supermarket", -50),
+    ];
+    const kept = filterTransactions(rows, { excludeCategories: ["Investments"] } as any);
+    expect(kept.map((d) => d.Payee)).toEqual(["Whole Foods"]);
+  });
+});
+
+describe("capPieSlices", () => {
+  const datum = (key: string, sum: number) => ({ key, total: sum, sum, count: 1 });
+
+  it("leaves a readable pie alone", () => {
+    const six = ["a", "b", "c", "d", "e", "f"].map((k, i) => datum(k, 60 - i));
+    expect(capPieSlices(six, "sum")).toHaveLength(6);
+  });
+
+  it("folds the tail into one Other slice that remembers what it swallowed", () => {
+    const nine = ["a", "b", "c", "d", "e", "f", "g", "h", "i"].map((k, i) => datum(k, 90 - i * 10));
+    const capped = capPieSlices(nine, "sum");
+    expect(capped).toHaveLength(6);
+    expect(capped[5].key).toBe("Other");
+    // f(40) + g(30) + h(20) + i(10)
+    expect(capped[5].sum).toBe(100);
+    expect(capped[5].count).toBe(4);
+    expect(capped[5].keys).toEqual(["f", "g", "h", "i"]);
+  });
+
+  it("applies through buildChartData for a pie, but not for a bar", () => {
+    const rows = Array.from({ length: 9 }, (_, i) =>
+      row("2026-01-0" + ((i % 9) + 1), `Payee ${i}`, `Cat${i}:Sub`, -(i + 1) * 10)
+    );
+    const pie = buildChartData(rows, { groupBy: "category", chartType: "pie" } as any);
+    expect(pie).toHaveLength(6);
+    expect(pie[5].key).toBe("Other");
+    const bar = buildChartData(rows, { groupBy: "category", chartType: "bar" } as any);
+    expect(bar).toHaveLength(9);
+  });
+});
+
+describe("summarize", () => {
+  const rows = [
+    row("2026-01-01", "Chipotle", "Dining & Drinks:Fast Food", -10),
+    row("2026-07-01", "Chipotle", "Dining & Drinks:Fast Food", -20),
+    row("2026-04-01", "Chipotle", "Dining & Drinks:Fast Food", -30),
+  ];
+
+  it("reports the scalar answer the card never had", () => {
+    const s = summarize(rows)!;
+    expect(s.sum).toBe(60);
+    expect(s.count).toBe(3);
+    expect(s.average).toBe(20);
+    expect(s.start).toBe("2026-01-01");
+    expect(s.end).toBe("2026-07-01");
+    expect(s.months).toBeCloseTo(181 / 30.44, 5);
+    expect(s.perMonth).toBeCloseTo(60 / (181 / 30.44), 5);
+  });
+
+  it("never divides a single-day result by a zero-length span", () => {
+    const oneDay = [row("2026-01-01", "A", "Groceries", -10)];
+    const s = summarize(oneDay)!;
+    expect(s.months).toBe(1);
+    expect(s.perMonth).toBe(10);
+  });
+
+  it("returns null for no matches", () => {
+    expect(summarize([])).toBeNull();
+  });
+});
+
+describe("findOutlier", () => {
+  it("names the single transaction that is most of the total", () => {
+    const rows = [
+      row("2025-07-01", "Bitcoin", "Investments:Crypto", -170000),
+      row("2025-07-02", "Whole Foods", "Groceries:Supermarket", -50),
+      row("2025-07-03", "Chipotle", "Dining & Drinks:Fast Food", -12),
+      row("2025-07-04", "Shell", "Auto & Transport:Gas & Fuel", -40),
+    ];
+    const outlier = findOutlier(rows)!;
+    expect(outlier.rows).toBe(1);
+    expect(outlier.payee).toBe("Bitcoin");
+    expect(outlier.amount).toBe(170000);
+    expect(outlier.share).toBeGreaterThan(0.99);
+  });
+
+  it("falls back to the top three when no single row dominates", () => {
+    const rows = [
+      row("2026-01-01", "A", "Groceries", -100),
+      row("2026-01-02", "B", "Groceries", -90),
+      row("2026-01-03", "C", "Groceries", -80),
+      row("2026-01-04", "D", "Groceries", -20),
+      row("2026-01-05", "E", "Groceries", -20),
+      row("2026-01-06", "F", "Groceries", -20),
+    ];
+    const outlier = findOutlier(rows)!;
+    expect(outlier.rows).toBe(3);
+    expect(outlier.share).toBeCloseTo(270 / 330, 5);
+  });
+
+  it("says nothing about an evenly spread set, or one too small to judge", () => {
+    const even = Array.from({ length: 10 }, (_, i) => row(`2026-01-0${(i % 9) + 1}`, "A", "Groceries", -20));
+    expect(findOutlier(even)).toBeNull();
+    expect(findOutlier([row("2026-01-01", "A", "Groceries", -20)])).toBeNull();
   });
 });

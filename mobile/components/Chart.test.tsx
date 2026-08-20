@@ -20,7 +20,10 @@ jest.mock("react-native-gifted-charts", () => ({
 const CATS = ["Groceries", "Dining"];
 
 function datum(overrides: Partial<ChartDatum> = {}): ChartDatum {
-  return { key: "Groceries", total: 42, count: 3, ...overrides };
+  const base = { key: "Groceries", total: 42, sum: 42, count: 3, ...overrides };
+  // Chart plots `total`; keeping `sum` in step means a fixture that only
+  // overrides the plotted value still describes a coherent bucket.
+  return { ...base, sum: overrides.sum ?? base.total };
 }
 
 // Chart.tsx picks bar/pie/line and, for bar, horizontal-vs-vertical layout
@@ -275,5 +278,35 @@ describe("Chart", () => {
     await renderWithTheme(<Chart data={[datum({ key: "2026-01-01" })]} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
     const props = mockBarChart.mock.calls[0][0];
     expect(props.data[0].frontColor).toBe(lightColors.accent);
+  });
+
+  // "How often do I go to Chipotle" is a tally, not an amount: a dollar
+  // axis over a count is a lie, and a $2.50 gridline over transactions is
+  // not a landmark anyone can read.
+  it("labels a count metric's axis as whole numbers without currency", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month", metric: "count" };
+    const data = [datum({ key: "2026-01", total: 9, sum: 180 }), datum({ key: "2026-02", total: 4, sum: 70 })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockBarChart.mock.calls[0][0];
+    expect(props.yAxisLabelTexts).toEqual(["0", "2", "4", "6", "8", "10"]);
+    expect(props.maxValue).toBe(10);
+  });
+
+  it("keeps the money axis for the default sum metric", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "month" };
+    const data = [datum({ key: "2026-01", total: 90 })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    expect(mockBarChart.mock.calls[0][0].yAxisLabelTexts[1]).toMatch(/^\$/);
+  });
+
+  it("shows a ranking's counts without a dollar sign under metric 'count'", async () => {
+    const spec: QuerySpec = { chartType: "bar", groupBy: "payee", metric: "count" };
+    const data = [datum({ key: "Chipotle", total: 611, sum: 13197 })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    expect(screen.getByText("611")).toBeTruthy();
+    expect(screen.queryByText(/\$/)).toBeNull();
   });
 });

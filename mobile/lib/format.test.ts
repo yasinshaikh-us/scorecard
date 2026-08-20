@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { daysBefore, fmtDate, fmtMonth, fmtGroupKey, fmtMoney, isDateKey } from "./format";
+import { daysBefore, fmtDate, fmtMonth, fmtGroupKey, fmtMoney, fmtQuarter, isDateKey } from "./format";
 
 describe("daysBefore", () => {
   it("subtracts N days from a date, crossing a month boundary", () => {
@@ -84,5 +84,32 @@ describe("fmtMoney", () => {
   });
   it("formats zero without a sign", () => {
     expect(fmtMoney(0)).toBe("$0.00");
+  });
+});
+
+
+describe("fmtQuarter", () => {
+  it("formats a quarter key as 'Qn YY'", () => {
+    expect(fmtQuarter("2026-Q3")).toBe("Q3 26");
+    expect(fmtQuarter("2020-Q1")).toBe("Q1 20");
+  });
+  it("returns malformed input unchanged", () => {
+    expect(fmtQuarter("2026-Q9")).toBe("2026-Q9");
+    expect(fmtQuarter("2026-07")).toBe("2026-07");
+    expect(fmtQuarter(null as unknown as string)).toBe("");
+  });
+});
+
+// quarter and year exist so a multi-year question has a bucket coarser
+// than a month -- six years is ~78 monthly points but ~26 quarterly ones.
+describe("quarter and year group keys", () => {
+  it("counts both as date keys", () => {
+    expect(isDateKey("quarter")).toBe(true);
+    expect(isDateKey("year")).toBe(true);
+    expect(isDateKey("payee")).toBe(false);
+  });
+  it("formats them through fmtGroupKey", () => {
+    expect(fmtGroupKey("2026-Q3", "quarter")).toBe("Q3 26");
+    expect(fmtGroupKey("2026", "year")).toBe("2026");
   });
 });

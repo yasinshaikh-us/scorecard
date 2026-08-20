@@ -33,10 +33,22 @@ export function fmtMonth(ym: string) {
   return `${MONTHS[mi]} ${y.slice(-2)}`;
 }
 
+// "2026-Q3" -> "Q3 26". Quarters exist so a multi-year span has a bucket
+// coarser than a month without jumping straight to one point per year.
+export function fmtQuarter(q: string) {
+  if (typeof q !== "string" || !q.includes("-Q")) return q == null ? "" : String(q);
+  const [y, quarter] = q.split("-Q");
+  if (!/^[1-4]$/.test(quarter)) return q;
+  return `Q${quarter} ${y.slice(-2)}`;
+}
+
 export function isDateKey(groupBy: string) {
-  return groupBy === "day" || groupBy === "week" || groupBy === "month";
+  return groupBy === "day" || groupBy === "week" || groupBy === "month" || groupBy === "quarter" || groupBy === "year";
 }
 
 export function fmtGroupKey(k: string, groupBy: string) {
-  return groupBy === "month" ? fmtMonth(k) : isDateKey(groupBy) ? fmtDate(k) : k;
+  if (groupBy === "year") return k;
+  if (groupBy === "quarter") return fmtQuarter(k);
+  if (groupBy === "month") return fmtMonth(k);
+  return isDateKey(groupBy) ? fmtDate(k) : k;
 }
