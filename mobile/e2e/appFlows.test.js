@@ -306,6 +306,54 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("linked-account-row")).atIndex(0)).toBeVisible();
   });
 
+  // The Ask specs used to assert only that a card came back, because the
+  // shared account had no transactions at all: every result rendered "No
+  // matching transactions", so there was nothing else to match -- and
+  // every ask-screen-* screenshot was of an empty card, which is a poor
+  // thing to offer as visual proof that a chart renders.
+  //
+  // globalSetup now seeds a ledger (e2e/seedLedger.js), so the card has
+  // real contents to assert.
+  //
+  // What is asserted is deliberately STRUCTURAL: the stat block, a
+  // chart, rows in the list. Exact totals and chart types are not,
+  // because those depend on the spec Claude returns for a given
+  // question, and a UI test that asserts a model's judgement is a coin
+  // flip wearing a test's clothes.
+  it("Ask: a result leads with the stat block and draws a chart", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "How much did I spend at Chipotle this year?");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(10000);
+    await expect(element(by.id("query-stat-total"))).toBeVisible();
+    await expect(element(by.id("query-stat-count"))).toBeVisible();
+    await expect(element(by.id("query-stat-average"))).toBeVisible();
+    // A seeded merchant with 52 charges cannot answer as an empty set.
+    await expect(element(by.id("transaction-row")).atIndex(0)).toBeVisible();
+    await captureScreen("ask-screen-stats");
+
+    await element(by.id("query-card-close-button")).tap();
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
+  // The 200-row cap is NOT asserted here, and the attempt is worth
+  // recording. A spec asking "list every transaction from the last twelve
+  // months" reached the card with groupBy "transaction" -- which the
+  // prompt maps that phrasing to, quite correctly -- and in that mode the
+  // list renders the chart's own capped ranking rather than every
+  // matching row (QueryCard.tsx), so the cap note never appears and the
+  // scroll ran to the end looking for it.
+  //
+  // The premise depended on which grouping Claude chose, which is the
+  // trap the spec above is careful to avoid. The cap itself is covered
+  // deterministically in Stage 1 (components/QueryCard.test.tsx renders
+  // 250 rows and asserts both the 200 shown and the "showing 200 of 250"
+  // note); what Stage 2 would have added is only that it renders on a
+  // device, which is not worth a test whose outcome a model decides.
+
   it("Ask: a suggestion produces a card that can be closed", async () => {
     await element(by.id("nav-ask-button")).tap();
     await expect(element(by.id("ask-input"))).toBeVisible();

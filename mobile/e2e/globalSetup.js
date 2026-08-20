@@ -16,7 +16,13 @@
 // 14-minute run that ends in a cascade of confusing UI failures -- which
 // is precisely how the leftover-rule bug presented before this existed.
 const detoxSetup = require("detox/runners/jest/globalSetup");
-const { resetAllE2eRules, seedSandboxBank, E2E_RULE_PREFIX, RUN_ID } = require("./testAccount");
+const {
+  resetAllE2eRules,
+  seedSandboxBank,
+  seedE2eLedger,
+  E2E_RULE_PREFIX,
+  RUN_ID,
+} = require("./testAccount");
 
 // Two retries: a single transient network blip on a shared CI runner is
 // not a reason to throw away a run that takes ~14 minutes, but a genuinely
@@ -85,8 +91,37 @@ async function seedBank() {
   );
 }
 
+// The ledger the Ask specs ask their questions against. Cleared first for
+// the same reason the rules are: a cancelled job or a crashed emulator
+// skips teardown, and a run that seeded twice would report doubled
+// totals -- which is worse than no data, because it looks like data.
+//
+// Fatal on failure, like the other two: the Ask specs assert against what
+// this writes, so continuing without it would turn one clear backend
+// error into a screenful of confusing UI ones.
+async function seedLedger() {
+  let lastErr;
+  for (let attempt = 1; attempt <= RESET_ATTEMPTS; attempt++) {
+    try {
+      // One call: the function clears before it seeds, so a run that
+      // died before teardown cannot leave this one with a doubled ledger.
+      const { cleared, seeded } = await seedE2eLedger();
+      console.log(`[e2e-ledger] run ${RUN_ID}: cleared ${cleared} leftover row(s), seeded ${seeded}`);
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[e2e-ledger] attempt ${attempt}/${RESET_ATTEMPTS} failed: ${err}`);
+    }
+  }
+  throw new Error(
+    `[e2e-ledger] could not seed the test ledger after ${RESET_ATTEMPTS} attempts -- ` +
+      `refusing to run Stage 2 against an empty one. Last error: ${lastErr}`
+  );
+}
+
 module.exports = async function globalSetup(globalConfig) {
   await resetTestAccount();
+  await seedLedger();
   await seedBank();
   await detoxSetup(globalConfig);
 };

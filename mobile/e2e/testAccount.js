@@ -185,8 +185,50 @@ async function cleanupSandboxBank(accessToken) {
   return disconnected;
 }
 
+// Seeds / clears the Stage 2 ledger via the test-seed-ledger Edge
+// Function.
+//
+// Not a direct PostgREST write, which is what this first tried: the
+// transactions table gives a signed-in user SELECT and UPDATE and
+// nothing else, so an insert comes back 42501. That is the correct
+// default -- ledger rows should come from a bank, not from whoever holds
+// an anon key -- so the seeding runs with the service role inside the
+// function instead, which is also exactly how test-plaid-link seeds this
+// same account's Sandbox bank.
+async function callTestSeedLedger(body, accessToken) {
+  const { supabaseUrl, anonKey } = requiredEnv();
+  const token = accessToken || (await signInTestAccount());
+
+  const resp = await fetch(`${supabaseUrl}/functions/v1/test-seed-ledger`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      apikey: anonKey,
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    throw new Error(`test-seed-ledger returned ${resp.status}: ${await resp.text()}`);
+  }
+  return resp.json();
+}
+
+// Clears any leftover rows and writes a fresh ledger. Idempotent: the
+// function clears before it seeds, whichever action it is given.
+async function seedE2eLedger(accessToken) {
+  return callTestSeedLedger({}, accessToken);
+}
+
+async function clearE2eLedger(accessToken) {
+  const { cleared } = await callTestSeedLedger({ action: "clear" }, accessToken);
+  return cleared;
+}
+
 module.exports = {
   E2E_RULE_PREFIX,
+  seedE2eLedger,
+  clearE2eLedger,
   RUN_ID,
   runScopedRuleValue,
   signInTestAccount,

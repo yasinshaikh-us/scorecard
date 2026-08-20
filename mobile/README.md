@@ -179,6 +179,36 @@ flow some institutions use may need additional native configuration
 entries) that Plaid's own setup docs cover in more depth than this PR
 attempted to verify blind.
 
+## Stage 2's ledger is seeded
+
+`synthetic-monitor@scorecard.test` -- the account Stage 2 signs in as --
+had **no transactions at all**, so every Ask flow rendered "No matching
+transactions": no chart, no stat block, no list. Two consequences, both
+easy to mistake for coverage:
+
+* the Ask specs could only assert that a card came back, and specs
+  asserting anything about its contents failed;
+* every `ask-screen-*` screenshot in every `detox-results` artifact was
+  of that empty card, and was **not** evidence that any chart rendered.
+
+`e2e/globalSetup.js` now seeds a ledger before the emulator boots
+(`e2e/seedLedger.js`: ~360 rows across the last twelve months, one
+weekly merchant, two real subscriptions, twice-monthly income, one
+outlier purchase), and `globalTeardown.js` removes it again.
+
+Every seeded row carries `source = 'e2e'`. That marker is what makes the
+cleanup safe to express as a single equality filter, and it keeps the
+rows invisible to the sync and Plaid-link paths, which only ever filter
+on `source = 'plaid'`. RLS bounds it further: the account's own JWT can
+reach only its own transactions, never the real user's, which live in
+the same table.
+
+Not to be confused with [`lib/testLedger.ts`](lib/testLedger.ts), which
+generates ~5,200 rows across six years for the Stage 1 tests. That one
+exists to meet the shapes that only appear at scale; this one is small
+because it is written over the network to a shared database before every
+Stage 2 run.
+
 ## Automated testing
 
 A three-stage pyramid: the bulk of testing is automated and runs without
