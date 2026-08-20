@@ -45,19 +45,6 @@ const MAX_TITLE = 80;
 // A filter substring is a merchant or category fragment, not an essay.
 const MAX_CONTAINS = 100;
 
-// The single source of truth for what the app will accept in each enum
-// field -- exported so the prompt that ASKS for these values can be
-// checked against them (supabase/tests/querySpecParity.test.ts). The two
-// halves live in different packages with different test runners, which is
-// exactly the kind of seam a value silently drifts across.
-export const SPEC_VOCABULARY = {
-  chartType: CHART_TYPES,
-  groupBy: GROUP_BYS,
-  type: TYPES,
-  metric: METRICS,
-  seriesBy: SERIES_BYS,
-} as const;
-
 export type SpecIssue = string;
 
 function oneOf<T extends readonly string[]>(value: unknown, allowed: T): T[number] | null {

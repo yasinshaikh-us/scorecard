@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { buildSystemPrompt } from "../functions/_shared/querySystemPrompt.ts";
-import { SPEC_VOCABULARY } from "../../mobile/lib/specSchema.ts";
 
 // The query vocabulary exists TWICE, on either side of a network hop:
 //
@@ -19,6 +20,38 @@ import { SPEC_VOCABULARY } from "../../mobile/lib/specSchema.ts";
 //
 // This asserts the two agree, in the same spirit as
 // categoryRulesParity.test.ts: run both halves, compare.
+
+// specSchema.ts is READ, not imported. mobile/ has its own tsconfig
+// (extending "expo/tsconfig.base", which exists only inside
+// mobile/node_modules) and its own runner, so importing across that
+// boundary works on a machine where the app's dependencies happen to be
+// installed and fails in this job, which installs only the root's. That
+// is a worse failure than the drift this file exists to catch: it would
+// be green locally and red in CI. Reading the declarations as text
+// crosses no toolchain boundary at all.
+const SPEC_SCHEMA_SOURCE = readFileSync(
+  fileURLToPath(new URL("../../mobile/lib/specSchema.ts", import.meta.url)),
+  "utf8"
+);
+
+function acceptedValues(constName: string): string[] {
+  const declaration = new RegExp(`const ${constName} = \\[([^\\]]*)\\] as const;`).exec(SPEC_SCHEMA_SOURCE);
+  if (!declaration) throw new Error(`specSchema.ts no longer declares ${constName} in the expected shape`);
+  const values = [...declaration[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  // A regex that quietly matched nothing would make every parity
+  // assertion below vacuously true.
+  if (values.length === 0) throw new Error(`parsed no values out of ${constName}`);
+  return values;
+}
+
+// The field name the app validates, and the const it validates against.
+const SPEC_VOCABULARY: Record<string, string[]> = {
+  chartType: acceptedValues("CHART_TYPES"),
+  groupBy: acceptedValues("GROUP_BYS"),
+  type: acceptedValues("TYPES"),
+  metric: acceptedValues("METRICS"),
+  seriesBy: acceptedValues("SERIES_BYS"),
+};
 
 const prompt = buildSystemPrompt(["Groceries", "Dining"], ["Groceries:Super"], ["Checking"], "2020-03-02", "2026-08-19");
 
@@ -41,8 +74,8 @@ const APP_ONLY: Record<string, string[]> = {
 };
 
 describe("query spec vocabulary parity", () => {
-  for (const field of Object.keys(SPEC_VOCABULARY) as (keyof typeof SPEC_VOCABULARY)[]) {
-    const accepted = SPEC_VOCABULARY[field] as readonly string[];
+  for (const field of Object.keys(SPEC_VOCABULARY)) {
+    const accepted = SPEC_VOCABULARY[field];
 
     it(`every ${field} value the prompt offers is one the app accepts`, () => {
       for (const value of documentedValues(field)) {
