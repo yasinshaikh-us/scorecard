@@ -351,6 +351,18 @@ export function resolveSpec(filteredRows: Transaction[], spec: QuerySpec | null)
   if (filteredRows.length < 2) return spec;
 
   const buckets = new Set(filteredRows.map((d) => groupKeyOf(spec, d)));
+
+  // The other direction of the same problem: a daily grouping over six
+  // years is 2,300 buckets, and no arrangement of 290 points of card
+  // draws 2,300 of anything. The geometry can only shrink a bar so far
+  // before it stops being a bar, so past that count the answer is a
+  // coarser bucket, not a thinner one -- the same ladder the model is
+  // asked to climb, applied to what the data actually produced.
+  if (isDateKey(spec.groupBy) && buckets.size > MAX_DRAWABLE_BUCKETS) {
+    const coarser = coarsenUntilDrawable(filteredRows, spec);
+    if (coarser) return coarser;
+  }
+
   if (buckets.size > 1) return spec;
 
   const granularity = granularityForSpan(spanDays(filteredRows));
@@ -359,6 +371,27 @@ export function resolveSpec(filteredRows: Transaction[], spec: QuerySpec | null)
   if (granularity === spec.groupBy) return spec;
 
   return { ...spec, groupBy: granularity, chartType: chartTypeForGranularity(granularity) };
+}
+
+// Roughly a bucket every 2.4dp across the plot inside the Ask card:
+// past this, bars are thinner than the gaps between them and the axis
+// labels have long since been thinned to nothing.
+const MAX_DRAWABLE_BUCKETS = 120;
+
+const GRANULARITY_LADDER = ["day", "week", "month", "quarter", "year"] as const;
+
+function coarsenUntilDrawable(rows: Transaction[], spec: QuerySpec): QuerySpec | null {
+  const from = GRANULARITY_LADDER.indexOf(spec.groupBy as (typeof GRANULARITY_LADDER)[number]);
+  if (from < 0) return null;
+  for (const granularity of GRANULARITY_LADDER.slice(from + 1)) {
+    const candidate = { ...spec, groupBy: granularity };
+    const buckets = new Set(rows.map((d) => groupKeyOf(candidate, d)));
+    if (buckets.size <= MAX_DRAWABLE_BUCKETS) {
+      return { ...candidate, chartType: chartTypeForGranularity(granularity) };
+    }
+  }
+  // Years and still too many is a ledger spanning more than a century.
+  return { ...spec, groupBy: "year", chartType: chartTypeForGranularity("year") };
 }
 
 // Everything the stat line above the chart reports. Computed from the

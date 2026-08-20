@@ -125,6 +125,10 @@ export default function Ask() {
       </View>
 
       <ScrollView
+        // Named so Stage 2 can scroll it: a result card is taller than
+        // the screen once its list has rows, and everything below the
+        // chart is unreachable to a test that cannot scroll.
+        testID="ask-feed"
         contentContainerStyle={[styles.feed, { paddingBottom: insets.bottom + 24 }]}
         keyboardShouldPersistTaps="handled"
       >

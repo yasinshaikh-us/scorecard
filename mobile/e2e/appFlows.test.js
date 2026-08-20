@@ -306,6 +306,52 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("linked-account-row")).atIndex(0)).toBeVisible();
   });
 
+  // Stage 2 screenshots the Ask card but asserted nothing about what is
+  // in it, which made every element added above the chart -- the total,
+  // the count, the span -- invisible to this stage. A screenshot only
+  // helps someone who looks at it; an assertion fails the run.
+  //
+  // Deliberately only the parts that do NOT depend on which spec Claude
+  // picks: a result with rows always renders the stat block, whatever
+  // chart type or grouping the model chose. Asserting a legend or a
+  // projected note here would be asserting a model's judgement, which is
+  // how a UI test becomes a coin flip.
+  it("Ask: a result leads with the total, the count and the span", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "How much have I spent on groceries this year?");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(5000);
+    await expect(element(by.id("query-stat-total"))).toBeVisible();
+    await expect(element(by.id("query-stat-count"))).toBeVisible();
+    await expect(element(by.id("query-stat-average"))).toBeVisible();
+    await captureScreen("ask-screen-stats");
+
+    await element(by.id("query-card-close-button")).tap();
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
+  // The list used to mount every matching row -- thousands of them on
+  // this account. The cap is only observable on a question broad enough
+  // to exceed it, which is why this asks for everything.
+  it("Ask: a broad question caps the list instead of rendering the whole ledger", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "List every transaction from the last twelve months");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    // Scrolled into view rather than asserted flat: the cap note sits
+    // below 200 rows of list.
+    await scrollIntoView("query-row-cap", "ask-feed");
+    await expect(element(by.id("query-row-cap"))).toBeVisible();
+    await captureScreen("ask-screen-row-cap");
+
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
   it("Ask: a suggestion produces a card that can be closed", async () => {
     await element(by.id("nav-ask-button")).tap();
     await expect(element(by.id("ask-input"))).toBeVisible();
