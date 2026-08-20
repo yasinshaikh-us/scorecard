@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — fa/thm</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 6rem;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #14181D;
+    background: #F7F4EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #E8E6E1; background: #14181D; }
+    a { color: #8FB8E8; }
+    th { border-bottom-color: #3A414A !important; }
+    td { border-bottom-color: #262C33 !important; }
+    code { background: #262C33 !important; }
+  }
+  h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.2rem; margin-top: 2.5rem; }
+  .updated { color: #6B7280; font-size: 0.9rem; margin-top: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.94rem; }
+  th, td { text-align: left; padding: 0.55rem 0.6rem 0.55rem 0; vertical-align: top; }
+  th { border-bottom: 2px solid #D6D0C4; }
+  td { border-bottom: 1px solid #E5E0D5; }
+  code { background: #EBE6DA; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<p class="updated">For the <strong>fa/thm</strong> Android application. Last updated 20 August 2026.</p>
+
+<p>fa/thm is a personal finance application. It connects to your bank accounts,
+with your permission, to show you your own transactions and balances, and lets
+you ask questions about them in plain language. This policy describes exactly
+what data the app handles, where it goes, and how to get rid of it.</p>
+
+<p>This policy covers the fa/thm mobile application and its supporting backend
+services. It does not cover any third-party service you reach from within the
+app, each of which has its own policy — those are linked below.</p>
+
+<h2>What we collect</h2>
+
+<table>
+  <tr><th>Category</th><th>What, specifically</th><th>Why</th></tr>
+  <tr>
+    <td>Account identifiers</td>
+    <td>Your email address and a generated user ID.</td>
+    <td>To create your account, sign you in, and scope your data to you.</td>
+  </tr>
+  <tr>
+    <td>Financial account information</td>
+    <td>The names, types, masked account numbers, and current balances of the
+        bank accounts you choose to connect.</td>
+    <td>To display your accounts and balances.</td>
+  </tr>
+  <tr>
+    <td>Transaction information</td>
+    <td>Transaction date, amount, merchant or description, and category, for
+        the accounts you connect.</td>
+    <td>To display your spending and answer your questions about it.</td>
+  </tr>
+  <tr>
+    <td>Bank account and routing numbers</td>
+    <td>Where your bank makes them available through Plaid.</td>
+    <td>To identify accounts reliably across syncs.</td>
+  </tr>
+  <tr>
+    <td>Questions you ask</td>
+    <td>The text of questions you type into the app's Ask screen.</td>
+    <td>To generate an answer.</td>
+  </tr>
+</table>
+
+<p>The app does <strong>not</strong> collect your location, contacts, photos,
+device identifiers for advertising, or your browsing activity. It contains no
+advertising and no third-party analytics or tracking SDKs.</p>
+
+<h2>How your bank connection works</h2>
+
+<p>Bank connections are handled by <a href="https://plaid.com/legal/#end-user-privacy-policy">Plaid Inc.</a>
+When you link an account, you enter your bank credentials directly into Plaid's
+interface. <strong>Those credentials are never seen by, transmitted through, or
+stored by this application.</strong> Plaid returns an access token that lets us
+retrieve your account and transaction data; that token is stored on our server
+and never sent to your phone.</p>
+
+<p>You can disconnect a bank at any time from within the app. Disconnecting
+revokes our access at Plaid and deletes the stored connection along with the
+account records attached to it.</p>
+
+<h2>How the Ask feature works</h2>
+
+<p>When you ask a question, the question text is sent to
+<a href="https://www.anthropic.com/legal/commercial-terms">Anthropic</a>'s
+Claude API to be interpreted, along with a description of the <em>shape</em> of
+your ledger: the list of category names in use, the display labels of your
+connected accounts, and the earliest and latest dates you have data for.</p>
+
+<p><strong>Your individual transactions are not sent to Anthropic.</strong> The
+model receives that structural summary and your question, and returns a query
+which is then run against your own data on our server. Anthropic does not use
+data submitted through its API to train its models.</p>
+
+<h2>Where your data is stored</h2>
+
+<p>Application data is stored in a Postgres database hosted by
+<a href="https://supabase.com/privacy">Supabase</a>, encrypted at rest and in
+transit. Access is enforced at the database level by row-level security
+policies, so each account can read only its own rows.</p>
+
+<p>Authentication is handled by Supabase Auth. If you sign in with Google,
+Google provides us with your email address and a user identifier; we do not
+receive your Google password.</p>
+
+<h2>Who we share data with</h2>
+
+<p>We do not sell your data, and we do not share it for advertising. Data is
+shared only with the service providers needed to operate the app:</p>
+
+<ul>
+  <li><strong>Plaid</strong> — bank connectivity and transaction retrieval.</li>
+  <li><strong>Supabase</strong> — database, authentication, and server hosting.</li>
+  <li><strong>Anthropic</strong> — natural-language interpretation of your
+      questions, on the limited basis described above.</li>
+  <li><strong>Google</strong> — only if you choose Google as your sign-in method.</li>
+</ul>
+
+<p>We may also disclose data where required by law.</p>
+
+<h2>How long we keep it</h2>
+
+<p>Your transaction and account data is retained for as long as your account
+exists. Disconnecting a bank deletes that bank's connection and account records
+immediately. Deleting your account deletes everything, as described below.</p>
+
+<h2>Deleting your data</h2>
+
+<p>You can request deletion of your account and all associated data at any
+time. See the <a href="./account-deletion.html">data deletion page</a> for how,
+what gets deleted, and how long it takes.</p>
+
+<h2>Security</h2>
+
+<p>All traffic between the app and our servers uses HTTPS. Bank access tokens
+and API keys are held server-side only and are never included in the mobile
+application. Database access is scoped per-user by row-level security.</p>
+
+<p>No system is perfectly secure, and we cannot guarantee absolute security of
+data transmitted over the internet.</p>
+
+<h2>Children</h2>
+
+<p>fa/thm is not directed to children under 13, and we do not knowingly collect
+personal information from them. If you believe a child has provided us data,
+contact us and we will delete it.</p>
+
+<h2>Changes to this policy</h2>
+
+<p>If this policy changes materially, the date at the top will be updated and
+the revised policy posted at this address before the change takes effect.</p>
+
+<h2>Contact</h2>
+
+<p>Questions about this policy, or about data we hold about you:
+<a href="mailto:yasin.shaikh@gmail.com">yasin.shaikh@gmail.com</a>.</p>
+
+</body>
+</html>
