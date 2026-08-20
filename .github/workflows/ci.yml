@@ -25,7 +25,7 @@ concurrency:
 env:
   PROJECT_REF: bidorjtgbhuihppsznkc
   NO_JWT_FUNCTIONS: "plaid-webhook test-login"
-  JWT_FUNCTIONS: "plaid-balance-refresh plaid-disconnect plaid-exchange plaid-link-token plaid-transaction-resync query test-plaid-link transactions"
+  JWT_FUNCTIONS: "plaid-balance-refresh plaid-disconnect plaid-exchange plaid-link-token plaid-transaction-resync query test-plaid-link test-seed-ledger transactions"
 
 jobs:
   edge-function-tests:

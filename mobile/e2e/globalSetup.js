@@ -20,7 +20,6 @@ const {
   resetAllE2eRules,
   seedSandboxBank,
   seedE2eLedger,
-  clearE2eLedger,
   E2E_RULE_PREFIX,
   RUN_ID,
 } = require("./testAccount");
@@ -104,9 +103,10 @@ async function seedLedger() {
   let lastErr;
   for (let attempt = 1; attempt <= RESET_ATTEMPTS; attempt++) {
     try {
-      const removed = await clearE2eLedger();
-      const seeded = await seedE2eLedger();
-      console.log(`[e2e-ledger] run ${RUN_ID}: cleared ${removed} leftover row(s), seeded ${seeded}`);
+      // One call: the function clears before it seeds, so a run that
+      // died before teardown cannot leave this one with a doubled ledger.
+      const { cleared, seeded } = await seedE2eLedger();
+      console.log(`[e2e-ledger] run ${RUN_ID}: cleared ${cleared} leftover row(s), seeded ${seeded}`);
       return;
     } catch (err) {
       lastErr = err;

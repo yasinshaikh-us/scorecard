@@ -1,5 +1,13 @@
 // The ledger Stage 2 asks its questions against.
 //
+// Lives here, next to the function that writes it, rather than in the
+// Detox suite: the rows can only be inserted with the service role (the
+// transactions table has SELECT and UPDATE policies for a signed-in user
+// and nothing else -- inserting is not something a client is allowed to
+// do, which is the right default and not worth weakening for a test
+// fixture). test-seed-ledger is what runs this; the suite just asks it
+// to.
+//
 // synthetic-monitor@scorecard.test had no transactions at all, so every
 // Ask result on that stage rendered "No matching transactions" -- no
 // chart, no stat block, no list. That bounded the specs to asserting
@@ -35,16 +43,16 @@
 // transaction, and the Sandbox cleanup cannot touch it. It is also what
 // makes the delete safe to express: one equality filter, on rows that by
 // definition only this file creates.
-const E2E_SOURCE = "e2e";
+export const E2E_SOURCE = "e2e";
 
 const DAY = 86400000;
 
-function isoDaysAgo(days, today) {
+function isoDaysAgo(days: number, today: Date) {
   return new Date(today.getTime() - days * DAY).toISOString().slice(0, 10);
 }
 
 // Weekly-ish lunch, the merchant the specs ask about by name.
-function chipotle(today, rows) {
+function chipotle(today: Date, rows: SeedRow[]) {
   for (let week = 0; week < 52; week++) {
     const amount = [-12.95, -13.95, -21.95, -10.97][week % 4];
     rows.push(row(isoDaysAgo(week * 7 + 2, today), "Chipotle", "Dining:Fast Food", amount));
@@ -61,7 +69,7 @@ const EVERYDAY = [
   { payee: "Chevron", category: "Transport:Gas & Fuel", amounts: [-48.2, -61.05, -39.8] },
 ];
 
-function everyday(today, rows) {
+function everyday(today: Date, rows: SeedRow[]) {
   for (let week = 0; week < 52; week++) {
     for (const [i, merchant] of EVERYDAY.entries()) {
       // Staggered so a week is not five identical days.
@@ -74,28 +82,37 @@ function everyday(today, rows) {
 // A real monthly cadence for a stable amount: what recurrence detection
 // is supposed to find, and what the everyday merchants above are
 // supposed to be rejected as.
-function subscriptions(today, rows) {
+function subscriptions(today: Date, rows: SeedRow[]) {
   for (let month = 0; month < 12; month++) {
     rows.push(row(isoDaysAgo(month * 30 + 5, today), "Netflix", "Entertainment:Streaming", -15.99));
     rows.push(row(isoDaysAgo(month * 30 + 12, today), "T Mobile", "Utilities:Phone", -95));
   }
 }
 
-function income(today, rows) {
+function income(today: Date, rows: SeedRow[]) {
   for (let month = 0; month < 12; month++) {
     rows.push(row(isoDaysAgo(month * 30 + 1, today), "Acme Payroll", "Income:Salary", 4200));
     rows.push(row(isoDaysAgo(month * 30 + 15, today), "Acme Payroll", "Income:Salary", 4200));
   }
 }
 
-function row(date, payee, category, amount) {
+export type SeedRow = {
+  date: string;
+  payee: string;
+  category: string;
+  amount: number;
+  source: string;
+  is_transfer: boolean;
+};
+
+function row(date: string, payee: string, category: string, amount: number): SeedRow {
   return { date, payee, category, amount, source: E2E_SOURCE, is_transfer: false };
 }
 
 // `today` is injectable so a test can pin it; the seeder passes the real
 // clock, since the questions this feeds are relative ones.
-function buildE2eLedger(today = new Date()) {
-  const rows = [];
+export function buildE2eLedger(today: Date = new Date()): SeedRow[] {
+  const rows: SeedRow[] = [];
   chipotle(today, rows);
   everyday(today, rows);
   subscriptions(today, rows);
@@ -105,5 +122,3 @@ function buildE2eLedger(today = new Date()) {
   rows.push(row(isoDaysAgo(45, today), "Sunset Motors", "Transport:Vehicle", -8400));
   return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
-
-module.exports = { buildE2eLedger, E2E_SOURCE };
