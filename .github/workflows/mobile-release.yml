@@ -1,0 +1,281 @@
+name: Mobile Release (Play Store)
+
+# Builds a signed Android App Bundle and uploads it to a Google Play
+# testing track. This is the store counterpart to mobile-build.yml
+# (Stage 3), which stays exactly as it was -- that one produces the
+# sideloadable APK a human installs by hand for the final gate, this one
+# produces the artifact Play accepts.
+#
+# Three differences from Stage 3, each forced by Play rather than chosen:
+#
+#   * `bundleRelease`, not `assembleRelease`. Play requires an AAB for
+#     any app first created after August 2021; an APK upload is rejected
+#     outright. Play then generates per-device APKs from the bundle on
+#     its own side.
+#
+#   * A real upload keystore, via plugins/withReleaseSigning.js. Stage
+#     3's APK is signed with the standard Android debug keystore, which
+#     Play will not take. See that plugin for why the signing config is
+#     injected rather than committed.
+#
+#   * A fresh versionCode on every run. Play rejects a bundle whose
+#     versionCode it has already seen, so app.json's static `1` would
+#     work exactly once.
+#
+# The env is hard-wired to the `production` profile -- no test-login
+# path, no test secrets -- because everything this workflow builds is
+# aimed at real users, even on the internal track. Stage 3 keeps its
+# `preview`/`production` choice; this one deliberately has no such input.
+#
+# Manual dispatch only, for the same reason as Stage 3 (a full Gradle
+# build is slow and there's no reason to run one per push), plus one
+# specific to this workflow: every run consumes a versionCode and, on
+# success, publishes to real testers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track to publish to"
+        required: true
+        default: "internal"
+        type: choice
+        # `production` is deliberately absent. Promotion to production is
+        # a decision to make in the Play Console with the release notes
+        # and staged-rollout percentage in front of you, not something to
+        # fire from a dropdown here. The service account this workflow
+        # authenticates as should only hold "Release apps to testing
+        # tracks" anyway, so a production upload would 403 regardless.
+        options: ["internal", "alpha", "beta"]
+      release_notes:
+        description: "What's new in this build (shown to testers)"
+        required: false
+        default: ""
+        type: string
+
+# Every run burns a versionCode and, on success, pushes to testers.
+# Unlike Stage 3, do NOT cancel an in-progress run: cancelling one that
+# has already uploaded but not yet finished leaves Play in a state this
+# workflow didn't observe. Queue instead.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      # Same values as mobile-build.yml's `production` profile. The
+      # EXPO_PUBLIC_* test-login variables are not set at all here --
+      # absent rather than empty -- so no test authentication path is
+      # compiled into anything that reaches a tester's phone.
+      EXPO_PUBLIC_SUPABASE_URL: https://bidorjtgbhuihppsznkc.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Fail before the 15-minute build rather than after it. A missing
+      # keystore secret otherwise surfaces as a Gradle error deep in the
+      # log, and a missing service-account secret not until the upload
+      # step, having already spent the versionCode.
+      - name: Check required secrets are present
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          missing=""
+          for name in KEYSTORE KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD SERVICE_ACCOUNT; do
+            [ -n "${!name}" ] || missing="${missing} ${name}"
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::Missing repository secret(s):${missing}. See mobile/README.md, 'Publishing to the Play Store'."
+            exit 1
+          fi
+
+      - run: npm ci --legacy-peer-deps
+
+      # Written outside the workspace so it can't be picked up by any
+      # later step that globs the repo, and so a stray `git add -A` in
+      # some future edit of this workflow can't commit it.
+      - name: Decode the upload keystore
+        env:
+          # Via env rather than ${{ }} interpolated straight into the
+          # script: a `${{ }}` expansion is pasted in as literal text
+          # before bash ever sees the line, so its contents are parsed as
+          # shell. Reading it as "$KEYSTORE_BASE64" keeps it data.
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/upload.jks"
+          test -s "${RUNNER_TEMP}/upload.jks"
+
+      # Play orders releases by versionCode and rejects any value it has
+      # already accepted for this package, so this has to be unique and
+      # ascending. github.run_number is both: it's per-workflow-file and
+      # only ever increments.
+      #
+      # The one way to break it is renaming or recreating this workflow
+      # file, which resets run_number to 1 and would make every
+      # subsequent upload a duplicate Play rejects. If that ever has to
+      # happen, add a fixed offset to the expression below, larger than
+      # the highest versionCode Play has already accepted.
+      #
+      # versionName is left as app.json's `version` (currently 1.0.0) --
+      # that's the human-facing string, and it should change when someone
+      # decides it changes, not once per CI run.
+      - name: Stamp the versionCode
+        id: version
+        run: |
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.android.versionCode = ${{ github.run_number }};
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2) + '\n');
+          "
+          echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./app.json').expo.version")" >> "$GITHUB_OUTPUT"
+
+      - run: npx expo prebuild --platform android
+
+      # Same cache key as mobile-build.yml and mobile-detox.yml, so all
+      # three warm each other -- see mobile-build.yml for why sharing one
+      # key across differing ABI sets is fine.
+      - name: Cache Gradle dependencies + build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/build.gradle', 'mobile/android/app/build.gradle') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # Identical to mobile-build.yml's equivalent step -- see there for
+      # why the default 2048m daemon isn't enough and why the leading
+      # newline in the printf is load-bearing.
+      - name: Raise Gradle daemon memory limits + enable build cache
+        run: |
+          sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
+          printf '\norg.gradle.caching=true\n' >> android/gradle.properties
+
+      # ORG_GRADLE_PROJECT_<name> is Gradle's own env-var route to a
+      # project property, which withReleaseSigning.js reads. Passing them
+      # this way rather than as -P flags keeps the passwords out of the
+      # process argv.
+      #
+      # Both arm64-v8a and armeabi-v7a, unlike Stage 3's arm64-only. That
+      # build targets one known phone; this one goes to whoever installs
+      # from Play, and a bundle without armeabi-v7a simply shows as "not
+      # compatible" on a 32-bit device with no explanation. Play splits
+      # the bundle per ABI, so testers still download only their own
+      # slice -- the second ABI costs build time here, not install size
+      # there. x86_64 is still omitted: it's Chromebooks and desktop
+      # emulators, and Stage 2 already covers emulator testing.
+      - name: Build signed release bundle
+        env:
+          ORG_GRADLE_PROJECT_FATHOM_UPLOAD_STORE_FILE: ${{ runner.temp }}/upload.jks
+          ORG_GRADLE_PROJECT_FATHOM_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_FATHOM_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_FATHOM_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: cd android && ./gradlew bundleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      # A bundle still signed with the debug key would be rejected by
+      # Play with a message that doesn't name the cause, so check here
+      # instead: the debug keystore's certificate always carries
+      # CN=Android Debug. Cheap, and it catches the plugin silently
+      # failing to apply -- the one failure mode that otherwise produces
+      # a perfectly valid-looking build.
+      # Fails only on a positively identified debug signature, not on
+      # keytool declining to read the file. -jarfile expects JAR-style v1
+      # signing, which an AAB has, but that is a detail of how bundletool
+      # signs today rather than a guarantee -- and a hard failure here
+      # would block a perfectly good release over a changed output format.
+      # A debug-signed bundle is the thing worth stopping for.
+      - name: Verify the bundle is signed with the upload key
+        run: |
+          if ! signer=$(keytool -printcert -jarfile android/app/build/outputs/bundle/release/app-release.aab 2>&1); then
+            echo "::warning::Could not read the bundle's signature to verify it (keytool said: ${signer}). Check the signing key in the Play Console before promoting this build."
+            exit 0
+          fi
+          echo "${signer}"
+          if echo "${signer}" | grep -q "CN=Android Debug"; then
+            echo "::error::Bundle is signed with the Android debug keystore, not the upload key -- withReleaseSigning.js did not apply. Play would reject this."
+            exit 1
+          fi
+
+      # r0adkll/upload-google-play is third-party, so it's pinned to a
+      # commit SHA rather than a tag: a tag can be repointed at new code
+      # by anyone who controls the repo, and this step is handed both the
+      # service-account credentials and the signed bundle.
+      #
+      # status: completed publishes to the track immediately. The
+      # internal track has no review queue, so a build is live for
+      # testers within minutes; alpha/beta go through review first.
+      - name: Prepare release notes
+        env:
+          # Same reasoning as the keystore step, and it matters more here:
+          # this value is free text typed into the dispatch form, so
+          # interpolating it directly would let anyone who can run this
+          # workflow execute arbitrary shell on the runner -- with the
+          # signing keystore and the Play credentials in scope.
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/whatsnew"
+          notes="${RELEASE_NOTES}"
+          [ -n "${notes}" ] || notes="Build ${VERSION_CODE} from ${COMMIT_SHA}"
+          printf '%s\n' "${notes}" > "${RUNNER_TEMP}/whatsnew/whatsnew-en-US"
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.fathom.app
+          releaseFiles: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track }}
+          status: completed
+          whatsNewDirectory: ${{ runner.temp }}/whatsnew
+
+      # Keep the exact bytes Play received. If a tester reports something
+      # odd against version code N, this is how you get that build back.
+      - name: Upload the bundle as a run artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-aab-${{ steps.version.outputs.code }}
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Summarize
+        env:
+          # A `choice` input can't carry arbitrary text today, so this is
+          # belt-and-braces -- but it stops being safe the moment someone
+          # widens `track` to a free-text input, and this way that edit
+          # can't quietly open a hole.
+          TRACK: ${{ inputs.track }}
+        run: |
+          {
+            echo "### Published to Play"
+            echo ""
+            echo "- **Track**: \`${TRACK}\`"
+            echo "- **Version**: ${{ steps.version.outputs.name }} (versionCode ${{ steps.version.outputs.code }})"
+            echo "- **Commit**: \`${{ github.sha }}\`"
+            echo ""
+            echo "Internal-track builds reach testers within minutes; alpha and beta wait on Play review."
+          } >> "$GITHUB_STEP_SUMMARY"
