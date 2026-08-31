@@ -32,7 +32,12 @@ module.exports = {
   // that file, so the two don't conflict.
   moduleNameMapper: {
     ...jestExpoPreset.moduleNameMapper,
-    "^@react-native-async-storage/async-storage$": "@react-native-async-storage/async-storage/jest",
+    // v2.2.0 (the version SDK 57 pins) ships the mock at
+    // jest/async-storage-mock.js with no jest/index.js re-export, unlike
+    // 3.x where "/jest" alone resolved. Point at the file directly so this
+    // keeps working across that package's own subpath restructuring.
+    "^@react-native-async-storage/async-storage$":
+      "@react-native-async-storage/async-storage/jest/async-storage-mock",
   },
   // Shipped by react-native-worklets for exactly this: Reanimated 4's
   // entrypoint pulls in worklets' `.native.ts` implementation, which
