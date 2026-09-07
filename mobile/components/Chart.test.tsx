@@ -78,6 +78,41 @@ describe("Chart", () => {
     expect(typeof props.data[0].label).toBe("string");
   });
 
+  // Unselected data points used to be filled with colors.surface -- the
+  // color of the card behind the chart. gifted-charts draws each point
+  // OVER the line, so every point punched a card-colored hole through
+  // it: the markers were invisible and the line read as dashed. That
+  // collides with the one thing this chart already uses dashes for
+  // (projected, not measured), so the fix is not cosmetic.
+  it("draws line data points in the line's color, never the card's", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "month" };
+    const data = [datum({ key: "2026-01" }), datum({ key: "2026-02" })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey={null} onSelect={jest.fn()} />);
+
+    const props = mockLineChart.mock.calls[0][0];
+    for (const point of props.data) {
+      expect(point.dataPointColor).toBe(lightColors.accent);
+      expect(point.dataPointColor).not.toBe(lightColors.surface);
+      expect(point.dataPointRadius).toBeGreaterThan(0);
+    }
+  });
+
+  // Color, not size, is what marks the selection -- the same
+  // high-contrast mark the pie chart uses for its selected slice. The
+  // radius stays inside what lineGeometry's POINT_ALLOWANCE reserves, so
+  // selecting a point can never push the chart wider than its card.
+  it("marks the selected line point by color, within the reserved point width", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "month" };
+    const data = [datum({ key: "2026-01" }), datum({ key: "2026-02" })];
+    await renderWithTheme(<Chart data={data} spec={spec} CATS={CATS} selectedKey="2026-02" onSelect={jest.fn()} />);
+
+    const props = mockLineChart.mock.calls[0][0];
+    expect(props.data[0].dataPointColor).toBe(lightColors.accent);
+    expect(props.data[1].dataPointColor).toBe(lightColors.text);
+    expect(props.data[1].dataPointRadius).toBeGreaterThan(props.data[0].dataPointRadius);
+    expect(contentWidth(props, props.data.length)).toBeLessThanOrEqual(props.width);
+  });
+
   // A category axis is labelled with the category's own icon rather than
   // its name -- names are what made this axis width-bound. So there is no
   // text label at all; the identity lives in labelComponent, and in the
@@ -377,6 +412,35 @@ describe("Chart", () => {
     const props = mockLineChart.mock.calls[0][0];
     expect(props.dataSet).toHaveLength(2);
     expect(props.dataSet[0].data.map((d: any) => d.value)).toEqual([100, 150]);
+  });
+
+  // Left unset, the library defaults every series' points to its own
+  // color (black) -- so a multi-line chart got differently-colored lines
+  // wearing identical dots in a color belonging to no series at all,
+  // each one punching a hole through the line it sat on.
+  it("gives each series' data points that series' own color", async () => {
+    const spec: QuerySpec = { chartType: "line", groupBy: "month", seriesBy: "category" };
+    await renderWithTheme(
+      <Chart
+        data={[datum({ key: "2026-01", total: 120 })]}
+        spec={spec}
+        CATS={["Groceries", "Dining"]}
+        seriesData={seriesData}
+        selectedKey={null}
+        onSelect={jest.fn()}
+      />
+    );
+
+    const props = mockLineChart.mock.calls[0][0];
+    expect(props.dataSet).toHaveLength(2);
+    for (const set of props.dataSet) {
+      expect(set.dataPointsColor).toBe(set.color);
+      expect(set.dataPointsRadius).toBeGreaterThan(0);
+    }
+    // Two series must not be distinguishable only by their line: if the
+    // points all shared a color they would stop carrying any identity.
+    const pointColors = props.dataSet.map((set: any) => set.dataPointsColor);
+    expect(new Set(pointColors).size).toBe(pointColors.length);
   });
 
   it("tapping a legend entry selects that series", async () => {

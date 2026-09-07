@@ -123,10 +123,11 @@ The ledger itself — one row per transaction, manual or bank-synced.
 | `is_transfer` | `boolean` | no | `false` | Excluded from spend/income totals by default when true. For `source='plaid'` rows, true only when Plaid classified the transaction `TRANSFER_IN`/`TRANSFER_OUT` **and** the user has 2+ linked `plaid_accounts` (see `apply_category_rules()`) — Plaid's classification alone doesn't mean the other side is an account this app also tracks (a mortgage or alimony payment gets the same `TRANSFER_OUT` classification as a real inter-account transfer), so with fewer than 2 tracked accounts nothing here can be double-counted and it's treated as real spend/income instead. For `source='manual'` rows this is whatever was set at import time, independent of Plaid's taxonomy. |
 | `raw_payee` | `text` | yes | | Original, untouched payee (Plaid's or the pre-existing manual value) — never modified by the category-rules engine, so rules can always re-match against the true source value regardless of how many times they've been re-applied. |
 | `raw_category` | `text` | yes | | Same idea, for category. |
+| `pending` | `boolean` | no | `false` | The bank has authorized this charge but not yet settled it. Plaid's `/transactions/sync` has always included pending transactions in its `added` stream (there is no way to opt out, and this app never filtered them), so these rows were always in the ledger — this column is what finally records *which* ones they are. They are counted in every total like any other row: a charge you have made is money you have spent. Plaid re-reports each one when it settles (as `modified`, or as `removed` plus a fresh posted row), which is the only thing that ever clears the flag. Displayed as a marker beside the date in `mobile/components/TransactionRow.tsx`. |
 | `manually_edited` | `boolean` | no | `false` | True once payee/category was set directly via the row editor (`mobile/components/TransactionRow.tsx`) rather than by a rule. `apply_category_rules()` skips these rows entirely, and the Plaid sync path (`syncItemTransactions.ts`) stops upserting new data into them — both so a direct edit isn't silently reverted by an unrelated rule change or a later Plaid update to the same transaction. |
 
 **Constraints:** PK `id`; unique `plaid_transaction_id`; FK `user_id → auth.users(id)`; check `source in ('manual','plaid')`.
-**Indexes:** `plaid_account_id`, `(user_id, date desc)`, `(user_id, category, date desc)`. The standalone `date` and `category` indexes this table originally had were dropped — every real query against this table is user-scoped (via RLS or an explicit `user_id =` filter), so a bare table-wide index on either column was never actually selective for the app's access pattern and just cost write overhead on every Plaid-synced insert. See
+**Indexes:** `plaid_account_id`, `(user_id, date desc)`, `(user_id, category, date desc)`, and a partial `(user_id) where pending`. The standalone `date` and `category` indexes this table originally had were dropped — every real query against this table is user-scoped (via RLS or an explicit `user_id =` filter), so a bare table-wide index on either column was never actually selective for the app's access pattern and just cost write overhead on every Plaid-synced insert. See
 [`20260806020000_replace_transactions_date_category_indexes.sql`](supabase/migrations/20260806020000_replace_transactions_date_category_indexes.sql).
 **RLS:** `(select auth.uid()) = user_id`, split into a `SELECT` policy and an `UPDATE` policy — deliberately **no** `INSERT`/`DELETE` policy for `authenticated`. The app's only write path is a targeted `UPDATE` by row `id` (`mobile/components/TransactionRow.tsx`'s payee/category edit); there's no add- or delete-transaction feature in the client, so those verbs were pure unused headroom — a leaked access token or a stray API call could otherwise wipe a user's entire ledger in one unscoped `DELETE`. `service_role` (the Plaid sync path, `apply_category_rules()`) is unaffected either way — it bypasses RLS entirely.
 
@@ -150,7 +151,9 @@ Origin: [`20260730231500_add_user_id_and_rls_to_transactions.sql`](supabase/migr
 [`20260804010000_add_manually_edited_to_transactions.sql`](supabase/migrations/20260804010000_add_manually_edited_to_transactions.sql)
 (`manually_edited`),
 [`20260805030000_narrow_transactions_rls.sql`](supabase/migrations/20260805030000_narrow_transactions_rls.sql)
-(split `ALL` policy into `SELECT`/`UPDATE`, dropping unused `INSERT`/`DELETE`).
+(split `ALL` policy into `SELECT`/`UPDATE`, dropping unused `INSERT`/`DELETE`),
+[`20260907000000_add_pending_to_transactions.sql`](supabase/migrations/20260907000000_add_pending_to_transactions.sql)
+(`pending`).
 
 ### `category_rules`
 
@@ -285,16 +288,28 @@ account, always overwritten with the newest value.
 |---|---|---|---|---|
 | `account_id` | `text` | no | | **Primary key.** FK → `plaid_accounts.account_id`, cascades on delete. |
 | `user_id` | `uuid` | no | | FK → `auth.users.id`, cascades on delete. |
-| `available` | `numeric` | yes | | |
-| `current` | `numeric` | yes | | The "ledger" balance the app displays, preferring this over `available`. |
+| `available` | `numeric` | yes | | The spendable balance: `current` minus whatever the bank has authorized but not yet settled. **This is what the app displays**, falling back to `current` only where an institution reports no available balance. It moves within minutes of a charge, where `current` waits for the charge to post. |
+| `current` | `numeric` | yes | | The settled ("ledger") balance. Shown only as a fallback, but still stored and still meaningful: the gap between the two is exactly the pending activity, and `mobile/components/AccountBalances.tsx` names that gap on the row rather than leaving the user to wonder why the app and their bank disagree. The app used to lead with this figure, which put a roughly one-day lag between a user's own spending and their home screen. |
 | `iso_currency_code` | `text` | yes | | |
 | `as_of` | `timestamptz` | no | `now()` | When this balance was last fetched from Plaid. |
 
 **Constraints:** PK `account_id`; FK `account_id → plaid_accounts(account_id)` (cascade delete); FK `user_id → auth.users(id)` (cascade delete).
 **Indexes:** `user_id`.
-**RLS:** `(select auth.uid()) = user_id`, `SELECT` only. Writes are service-role only (`refreshAccountBalances.ts`, shared by the hourly cron and every transaction-sync webhook).
+**RLS:** `(select auth.uid()) = user_id`, `SELECT` only. Writes are service-role only (`refreshAccountBalances.ts`, shared by the hourly cron, every transaction-sync webhook, and the on-demand per-user refresh).
 
-Refreshed hourly (see [Scheduled jobs](#scheduled-jobs)) and opportunistically on every transaction webhook, since Plaid's Balance product has no webhook of its own.
+Plaid's Balance product has no webhook of its own, so there are three
+writers, in increasing order of how much they know about whether anyone
+is looking:
+
+1. The hourly cron (see [Scheduled jobs](#scheduled-jobs)) — background
+   freshness, bounded staleness of one hour.
+2. Every transaction-sync webhook — a balance refresh piggybacks on the
+   sync it already did.
+3. `plaid-balance-refresh-user`, called by the app when Home mounts and
+   on pull-to-refresh — the only one that fires because a person is
+   actually reading the number. It refreshes only the caller's own Items,
+   and skips the Plaid call outright when `as_of` is under a minute old,
+   so a burst of mounts costs one call.
 
 Origin: [`20260802000000_add_plaid_integration_schema.sql`](supabase/migrations/20260802000000_add_plaid_integration_schema.sql),
 [`20260806000000_fix_rls_auth_uid_initplan.sql`](supabase/migrations/20260806000000_fix_rls_auth_uid_initplan.sql),

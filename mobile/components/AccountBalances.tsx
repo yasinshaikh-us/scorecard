@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { ArrowRight, ChevronDown, ChevronUp, Landmark, Plus, Unlink, X } from "lucide-react-native";
+import { ArrowRight, ChevronDown, ChevronUp, Clock, Landmark, Plus, Unlink, X } from "lucide-react-native";
 import { useAuth } from "../lib/AuthProvider";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
@@ -10,7 +10,7 @@ import { fmtMoney } from "../lib/format";
 import { useBankLink } from "../lib/useBankLink";
 import IconButton from "./IconButton";
 
-type Balance = { id: string; itemId: string; label: string; amount: number };
+type Balance = { id: string; itemId: string; label: string; amount: number; pendingHold: number };
 type DisconnectState = { itemId: string; label: string; siblingLabels: string[]; step: 1 | 2; submitting: boolean; error: string | null };
 
 // Accounts-summary strip. Reads plaid_accounts + plaid_account_balances
@@ -18,11 +18,34 @@ type DisconnectState = { itemId: string; label: string; siblingLabels: string[];
 // Function is needed for reads), and owns the add-bank / disconnect flows via
 // plaid-link-token / plaid-exchange (useBankLink) / plaid-disconnect.
 //
+// The figure on each row is the AVAILABLE balance, not the current one.
+// Plaid reports both: `current` is the settled, posted balance, and
+// `available` is that minus the charges the bank has authorized but not
+// yet settled. A card swipe moves `available` within minutes and
+// `current` only when it posts, roughly a business day later -- so
+// leading with `current` (as this did) showed a balance that lagged the
+// user's own spending by about a day, while every commercial banking app
+// beside it had already moved. Measured on the live account while
+// changing this: current 63757.03, available 63577.55, a $179.48 spread
+// that was entirely invisible here.
+//
+// The spread is not hidden, it is named: where the two differ, the row
+// carries a second line saying how much is pending. A balance that
+// quietly excludes $179 is only an improvement if you can see where the
+// $179 went.
+//
+// Reads are also refreshed rather than merely re-read. `refreshSignal`
+// (bumped by Home's pull-to-refresh) and the first mount both call
+// plaid-balance-refresh-user, which re-polls Plaid for this user before
+// the component re-reads the table -- so a pull gets the bank's live
+// number, not whatever the hourly cron last wrote. That function applies
+// its own cooldown, so a burst of mounts costs one Plaid call.
+//
 // Disconnecting is a two-step, increasingly-worded confirmation on
 // purpose -- unlike a category rule, this revokes real bank access and
 // (per the 90-day retention policy) eventually deletes real transaction
 // history for good.
-export default function AccountBalances({ onLinked }: { onLinked?: () => void }) {
+export default function AccountBalances({ onLinked, refreshSignal = 0 }: { onLinked?: () => void; refreshSignal?: number }) {
   const { session } = useAuth();
   const { colors } = useTheme();
   const [balances, setBalances] = useState<Balance[] | null>(null);
@@ -45,22 +68,68 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
     const rows = (accountsRes.data || [])
       .map((a): Balance | null => {
         const bal = balanceByAccount[a.account_id];
-        const amount = bal?.current ?? bal?.available;
+        // Available first (see the note above). `current` is the
+        // fallback, not the preference: some institutions report no
+        // available balance at all, and a settled balance beats none.
+        const amount = bal?.available ?? bal?.current;
         if (amount == null) return null;
+        // Only meaningful when the bank gave us both numbers. Guarded
+        // against the reverse case (available above current, which a
+        // pending *credit* produces) -- that is not a pending hold and
+        // must not be labelled as one.
+        const pendingHold =
+          bal?.available != null && bal?.current != null ? Number(bal.current) - Number(bal.available) : 0;
         return {
           id: a.account_id,
           itemId: a.item_id,
           label: `${a.name || "Account"}${a.mask ? ` ••${a.mask}` : ""}`,
           amount: Number(amount),
+          pendingHold: pendingHold > 0.005 ? pendingHold : 0,
         };
       })
       .filter((b): b is Balance => b !== null);
     setBalances(rows);
   }, []);
 
+  // Ask Plaid for a fresh balance, then re-read. Best-effort on purpose:
+  // if the refresh call fails (offline, Plaid down, the Item needs
+  // re-auth) the stored balance is still worth showing, so the read runs
+  // either way rather than leaving the block empty or erroring. This is
+  // the one place in the component where a failure is deliberately
+  // silent -- the number simply stays as fresh as it already was.
+  // Depends on the token STRING, not the session object. A context whose
+  // value is rebuilt on each render would otherwise hand this a new
+  // reference every time, changing the callback identity, re-firing the
+  // effect below, setting state, and rendering again -- an unbreakable
+  // loop that hammers Plaid for as long as the screen is open. A string
+  // compares by value, so the effect fires when the token actually
+  // changes and not before.
+  const accessToken = session?.access_token ?? null;
+  const refreshBalances = useCallback(async () => {
+    if (accessToken) {
+      try {
+        await fetch(functionUrl("plaid-balance-refresh-user"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        });
+      } catch {
+        // Fall through to the read below.
+      }
+    }
+    await loadBalances();
+  }, [accessToken, loadBalances]);
+
+  // refreshKey covers the local mutations (link, disconnect) where the
+  // table has just changed and Plaid has nothing newer to say, so those
+  // re-read without spending a Plaid call. refreshSignal and first mount
+  // go the long way round.
   useEffect(() => {
     loadBalances();
   }, [loadBalances, refreshKey]);
+
+  useEffect(() => {
+    refreshBalances();
+  }, [refreshBalances, refreshSignal]);
 
   const { startLink, connecting, error: linkError } = useBankLink(() => {
     setRefreshKey((k) => k + 1);
@@ -168,9 +237,26 @@ export default function AccountBalances({ onLinked }: { onLinked?: () => void })
                 i === shown.length - 1 && hidden === 0 ? styles.bankRowLast : null,
               ]}
             >
-              <Text style={[styles.bankLabel, { color: colors.textMuted, fontFamily: fontFamily.regular }]} numberOfLines={1}>
-                {b.label}
-              </Text>
+              {/* The name and the pending note share one flexing column
+                  so the amount stays in its own fixed right-hand
+                  gutter -- the alignment the whole block is built around
+                  -- however tall this side gets. */}
+              <View style={styles.bankLabelCol}>
+                <Text style={[styles.bankLabel, { color: colors.textMuted, fontFamily: fontFamily.regular }]} numberOfLines={1}>
+                  {b.label}
+                </Text>
+                {b.pendingHold > 0 ? (
+                  <View testID="pending-hold" style={styles.pendingRow}>
+                    <Clock size={10} color={colors.textFaint} />
+                    <Text
+                      style={[styles.pendingText, { color: colors.textFaint, fontFamily: fontFamily.mono }]}
+                      numberOfLines={1}
+                    >
+                      {fmtMoney(b.pendingHold)} pending
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text
                 style={[
                   styles.bankAmount,
@@ -355,7 +441,14 @@ const styles = StyleSheet.create({
   bankRowLast: { borderBottomWidth: 0 },
   expandRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
   expandText: { fontSize: 12 },
-  bankLabel: { flex: 1, minWidth: 0, fontSize: 13 },
+  bankLabelCol: { flex: 1, minWidth: 0 },
+  bankLabel: { fontSize: 13 },
+  // 10/11 and faint on purpose: this is a footnote explaining the number
+  // above it, and must never compete with the balance itself for the
+  // eye. It only appears at all when the bank is actually holding
+  // something.
+  pendingRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  pendingText: { fontSize: 11 },
   // 18, as it was before the design pass took it to 15: a balance is the
   // one number on this screen read at a glance rather than scanned.
   //

@@ -23,6 +23,7 @@ function makeRow(overrides: Partial<Transaction> = {}): Transaction {
     Amount: -12.5,
     Account: "Checking",
     IsTransfer: false,
+    Pending: false,
     ...overrides,
   };
 }
@@ -42,6 +43,55 @@ describe("TransactionRow", () => {
     // The category is an icon now, with no visible name -- so the only
     // thing naming it is the label a screen reader would announce.
     expect(screen.getByTestId("transaction-category-badge").props.accessibilityLabel).toBe("Category: Food:Restaurants");
+  });
+
+  // Pending transactions were always reaching the ledger -- Plaid's sync
+  // stream includes them and this app never filtered them out -- but
+  // nothing distinguished an authorized charge from a settled one, so a
+  // figure that can still change looked exactly like one that can't.
+  describe("pending", () => {
+    it("marks a pending row beside its date", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow({ Pending: true })} CATS={["Food"]} />);
+      expect(screen.getByTestId("transaction-pending-badge")).toBeTruthy();
+      expect(screen.getByText("Pending")).toBeTruthy();
+      // The date is still there: pending qualifies the date line, it does
+      // not replace it.
+      expect(screen.getByText("22 Jul 26")).toBeTruthy();
+    });
+
+    it("says nothing on a settled row", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow()} CATS={["Food"]} />);
+      expect(screen.queryByTestId("transaction-pending-badge")).toBeNull();
+      expect(screen.queryByText("Pending")).toBeNull();
+    });
+
+    // The glyph is not left to speak for itself. The category badge above
+    // can be icon-only -- its color and shape repeat on every row and are
+    // learned from the chart axis -- but this appears on a minority of
+    // rows with nothing to learn it from, so it carries the word too, and
+    // a label that says what it means to a screen reader.
+    it("explains itself in words, not by glyph alone", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow({ Pending: true })} CATS={["Food"]} />);
+      const badge = screen.getByTestId("transaction-pending-badge");
+      expect(badge.props.accessibilityLabel).toBe("Pending — not yet posted by the bank");
+    });
+
+    // The amount is unqualified on purpose: what posts is normally
+    // exactly what was authorized, so pending is a fact about the
+    // transaction's state, not a caveat on its figure.
+    it("leaves the amount and category untouched", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow({ Pending: true })} CATS={["Food"]} />);
+      expect(screen.getByText("-$12.50")).toBeTruthy();
+      expect(screen.getByTestId("transaction-category-badge").props.accessibilityLabel).toBe(
+        "Category: Food:Restaurants"
+      );
+    });
+
+    it("stays editable", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow({ Pending: true })} CATS={["Food"]} />);
+      await fireEvent.press(screen.getByText("Chipotle"));
+      expect(screen.getByTestId("transaction-edit-payee-input").props.value).toBe("Chipotle");
+    });
   });
 
   it("is not pressable when the row has no Id (synthetic row)", async () => {

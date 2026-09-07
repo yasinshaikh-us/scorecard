@@ -526,6 +526,63 @@ describe("syncItemTransactions", () => {
     });
   });
 
+  describe("pending", () => {
+    // Pending transactions were always arriving here -- /transactions/sync
+    // puts them in `added` and offers no way to opt out -- and were always
+    // being written to the ledger. What was missing was any record of
+    // WHICH rows they were, so the app drew an authorized charge and a
+    // settled one identically.
+    it("records a pending transaction as pending", async () => {
+      const { db, calls } = fakeDb({
+        tracked: { data: [{ account_id: "acct-1", resync_after_date: null }], error: null },
+      });
+      const { client } = fakeClient([page({ added: [tx({ pending: true })] })]);
+
+      await syncItemTransactions("item-1", client, db);
+
+      expect(upsertedRows(calls)[0].pending).toBe(true);
+    });
+
+    it("records a settled transaction as not pending", async () => {
+      const { db, calls, client } = happyPath();
+      await syncItemTransactions("item-1", client, db);
+      expect(upsertedRows(calls)[0].pending).toBe(false);
+    });
+
+    // Plaid omits the field on some transaction shapes rather than
+    // sending false. Absent must mean settled -- `undefined` would hit a
+    // NOT NULL column and fail the whole batch, taking the cursor
+    // advance with it.
+    it("treats a missing pending field as settled", async () => {
+      const { db, calls } = fakeDb({
+        tracked: { data: [{ account_id: "acct-1", resync_after_date: null }], error: null },
+      });
+      const { client } = fakeClient([page({ added: [tx({ pending: undefined })] })]);
+
+      await syncItemTransactions("item-1", client, db);
+
+      expect(upsertedRows(calls)[0].pending).toBe(false);
+    });
+
+    // The pending -> posted transition arrives as a `modified` entry (or
+    // as `removed` plus a fresh row). Either way the flag has to come
+    // back down on its own -- nothing else ever clears it.
+    it("clears the flag when Plaid re-reports the transaction as settled", async () => {
+      const { db, calls } = fakeDb({
+        tracked: { data: [{ account_id: "acct-1", resync_after_date: null }], error: null },
+      });
+      const { client } = fakeClient([
+        page({ modified: [tx({ transaction_id: "tx-1", pending: false })] }),
+      ]);
+
+      await syncItemTransactions("item-1", client, db);
+
+      const row = upsertedRows(calls)[0];
+      expect(row.plaid_transaction_id).toBe("tx-1");
+      expect(row.pending).toBe(false);
+    });
+  });
+
   describe("balance refresh is best-effort", () => {
     it("refreshes balances after a successful sync", async () => {
       const { db, client } = happyPath();

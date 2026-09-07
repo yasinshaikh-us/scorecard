@@ -41,6 +41,7 @@ function tx(overrides: Partial<Transaction> = {}): Transaction {
     Amount: -10,
     Account: "Checking",
     IsTransfer: false,
+    Pending: false,
     ...overrides,
   };
 }

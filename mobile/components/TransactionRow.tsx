@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Check, ChevronDown, X } from "lucide-react-native";
+import { Check, ChevronDown, Clock, X } from "lucide-react-native";
 import { fmtDate, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { topCategory } from "../lib/logic";
@@ -164,7 +164,28 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
         </View>
         <Text style={[styles.amount, { color: amountColor, fontFamily: fontFamily.mono }]}>{fmtMoney(row.Amount)}</Text>
       </View>
-      <Text style={[styles.date, { color: colors.textFaint, fontFamily: fontFamily.mono }]}>{fmtDate(row.Date)}</Text>
+      {/* The date line, and -- for a charge the bank has authorized but
+          not yet settled -- a pending marker beside it. It sits here
+          rather than by the amount because pending is a fact about the
+          transaction's STATE, which is what the date line already
+          carries; putting it next to the figure would read as a
+          qualifier on the number, which it isn't (the amount of a
+          pending charge is normally exactly what posts).
+
+          Glyph plus word, not the glyph alone. The category badge above
+          can be icon-only because its color and shape are learned from
+          the chart axis and repeat down every row; this appears on a
+          minority of rows with nothing to learn it from, so an
+          unexplained clock face would just be a mystery mark. */}
+      <View style={styles.dateRow}>
+        <Text style={[styles.date, { color: colors.textFaint, fontFamily: fontFamily.mono }]}>{fmtDate(row.Date)}</Text>
+        {row.Pending ? (
+          <View testID="transaction-pending-badge" accessibilityLabel="Pending — not yet posted by the bank" style={styles.pendingBadge}>
+            <Clock size={11} color={colors.textMuted} />
+            <Text style={[styles.pendingText, { color: colors.textMuted, fontFamily: fontFamily.regular }]}>Pending</Text>
+          </View>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -200,7 +221,10 @@ const styles = StyleSheet.create({
   payee: { flex: 1, minWidth: 0, fontSize: 15 },
   categoryCol: { flexBasis: 22, flexGrow: 0, flexShrink: 0, alignItems: "center", justifyContent: "center" },
   amount: { flexBasis: 112, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "600" },
-  date: { fontSize: 11, marginTop: 1 },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 },
+  date: { fontSize: 11 },
+  pendingBadge: { flexDirection: "row", alignItems: "center", gap: 3 },
+  pendingText: { fontSize: 11 },
   editInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginBottom: 8 },
   categorySelectBtn: {
     flexDirection: "row",

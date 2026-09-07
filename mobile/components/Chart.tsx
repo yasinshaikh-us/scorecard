@@ -272,9 +272,17 @@ export default function Chart({
     );
 
     if (spec.chartType === "line") {
+      // Each line's points take that line's own color. Left unset, the
+      // library falls back to its own default (black) for every series,
+      // so a five-line chart got five differently-colored lines wearing
+      // identical black dots -- unreadable, and the same
+      // point-punches-a-hole-in-the-line problem the single-series
+      // branch had, in a color that belongs to no series at all.
       const dataSet = series.map((s, i) => ({
         data: s.values.map((value, bucket) => ({ value, label: labels[bucket] })),
         color: colorFor(s.name, i),
+        dataPointsColor: colorFor(s.name, i),
+        dataPointsRadius: 4,
         opacity: dim(s.name),
       }));
       return (
@@ -367,13 +375,35 @@ export default function Chart({
       spec.groupBy || "",
       labelBudget(width)
     );
+    // Data points in the LINE's own color, not the card's.
+    //
+    // Unselected points used to be filled with colors.surface -- the
+    // exact color of the card behind the chart. That made them invisible
+    // as points, and worse: gifted-charts draws each point OVER the line,
+    // so every one of them punched a card-colored hole through it. The
+    // result read as a dashed line rather than a continuous one with
+    // markers on it, which is precisely backwards, since this app already
+    // uses dashes to mean "projected, not measured" (see projectedConfig
+    // below). Two different things were drawn the same way, and the
+    // meaningful one was the one that disappeared.
+    //
+    // Accent fill leaves the line unbroken and each point reading as a
+    // node on it: at radius 4 a point is 8px across against a 2px line,
+    // so it stands out by shape rather than by color. Selection then has
+    // color to itself -- colors.text, the same high-contrast mark the
+    // pie chart already uses for its selected slice.
     const lineData = data.map((d, i) => ({
       value: d.total,
       label: labels[i],
-      dataPointColor: selectedKey === d.key ? colors.accent : colors.surface,
+      dataPointColor: selectedKey === d.key ? colors.text : colors.accent,
+      // Still 5, not larger: lineGeometry's POINT_ALLOWANCE reserves the
+      // plot width a selected point needs, and growing the point past
+      // what that covers would push the chart's content wider than the
+      // card it has to fit inside. Color is what marks the selection
+      // here; the extra pixel just seconds it.
       dataPointRadius: selectedKey === d.key ? 5 : 4,
-      // Projected points carry no transactions, so they are inert and
-      // drawn hollow rather than as data you can interrogate.
+      // Projected points carry no transactions, so they are inert: no
+      // marker at all, and nothing to press.
       hideDataPoint: d.projected,
       onPress: d.projected ? undefined : () => onSelect(d.key),
     }));

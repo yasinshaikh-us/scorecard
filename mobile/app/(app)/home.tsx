@@ -29,9 +29,16 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  // Pull-to-refresh used to reload transactions only, leaving the
+  // balances above them showing whatever the hourly cron last wrote --
+  // so the one gesture that means "get me the current state" refreshed
+  // half the screen. Bumping this drives AccountBalances to re-poll
+  // Plaid and re-read, alongside the ledger fetch.
+  const [balanceSignal, setBalanceSignal] = useState(0);
 
   async function onRefresh() {
     setRefreshing(true);
+    setBalanceSignal((k) => k + 1);
     await refresh();
     setRefreshing(false);
   }
@@ -61,7 +68,7 @@ export default function Home() {
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
         ListHeaderComponent={
           <>
-            <AccountBalances onLinked={refresh} />
+            <AccountBalances onLinked={refresh} refreshSignal={balanceSignal} />
             <Text
               testID="recent-activity-header"
               style={[styles.sectionTitle, { color: colors.textMuted, fontFamily: fontFamily.semibold }]}
