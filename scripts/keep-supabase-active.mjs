@@ -1,9 +1,10 @@
 // Keeps this project's Supabase database out of Supabase's free-tier
 // 7-day-inactivity auto-pause, independent of anything else in this repo
-// actually running. mobile-detox.yml is the only other thing here that
-// makes real authenticated Supabase calls, and it's workflow_dispatch-only
-// by design -- not a reliable clock against a 7-day window on its own.
-// See .github/workflows/supabase-keepalive.yml for the schedule.
+// actually running. mobile-detox.yml's nightly schedule already exercises
+// this project, but it's a slow, occasionally-flaky real-emulator suite
+// with no separate check that it actually completed -- this is a small,
+// independent second source of activity. See
+// .github/workflows/supabase-keepalive.yml for the schedule and reasoning.
 //
 // Reuses the same shared test-login mechanism (supabase/functions/test-login,
 // gated by TEST_LOGIN_SECRET) mobile-detox.yml already uses to sign in as
