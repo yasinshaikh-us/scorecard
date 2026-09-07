@@ -23,7 +23,7 @@ export async function fetchAllRows(url: string, anonKey: string, accessToken: st
 
   while (true) {
     const resp = await fetch(
-      `${url}/rest/v1/transactions?select=id,date,payee,category,amount,plaid_account_id,is_transfer&order=date.asc`,
+      `${url}/rest/v1/transactions?select=id,date,payee,category,amount,plaid_account_id,is_transfer,pending&order=date.asc`,
       {
         headers: {
           apikey: anonKey,
@@ -135,10 +135,17 @@ export function accountLabelFor(row: any, labels: Record<string, string>) {
 }
 
 // Shared by `transactions` and `query`, so the {Id, Date, Payee, Category,
-// Amount, Account, IsTransfer} shape served to the client and the shape
-// the NL query system prompt is built from can't drift apart. Id is the
-// transactions.id primary key -- needed so the client can edit a specific
-// row directly rather than only through category_rules.
+// Amount, Account, IsTransfer, Pending} shape served to the client and the
+// shape the NL query system prompt is built from can't drift apart. Id is
+// the transactions.id primary key -- needed so the client can edit a
+// specific row directly rather than only through category_rules.
+//
+// Pending rows are served like any other and counted in every total. A
+// charge you have made is money you have spent, whether or not the bank
+// has finished settling it, and dropping them would put the app's totals
+// behind the bank's own available balance -- the exact lag this change
+// set exists to remove. Pending is a display distinction (see
+// TransactionRow.tsx), not a filter.
 export function toClientRows(rawRows: any[], labels: Record<string, string>) {
   return rawRows.map((r) => ({
     Id: r.id,
@@ -148,5 +155,6 @@ export function toClientRows(rawRows: any[], labels: Record<string, string>) {
     Amount: Number(r.amount),
     Account: accountLabelFor(r, labels),
     IsTransfer: !!r.is_transfer,
+    Pending: !!r.pending,
   }));
 }

@@ -101,6 +101,7 @@ export function buildTestLedger({ seed = 20260819, start = LEDGER_START, end = L
       Amount: amount,
       Account: random() < 0.7 ? "Checking ••4471" : "Savings ••8802",
       IsTransfer: false,
+      Pending: false,
       ...extra,
     });
   };

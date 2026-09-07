@@ -246,6 +246,14 @@ export async function syncItemTransactions(
         amount: -tx.amount,
         source: "plaid",
         is_transfer: isTransferFor(tx, linkedAccountCount || 0),
+        // Authorized by the bank but not yet settled. Pending
+        // transactions have always arrived here -- /transactions/sync
+        // includes them in `added` and offers no way to opt out -- so
+        // this records what they already were rather than admitting
+        // anything new to the ledger. Plaid re-reports each one when it
+        // settles (as `modified`, or as `removed` plus a fresh posted
+        // row), which is what flips this back to false.
+        pending: !!tx.pending,
       };
     });
 

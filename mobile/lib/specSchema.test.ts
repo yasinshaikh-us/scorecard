@@ -19,6 +19,7 @@ const row = (Date: string, Payee: string, Category: string, Amount: number): Tra
   Id: undefined as any,
   Account: "Manual entry",
   IsTransfer: false,
+  Pending: false,
 });
 
 // The spec used to go from JSON.parse straight into the filter. Every

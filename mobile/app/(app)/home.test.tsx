@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
-import { fireEvent, screen } from "@testing-library/react-native";
+import { act, fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../../lib/testUtils";
 import Home from "./home";
 import type { Transaction } from "../../lib/types";
@@ -22,10 +22,12 @@ jest.mock("../../components/TransactionRow", () => {
   };
 });
 
+// Renders the signal it was handed, so the test can see that
+// pull-to-refresh reaches the balances and not just the ledger.
 jest.mock("../../components/AccountBalances", () => {
   const { Text: RNText } = require("react-native");
-  return function MockAccountBalances() {
-    return <RNText testID="account-balances">balances</RNText>;
+  return function MockAccountBalances({ refreshSignal }: { refreshSignal?: number }) {
+    return <RNText testID="account-balances">{`balances:${refreshSignal ?? 0}`}</RNText>;
   };
 });
 
@@ -50,6 +52,7 @@ function tx(overrides: Partial<Transaction> = {}): Transaction {
     Amount: -10,
     Account: "Checking",
     IsTransfer: false,
+    Pending: false,
     ...overrides,
   };
 }
@@ -133,5 +136,25 @@ describe("Home", () => {
     await renderWithTheme(<Home />);
     expect(screen.getByTestId("account-balances")).toBeTruthy();
     expect(screen.getByText("Recent Activity")).toBeTruthy();
+  });
+
+  // Pull-to-refresh used to reload the transaction list only, leaving
+  // the balances above it showing whatever the hourly cron last wrote --
+  // so the one gesture that means "get me the current state" refreshed
+  // half the screen.
+  it("pull-to-refresh refreshes the balances as well as the ledger", async () => {
+    const refresh = jest.fn(async () => {});
+    ready({ transactions: [tx()], refresh });
+    await renderWithTheme(<Home />);
+
+    expect(screen.getByTestId("account-balances")).toHaveTextContent("balances:0");
+
+    const list = screen.getByTestId("home-transaction-list");
+    await act(async () => {
+      list.props.refreshControl.props.onRefresh();
+    });
+
+    expect(refresh).toHaveBeenCalled();
+    expect(screen.getByTestId("account-balances")).toHaveTextContent("balances:1");
   });
 });

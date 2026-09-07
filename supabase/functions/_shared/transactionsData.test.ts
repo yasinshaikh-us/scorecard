@@ -58,6 +58,28 @@ describe("fetchAllRows", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  // PostgREST returns exactly the columns named in `select`, so a column
+  // missing here is not an error anywhere -- it just arrives undefined
+  // and every row silently reads as settled. Naming the whole list is
+  // what makes dropping one a test failure rather than a quiet
+  // regression in the app.
+  it("selects every column the client shape is built from", async () => {
+    global.fetch = fakeSupabaseFetch(1) as any;
+    await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
+    const url = String((global.fetch as any).mock.calls[0][0]);
+    const selected = decodeURIComponent(url.split("select=")[1].split("&")[0]).split(",");
+    expect(selected).toEqual([
+      "id",
+      "date",
+      "payee",
+      "category",
+      "amount",
+      "plaid_account_id",
+      "is_transfer",
+      "pending",
+    ]);
+  });
+
   it("sends the anon key on apikey and the caller's own access token on Authorization", async () => {
     global.fetch = fakeSupabaseFetch(1) as any;
     await fetchAllRows(SUPABASE_URL, ANON_KEY, ACCESS_TOKEN);
@@ -188,17 +210,48 @@ describe("accountLabelFor", () => {
 });
 
 describe("toClientRows", () => {
-  it("maps raw rows to the client shape, resolving Account and coercing IsTransfer", () => {
+  it("maps raw rows to the client shape, resolving Account and coercing IsTransfer/Pending", () => {
     const out = toClientRows(
       [
-        { id: 1, date: "2024-01-01", payee: "Store", category: "Groceries", amount: "-1.5", plaid_account_id: "acc_1", is_transfer: false },
-        { id: 2, date: "2024-01-02", payee: "Transfer", category: "Transfer", amount: "-500", plaid_account_id: "acc_1", is_transfer: true },
+        { id: 1, date: "2024-01-01", payee: "Store", category: "Groceries", amount: "-1.5", plaid_account_id: "acc_1", is_transfer: false, pending: false },
+        { id: 2, date: "2024-01-02", payee: "Transfer", category: "Transfer", amount: "-500", plaid_account_id: "acc_1", is_transfer: true, pending: false },
+        { id: 3, date: "2024-01-03", payee: "Cafe", category: "Dining", amount: "-4.25", plaid_account_id: "acc_1", is_transfer: false, pending: true },
       ],
       { acc_1: "Chase Checking ••1234" }
     );
     expect(out).toEqual([
-      { Id: 1, Date: "2024-01-01", Payee: "Store", Category: "Groceries", Amount: -1.5, Account: "Chase Checking ••1234", IsTransfer: false },
-      { Id: 2, Date: "2024-01-02", Payee: "Transfer", Category: "Transfer", Amount: -500, Account: "Chase Checking ••1234", IsTransfer: true },
+      { Id: 1, Date: "2024-01-01", Payee: "Store", Category: "Groceries", Amount: -1.5, Account: "Chase Checking ••1234", IsTransfer: false, Pending: false },
+      { Id: 2, Date: "2024-01-02", Payee: "Transfer", Category: "Transfer", Amount: -500, Account: "Chase Checking ••1234", IsTransfer: true, Pending: false },
+      { Id: 3, Date: "2024-01-03", Payee: "Cafe", Category: "Dining", Amount: -4.25, Account: "Chase Checking ••1234", IsTransfer: false, Pending: true },
     ]);
+  });
+
+  // A row written before the pending column existed comes back from
+  // PostgREST with the column present and false, but a manual row built
+  // in a test (or any caller passing a partial row) has no such key --
+  // and "no flag" must mean settled, never undefined leaking into the
+  // client shape.
+  it("treats a row with no pending column as settled", () => {
+    const out = toClientRows(
+      [{ id: 1, date: "2024-01-01", payee: "Cash", category: "Groceries", amount: "-3", is_transfer: false }],
+      {}
+    );
+    expect(out[0].Pending).toBe(false);
+  });
+
+  // Pending rows are a display distinction, not a filter: a charge you
+  // have made is spending whether or not it has settled, and dropping it
+  // here would put every total in the app behind the bank's own
+  // available balance.
+  it("serves pending rows alongside settled ones rather than filtering them out", () => {
+    const out = toClientRows(
+      [
+        { id: 1, date: "2024-01-01", payee: "Settled", category: "Groceries", amount: "-10", pending: false },
+        { id: 2, date: "2024-01-02", payee: "Authorized", category: "Groceries", amount: "-20", pending: true },
+      ],
+      {}
+    );
+    expect(out).toHaveLength(2);
+    expect(out.map((r) => r.Payee)).toEqual(["Settled", "Authorized"]);
   });
 });

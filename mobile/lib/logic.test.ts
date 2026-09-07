@@ -43,6 +43,7 @@ const row = (Date: string, Payee: string, Category: string, Amount: number): Tra
   Id: undefined as any,
   Account: "Manual entry",
   IsTransfer: false,
+  Pending: false,
 });
 
 describe("topCategory", () => {
@@ -94,14 +95,25 @@ describe("cleanRows", () => {
   it("trims strings and coerces Amount to a number", () => {
     const out = cleanRows([{ Date: " 2026-01-01 ", Payee: " Chipotle ", Category: " Dining ", Amount: "-12.50" }]);
     expect(out).toEqual([
-      { Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5, Account: "Manual entry", IsTransfer: false },
+      { Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5, Account: "Manual entry", IsTransfer: false, Pending: false },
     ]);
   });
 
-  it("defaults Account to 'Manual entry' and IsTransfer to false when absent", () => {
+  it("defaults Account to 'Manual entry', and IsTransfer/Pending to false, when absent", () => {
     const out = cleanRows([row("2026-01-01", "Chipotle", "Dining", -12.5)]);
     expect(out[0].Account).toBe("Manual entry");
     expect(out[0].IsTransfer).toBe(false);
+    // A manual row was never authorized by a bank, so it can't be
+    // pending -- and an absent flag must land as false rather than
+    // undefined, or the row renders a marker on a coin toss.
+    expect(out[0].Pending).toBe(false);
+  });
+
+  it("carries Pending through when the server says a row is pending", () => {
+    const out = cleanRows([
+      { Id: 1, Date: "2026-01-01", Payee: "Chipotle", Category: "Dining", Amount: -12.5, Pending: true },
+    ]);
+    expect(out[0].Pending).toBe(true);
   });
 
   it("passes Id through unchanged when present, and leaves it undefined when absent", () => {

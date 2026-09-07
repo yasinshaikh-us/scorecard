@@ -106,8 +106,9 @@ To deploy by hand instead (e.g. before the secret exists):
 
 ```bash
 supabase functions deploy plaid-webhook test-login --no-verify-jwt --project-ref <ref>
-supabase functions deploy plaid-balance-refresh plaid-disconnect plaid-exchange \
-  plaid-link-token plaid-transaction-resync query test-plaid-link transactions \
+supabase functions deploy plaid-balance-refresh plaid-balance-refresh-user \
+  plaid-disconnect plaid-exchange plaid-link-token plaid-transaction-resync \
+  query test-plaid-link transactions \
   --project-ref <ref>
 ```
 
@@ -219,6 +220,57 @@ Closing it properly means picking a channel and wiring it up — a Supabase
 log-based alert on that `WARNING`, a push notification via the mobile app,
 or a banner in the UI (`sync_health` already has an owner-scoped `SELECT`
 policy so the client can read its own row without a further migration).
+
+## Balances and pending transactions
+
+Plaid reports two balances per account and they mean different things:
+
+| | What it is | When it moves |
+|---|---|---|
+| `available` | What you can actually spend — `current` minus everything the bank has authorized but not yet settled. | Within minutes of a charge. |
+| `current` | The settled, posted balance. | When the charge posts, roughly a business day later. |
+
+**The app shows `available`**, falling back to `current` only where an
+institution reports no available balance. Leading with `current` — which
+it did until 2026-09 — meant the home screen lagged the user's own
+spending by about a day while every commercial banking app beside it had
+already moved. On the live account when this was changed: `current`
+63757.03 against `available` 63577.55, a $179.48 spread that was
+invisible in the UI. Where the two differ, the account row now names the
+gap ("$179.48 pending") rather than silently excluding it.
+
+Three things write `plaid_account_balances`, because Plaid's Balance
+product has no webhook:
+
+| | Trigger | Scope |
+|---|---|---|
+| `plaid-balance-refresh` | hourly pg_cron | every active Item on the project |
+| `syncItemTransactions` | every transaction webhook | the Item that just synced |
+| `plaid-balance-refresh-user` | the app: Home mounting, and pull-to-refresh | the caller's own Items |
+
+The third is the one that makes a balance you are *looking at* current
+rather than up-to-an-hour old. Plaid bills per Balance call and the app
+can fire it on every mount, so it skips the call outright when the stored
+balance is under a minute old (`plaid_account_balances.as_of` is the
+signal — every writer above stamps it) and returns how long is left
+instead. Pull-to-refresh on Home refreshes balances and the ledger
+together; before this it reloaded only the ledger.
+
+**Pending transactions** were always being ingested — `/transactions/sync`
+includes them in `added` and offers no way to opt out — but nothing
+recorded which rows they were, so an authorized charge was drawn exactly
+like a settled one. `transactions.pending` now carries that, and rows
+marked pending get a clock glyph beside their date. They are counted in
+every total like any other row: a charge you have made is money you have
+spent, and excluding them would put the app's own arithmetic behind the
+available balance above it.
+
+The flag clears itself. Plaid re-reports every pending transaction when
+it settles — as `modified`, or as `removed` plus a fresh posted row — and
+that re-report is the only thing that ever writes `pending = false`. One
+consequence worth knowing when the column is first added: rows that were
+already pending at that moment read as settled until Plaid next mentions
+them, which in practice is within a day.
 
 ## Access control (Google sign-in + per-user RLS)
 
@@ -372,7 +424,8 @@ GitHub Actions workflows, not local commands.
 │   ├── plaid-disconnect/index.ts
 │   ├── query/index.ts            # holds the Anthropic key server-side
 │   ├── plaid-webhook/index.ts    # Plaid calls this directly, --no-verify-jwt
-│   ├── plaid-balance-refresh/index.ts  # hourly pg_cron job
+│   ├── plaid-balance-refresh/index.ts  # hourly pg_cron job, every Item
+│   ├── plaid-balance-refresh-user/index.ts # on-demand, the caller's Items only
 │   ├── plaid-transaction-resync/index.ts # 6h pg_cron job; floor under plaid-webhook
 │   ├── test-login/index.ts       # mobile testing only -- see mobile/README.md
 │   └── test-plaid-link/index.ts  # mobile testing only -- see mobile/README.md

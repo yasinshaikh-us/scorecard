@@ -11,7 +11,8 @@ import { normalizeSpec } from "./specSchema";
 export const topCategory = (cat: string) => (cat || "Uncategorized").split(":")[0];
 
 // Filters out rows missing a required field and coerces types into a
-// clean {Id, Date, Payee, Category, Amount, Account, IsTransfer} shape --
+// clean {Id, Date, Payee, Category, Amount, Account, IsTransfer, Pending}
+// shape --
 // mirrors the `transactions` Edge Function's own shape, so this is really
 // just defensive coercion of already-well-shaped data from the server.
 export function cleanRows(rows: any[]): Transaction[] {
@@ -25,6 +26,7 @@ export function cleanRows(rows: any[]): Transaction[] {
       Amount: Number(r.Amount),
       Account: r.Account ? String(r.Account).trim() : "Manual entry",
       IsTransfer: !!r.IsTransfer,
+      Pending: !!r.Pending,
     }));
 }
 

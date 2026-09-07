@@ -461,6 +461,37 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
+  // The third chart failure only a screenshot shows, and the reason this
+  // spec exists: a LINE chart's data points. They were filled with
+  // colors.surface -- the exact color of the card behind them -- and
+  // gifted-charts draws each point over the line, so every one punched a
+  // card-colored hole through it. The markers were invisible and the
+  // line read as dashed, which collides head-on with the one thing this
+  // chart uses dashes for (a projected tail: "not measured"). Every
+  // assertion passed the whole time; the card, the axis and the rows
+  // were all present and visible.
+  //
+  // Neither of the two chart specs above ever produced a line: a ranking
+  // is horizontal bars, and a 3-month day grouping is vertical bars. A
+  // spending-per-month question over a long span is what the query
+  // prompt maps to groupBy "month" and chartType "line".
+  //
+  // Asserting only that a card comes back, same as the two above: which
+  // chart type Claude picks is not something a UI test should depend on.
+  // The screenshot is what is actually being inspected.
+  it("Ask: a monthly trend renders its line chart with visible data points", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    await setInputText("ask-input", "How much did I spend each month over the last year?");
+    await element(by.id("ask-button")).tap();
+
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await captureScreen("ask-screen-monthly-line");
+    await element(by.id("query-card-close-button")).tap();
+
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
   it("Home: pull-to-refresh doesn't crash and content survives", async () => {
     // Only testable here -- RN's RefreshControl doesn't preserve custom
     // testIDs through ScrollView's native prop handling in Stage 1's JS
