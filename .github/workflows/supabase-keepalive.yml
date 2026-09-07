@@ -1,0 +1,35 @@
+name: Supabase Keep-Alive
+
+# Supabase's free tier auto-pauses a project after 7 days with no real
+# database activity. mobile-detox.yml's `schedule` trigger already runs
+# the full suite nightly (07:00 UTC) against this same project, which
+# should already keep it out of that window on its own -- but it's a big,
+# slow, occasionally-flaky UI suite (real Android emulator, ~9 screens)
+# with plenty of ways a run could go missing (a canceled/timed-out run,
+# a temporarily-disabled workflow, GitHub Actions being down) without
+# anyone noticing for a while, since nothing currently checks that it
+# actually ran. This is a small, independent, second source of activity
+# that doesn't depend on that suite, or anything else in this repo,
+# actually completing successfully -- see yasinshaikh-us/location#42 for
+# what happened when location's only comparable job was allowed to be a
+# single point of failure.
+#
+# Twice weekly rather than once: a 7-day schedule against a 7-day
+# window has zero margin, so a single skipped or delayed run would let
+# the project pause anyway -- same reasoning as cache-warm.yml.
+
+on:
+  schedule:
+    - cron: "0 6 * * 2,5" # Tuesdays and Fridays, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: https://bidorjtgbhuihppsznkc.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
+      TEST_LOGIN_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_LOGIN_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/keep-supabase-active.mjs
