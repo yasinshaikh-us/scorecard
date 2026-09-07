@@ -1,0 +1,30 @@
+name: Supabase Keep-Alive
+
+# Supabase's free tier auto-pauses a project after 7 days with no real
+# database activity. mobile-detox.yml is the only workflow here that
+# makes real authenticated Supabase calls, and it's workflow_dispatch-only
+# by design -- not a reliable clock against a 7-day window on its own, so
+# a quiet week with no manual Stage 2 dispatch would let the project pause.
+#
+# This is a dedicated, independent keep-alive that doesn't depend on
+# anything else in this repo, or any external scheduler, actually running.
+#
+# Twice weekly rather than weekly: a 7-day schedule against a 7-day
+# window has zero margin, so a single skipped or delayed run would let
+# the project pause anyway -- same reasoning as cache-warm.yml.
+
+on:
+  schedule:
+    - cron: "0 6 * * 2,5" # Tuesdays and Fridays, 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: https://bidorjtgbhuihppsznkc.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
+      TEST_LOGIN_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_LOGIN_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/keep-supabase-active.mjs
