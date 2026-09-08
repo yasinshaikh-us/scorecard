@@ -39,9 +39,15 @@ Covers the full set of flows this app is meant to have:
   `react-native-plaid-link-sdk`.
 - **Category rules**: an "if payee/category contains X, set Y" engine,
   opened from the header's rules button.
-- **Inline transaction editing**: tap a row to edit payee/category, same
-  `manually_edited` flag the backend respects, so rules/Plaid sync don't
-  clobber it.
+- **Row drilldowns**: tap any payee or any category badge (on Home or
+  inside an Ask result) to get that payee's or that category's last 12
+  months -- income and expenses both. The spec is built on the device
+  (`lib/drilldown.ts`), so the answer renders on the same frame as the
+  tap: no model call, no network. This replaced inline row editing --
+  the two cannot share the row's press, and the fields worth querying
+  were exactly the ones that used to be editable. Recategorizing lives
+  in the rules panel, which fixes a merchant everywhere rather than one
+  row at a time.
 
 Deliberately simpler than originally designed, tracked here rather than
 silently dropped:
@@ -93,7 +99,7 @@ cp .env.example .env
 
 **`react-native-plaid-link-sdk` is a native module — Expo Go can no longer
 run this app.** Any screen is fine in Expo Go until you touch Plaid Link
-(sign-in, Home minus the add-bank button, Ask, Rules, inline editing all still
+(sign-in, Home minus the add-bank button, Ask, Rules, drilldowns all still
 work there), but `createPlaidLinkSession` will throw "native module not
 found" the moment it's called. To actually test the whole app, build a
 custom dev client instead:
@@ -236,7 +242,7 @@ no paid resources):
   `@testing-library/react-native`). Covers the pure logic
   (`lib/logic.test.ts`, `lib/format.test.ts`), the components with real
   state/interaction
-  (`components/TransactionRow.test.tsx`'s inline-edit flow,
+  (`components/TransactionRow.test.tsx`'s drilldown taps,
   `components/CategoryRulesPanel.test.tsx`'s add/toggle/delete/reapply,
   `components/PickerModal.test.tsx`'s select/cancel, `components/
   AccountBalances.test.tsx`, `components/QueryCard.test.tsx`'s four card
@@ -296,8 +302,9 @@ plus confirming a signed-in session survives a real app relaunch — see
 below); `testPlaidLink.test.js` (the Plaid Link bypass, covered below);
 and `appFlows.test.js` — everything else: the Rules engine (add/toggle/
 delete a rule, including one that sets payee rather than category, and
-cancelling a picker without selecting), editing a transaction's category
-(both saving and cancelling), the account-management banners' cancel
+cancelling a picker without selecting), the payee and category
+drilldowns (from Home and from inside a result card), the
+account-management banners' cancel
 paths (real Plaid Link and a real bank disconnect can't be scripted —
 see "Test Plaid Link" below and this spec's own header comment), tab
 navigation, both Ask paths (a suggestion chip and typing a custom
@@ -455,7 +462,7 @@ bug specifically, or anything else Stage 2 doesn't reach.
 
 ### Test login (skipping Google's sign-in screen)
 
-Every authenticated screen (Home, Ask, Rules, editing) needs a session,
+Every authenticated screen (Home, Ask, Rules, drilldowns) needs a session,
 and Google's OAuth consent screen actively resists automation, so no
 automated suite can drive a real sign-in. `supabase/functions/test-login`
 is the way around that: it mints a real session for a designated dummy

@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLocalSearchParams } from "expo-router";
 import { MessageCircleQuestion } from "lucide-react-native";
 import { useAuth } from "../../lib/AuthProvider";
 import { useData } from "../../lib/DataProvider";
@@ -8,6 +9,7 @@ import { useTheme } from "../../lib/ThemeProvider";
 import { fontFamily } from "../../lib/theme";
 import { functionUrl } from "../../lib/functionsClient";
 import { parseQueryResponse, type QueryResult } from "../../lib/logic";
+import { buildDrilldown, type DrilldownTarget } from "../../lib/drilldown";
 import QueryCard from "../../components/QueryCard";
 import RisingSuggestions from "../../components/RisingSuggestions";
 import ScreenHeader from "../../components/ScreenHeader";
@@ -20,6 +22,13 @@ import { SUGGESTIONS, pickSuggestions } from "../../lib/suggestions";
 // drifting up the screen at once is noise and a fixed eight is what made
 // the app look narrower than it is.
 const SHOWN_SUGGESTIONS = 8;
+
+// A route param arrives as a string, or as an array of them if the same
+// key appears twice in the URL. Nothing this app writes produces the
+// second shape, so the first value is the answer and the rest is noise.
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 type Card = { id: number; question: string; pending?: boolean } & Partial<QueryResult>;
 
@@ -40,11 +49,56 @@ export default function Ask() {
   // that the tab bar is gone.
   const insets = useSafeAreaInsets();
 
+  // A payee/category tap on the Home screen navigates here with the
+  // target in the URL rather than through shared state: Home and Ask are
+  // separate routes with no common owner below the layout, and a route
+  // param is the one handoff expo-router already persists across the
+  // push (including through a remount).
+  const params = useLocalSearchParams<{ drillKind?: string; drillValue?: string }>();
+
   const [input, setInput] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const nextId = useRef(0);
+
+  // The ledger's own last date is "now" for a drilldown's date window,
+  // the same anchor QueryCard projects from and the same one the `query`
+  // Edge Function hands the model.
+  const ledgerToday = useMemo(
+    () => transactions.reduce((latest, d) => (d.Date > latest ? d.Date : latest), ""),
+    [transactions]
+  );
+
+  // No fetch, no pending card, no model: the spec is built here and the
+  // answer is on screen the same frame the tap lands (see
+  // lib/drilldown.ts). Replaces the feed like runQuery does -- one card
+  // at a time is the whole design of this screen.
+  const runDrilldown = useCallback(
+    (target: DrilldownTarget) => {
+      const { question, spec } = buildDrilldown(target, ledgerToday);
+      setCards([{ id: nextId.current++, question, spec, issues: [] }]);
+    },
+    [ledgerToday]
+  );
+
+  // Runs the drilldown a Home-screen tap arrived with, once the ledger is
+  // loaded (the window is anchored to the ledger's last date, so running
+  // it against an empty `transactions` would date the window from
+  // nothing). Guarded by a ref rather than by clearing the param: a
+  // re-render for any other reason must not re-answer a question the user
+  // already dismissed with the card's ×.
+  const drillKind = firstParam(params.drillKind);
+  const drillValue = firstParam(params.drillValue);
+  const ranDrilldownFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (dataStatus !== "ready") return;
+    if (!drillValue || (drillKind !== "payee" && drillKind !== "category")) return;
+    const token = `${drillKind}:${drillValue}`;
+    if (ranDrilldownFor.current === token) return;
+    ranDrilldownFor.current = token;
+    runDrilldown({ kind: drillKind, value: drillValue });
+  }, [dataStatus, drillKind, drillValue, runDrilldown]);
 
   async function runQuery(question: string) {
     const q = question.trim();
@@ -145,7 +199,7 @@ export default function Ask() {
             transactions={transactions}
             CATS={CATS}
             onRemove={() => setCards((prev) => prev.filter((x) => x.id !== c.id))}
-            onTransactionEdited={refresh}
+            onDrilldown={runDrilldown}
           />
         ))}
       </ScrollView>

@@ -1,18 +1,9 @@
-import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { describe, it, expect, jest } from "@jest/globals";
 import { fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
 import TransactionRow from "./TransactionRow";
+import type { DrilldownTarget } from "../lib/drilldown";
 import type { Transaction } from "../lib/types";
-
-type UpdateResult = { error: { message: string } | null };
-
-const mockEq = jest.fn((_col: string, _val: unknown): Promise<UpdateResult> => Promise.resolve({ error: null }));
-const mockUpdate = jest.fn((_payload: unknown) => ({ eq: mockEq }));
-const mockFrom = jest.fn((_table: string) => ({ update: mockUpdate }));
-
-jest.mock("../lib/supabase", () => ({
-  supabase: { from: (table: string) => mockFrom(table) },
-}));
 
 function makeRow(overrides: Partial<Transaction> = {}): Transaction {
   return {
@@ -29,12 +20,6 @@ function makeRow(overrides: Partial<Transaction> = {}): Transaction {
 }
 
 describe("TransactionRow", () => {
-  beforeEach(() => {
-    mockFrom.mockClear();
-    mockUpdate.mockClear();
-    mockEq.mockClear();
-  });
-
   it("renders payee, category, date, and amount", async () => {
     await renderWithTheme(<TransactionRow row={makeRow()} CATS={["Food"]} />);
     expect(screen.getByText("Chipotle")).toBeTruthy();
@@ -87,99 +72,69 @@ describe("TransactionRow", () => {
       );
     });
 
-    it("stays editable", async () => {
-      await renderWithTheme(<TransactionRow row={makeRow({ Pending: true })} CATS={["Food"]} />);
-      await fireEvent.press(screen.getByText("Chipotle"));
-      expect(screen.getByTestId("transaction-edit-payee-input").props.value).toBe("Chipotle");
+    it("still drills down", async () => {
+      const onDrilldown = jest.fn();
+      await renderWithTheme(
+        <TransactionRow row={makeRow({ Pending: true })} CATS={["Food"]} onDrilldown={onDrilldown} />
+      );
+      await fireEvent.press(screen.getByTestId("transaction-payee-button"));
+      expect(onDrilldown).toHaveBeenCalledWith({ kind: "payee", value: "Chipotle" });
     });
   });
 
-  it("is not pressable when the row has no Id (synthetic row)", async () => {
-    await renderWithTheme(<TransactionRow row={makeRow({ Id: undefined as unknown as number })} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    expect(screen.queryByDisplayValue("Chipotle")).toBeNull();
-  });
-
-  it("tapping a row enters edit mode with the current payee prefilled", async () => {
-    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    expect(screen.getByDisplayValue("Chipotle")).toBeTruthy();
-    expect(screen.getByTestId("transaction-edit-save-button")).toBeTruthy();
-    expect(screen.getByTestId("transaction-edit-cancel-button")).toBeTruthy();
-  });
-
-  it("cancel exits edit mode without saving", async () => {
-    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.press(screen.getByTestId("transaction-edit-cancel-button"));
-    expect(screen.queryByDisplayValue("Chipotle")).toBeNull();
-    expect(mockFrom).not.toHaveBeenCalled();
-  });
-
-  it("save sends the trimmed payee/category with manually_edited:true, scoped to the row's id", async () => {
-    const row = makeRow();
-    const onEdited = jest.fn();
-    await renderWithTheme(<TransactionRow row={row} CATS={[]} onEdited={onEdited} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.changeText(screen.getByDisplayValue("Chipotle"), "  Chipotle Mexican Grill  ");
-    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
-
-    await screen.findByText("Chipotle Mexican Grill");
-
-    expect(mockFrom).toHaveBeenCalledWith("transactions");
-    expect(mockUpdate).toHaveBeenCalledWith({
-      payee: "Chipotle Mexican Grill",
-      category: "Food:Restaurants",
-      manually_edited: true,
+  describe("drilldown", () => {
+    it("tapping the payee asks for that payee", async () => {
+      const onDrilldown = jest.fn<(t: DrilldownTarget) => void>();
+      await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} onDrilldown={onDrilldown} />);
+      await fireEvent.press(screen.getByTestId("transaction-payee-button"));
+      expect(onDrilldown).toHaveBeenCalledWith({ kind: "payee", value: "Chipotle" });
     });
-    expect(mockEq).toHaveBeenCalledWith("id", 1);
-    expect(onEdited).toHaveBeenCalled();
-  });
 
-  it("rejects an empty payee without calling supabase", async () => {
-    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.changeText(screen.getByDisplayValue("Chipotle"), "   ");
-    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
+    // The row's own full category, subcategory and all -- narrowing it to
+    // the top level is buildDrilldown's job, not the row's, so the row
+    // stays the one place that knows what it is displaying.
+    it("tapping the category badge asks for that category", async () => {
+      const onDrilldown = jest.fn<(t: DrilldownTarget) => void>();
+      await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} onDrilldown={onDrilldown} />);
+      await fireEvent.press(screen.getByTestId("transaction-category-badge"));
+      expect(onDrilldown).toHaveBeenCalledWith({ kind: "category", value: "Food:Restaurants" });
+    });
 
-    expect(screen.getByText("Payee can't be empty.")).toBeTruthy();
-    expect(mockFrom).not.toHaveBeenCalled();
-  });
+    // A row with no Id is a client-side synthetic one, which used to be
+    // the reason a row wasn't tappable (there was nothing to UPDATE). A
+    // drilldown writes nothing and reads only the payee and category, so
+    // the distinction no longer applies.
+    it("works on a row with no Id", async () => {
+      const onDrilldown = jest.fn<(t: DrilldownTarget) => void>();
+      await renderWithTheme(
+        <TransactionRow row={makeRow({ Id: undefined as unknown as number })} CATS={[]} onDrilldown={onDrilldown} />
+      );
+      await fireEvent.press(screen.getByTestId("transaction-payee-button"));
+      expect(onDrilldown).toHaveBeenCalledWith({ kind: "payee", value: "Chipotle" });
+    });
 
-  it("shows the update error and stays in edit mode when the save fails", async () => {
-    mockEq.mockImplementationOnce(() => Promise.resolve({ error: { message: "network error" } }));
-    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
+    it("is inert with no handler, rather than swallowing the tap", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
+      expect(screen.getByTestId("transaction-payee-button").props.accessibilityState?.disabled).toBe(true);
+      expect(screen.getByTestId("transaction-category-badge").props.accessibilityState?.disabled).toBe(true);
+      // No throw, no handler, nothing to assert beyond the row surviving
+      // a press it has nowhere to send.
+      await fireEvent.press(screen.getByTestId("transaction-payee-button"));
+      expect(screen.getByText("Chipotle")).toBeTruthy();
+    });
 
-    expect(await screen.findByText("network error")).toBeTruthy();
-    expect(screen.getByDisplayValue("Chipotle")).toBeTruthy();
-  });
-
-  it("the category picker sets the draft category, saved on Save", async () => {
-    const row = makeRow();
-    await renderWithTheme(<TransactionRow row={row} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-
-    expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Food:Restaurants");
-    await fireEvent.press(screen.getByTestId("transaction-edit-category-button"));
-    await fireEvent.press(await screen.findByTestId("picker-option-Dining"));
-
-    expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Dining");
-
-    await fireEvent.press(screen.getByTestId("transaction-edit-save-button"));
-    await screen.findByText("Chipotle");
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ category: "Dining" }));
-  });
-
-  it("closing the category picker without selecting keeps the previous draft category", async () => {
-    await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} />);
-    await fireEvent.press(screen.getByText("Chipotle"));
-    await fireEvent.press(screen.getByTestId("transaction-edit-category-button"));
-    await screen.findByTestId("picker-options-list");
-
-    await fireEvent.press(screen.getByTestId("picker-cancel-button"));
-
-    expect(screen.getByTestId("transaction-edit-category-button")).toHaveTextContent("Food:Restaurants");
+    // The amount and date name one transaction, so there is nothing to
+    // drill into from them -- and a whole-row press would have to guess
+    // which of the two queries a tap meant.
+    it("announces both targets as buttons, and says what they do", async () => {
+      await renderWithTheme(<TransactionRow row={makeRow()} CATS={[]} onDrilldown={jest.fn()} />);
+      const payee = screen.getByTestId("transaction-payee-button");
+      expect(payee.props.accessibilityRole).toBe("button");
+      expect(payee.props.accessibilityLabel).toBe("Chipotle");
+      expect(payee.props.accessibilityHint).toBe("Shows the last 12 months for this payee");
+      const badge = screen.getByTestId("transaction-category-badge");
+      expect(badge.props.accessibilityRole).toBe("button");
+      expect(badge.props.accessibilityHint).toBe("Shows the last 12 months for this category");
+    });
   });
 });

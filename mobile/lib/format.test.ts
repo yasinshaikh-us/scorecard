@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { daysBefore, fmtDate, fmtMonth, fmtGroupKey, fmtMoney, fmtQuarter, isDateKey } from "./format";
+import { daysBefore, fmtDate, fmtMonth, fmtGroupKey, fmtMoney, fmtQuarter, isDateKey, monthsBefore } from "./format";
 
 describe("daysBefore", () => {
   it("subtracts N days from a date, crossing a month boundary", () => {
@@ -17,6 +17,42 @@ describe("daysBefore", () => {
       const positiveOffset = daysBefore("2026-04-03", 7);
       expect(positiveOffset).toBe(negativeOffset);
       expect(positiveOffset).toBe("2026-03-27");
+    } finally {
+      process.env.TZ = original;
+    }
+  });
+});
+
+describe("monthsBefore", () => {
+  it("subtracts N months, crossing a year boundary", () => {
+    expect(monthsBefore("2026-09-08", 12)).toBe("2025-09-08");
+    expect(monthsBefore("2026-02-14", 3)).toBe("2025-11-14");
+  });
+
+  // Calendar arithmetic, not 365 days: a fixed day count drifts across a
+  // leap year, and "a year ago" on the 29th of February has to land
+  // somewhere real.
+  it("clamps into a shorter target month", () => {
+    expect(monthsBefore("2026-03-31", 1)).toBe("2026-02-28");
+    expect(monthsBefore("2024-03-31", 1)).toBe("2024-02-29");
+    expect(monthsBefore("2025-03-01", 12)).toBe("2024-03-01");
+    expect(monthsBefore("2024-02-29", 12)).toBe("2023-02-28");
+  });
+
+  it("handles a whole multiple of twelve, and zero", () => {
+    expect(monthsBefore("2026-09-08", 24)).toBe("2024-09-08");
+    expect(monthsBefore("2026-09-08", 0)).toBe("2026-09-08");
+  });
+
+  it("computes the same result regardless of the runtime's local timezone", () => {
+    const original = process.env.TZ;
+    try {
+      process.env.TZ = "America/Los_Angeles";
+      const negativeOffset = monthsBefore("2026-01-01", 12);
+      process.env.TZ = "Asia/Kolkata";
+      const positiveOffset = monthsBefore("2026-01-01", 12);
+      expect(positiveOffset).toBe(negativeOffset);
+      expect(positiveOffset).toBe("2025-01-01");
     } finally {
       process.env.TZ = original;
     }

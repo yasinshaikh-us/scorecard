@@ -1,133 +1,39 @@
-import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Check, ChevronDown, Clock, X } from "lucide-react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Clock } from "lucide-react-native";
 import { fmtDate, fmtMoney } from "../lib/format";
 import { catColor } from "../lib/palette";
 import { topCategory } from "../lib/logic";
-import { CATEGORIES } from "../lib/categories";
 import { iconForCategory } from "../lib/categoryIcons";
-import { supabase } from "../lib/supabase";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
-import IconButton from "./IconButton";
-import PickerModal from "./PickerModal";
+import type { DrilldownTarget } from "../lib/drilldown";
 import type { Transaction } from "../lib/types";
 
 // Shared by the Home screen's Recent Activity and Ask's QueryCard -- one
-// place for how a row looks (and how an edit is saved) so both lists stay
-// in sync. Payee/category are the only editable fields (amount/date come
-// from the bank), and only rows with a real Id (linked to a
-// `transactions` row, not a client-side synthetic one) are editable.
-export default function TransactionRow({ row, CATS, onEdited }: { row: Transaction; CATS: string[]; onEdited?: () => void }) {
+// place for how a row looks, so both lists stay in sync.
+//
+// The two identifying fields are the row's controls: tapping the payee or
+// the category badge asks for the last twelve months of that payee or
+// that category (see lib/drilldown.ts for the query, and the screens for
+// where the answer lands). Amount and date are inert -- they name one
+// transaction, and one transaction has nothing to drill into.
+//
+// This replaced inline editing, which owned the whole row's press. The
+// two cannot share it: a row that both edits and queries has to guess
+// which one a tap meant, and the fields worth querying are exactly the
+// two that used to be editable. Recategorizing lives in the rules panel
+// (CategoryRulesPanel), which fixes a merchant everywhere instead of one
+// row at a time.
+export default function TransactionRow({
+  row,
+  CATS,
+  onDrilldown,
+}: {
+  row: Transaction;
+  CATS: string[];
+  onDrilldown?: (target: DrilldownTarget) => void;
+}) {
   const { colors, mode } = useTheme();
-  const [editing, setEditing] = useState(false);
-  const [draftPayee, setDraftPayee] = useState(row.Payee);
-  const [draftCategory, setDraftCategory] = useState(row.Category);
-  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function startEdit() {
-    setDraftPayee(row.Payee);
-    setDraftCategory(row.Category);
-    setError(null);
-    setEditing(true);
-  }
-
-  async function save() {
-    const trimmed = draftPayee.trim();
-    if (!trimmed) {
-      setError("Payee can't be empty.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    // manually_edited=true so apply_category_rules() and the Plaid sync
-    // path both leave this row alone from now on -- otherwise the next
-    // rule change (or a later Plaid "modified" update) would silently
-    // overwrite this edit.
-    const { error: updateError } = await supabase
-      .from("transactions")
-      .update({ payee: trimmed, category: draftCategory, manually_edited: true })
-      .eq("id", row.Id);
-    setSaving(false);
-    if (updateError) {
-      setError(updateError.message);
-      return;
-    }
-    row.Payee = trimmed;
-    row.Category = draftCategory;
-    setEditing(false);
-    onEdited?.();
-  }
-
-  const DraftIcon = iconForCategory(topCategory(draftCategory));
-
-  if (editing) {
-    return (
-      <View style={[styles.editingRow, { borderBottomColor: colors.borderSubtle }]}>
-        <TextInput
-          testID="transaction-edit-payee-input"
-          style={[styles.editInput, { borderColor: colors.border, color: colors.text, fontFamily: fontFamily.regular }]}
-          value={draftPayee}
-          onChangeText={setDraftPayee}
-          editable={!saving}
-          autoFocus
-        />
-        {/* The one control here that keeps its words. It is a value being
-            chosen, not an action being taken, and the icon alone would
-            make the user decode the glyph set to read their own data
-            back. Icon plus name, so it still ties to the row's marker. */}
-        <Pressable
-          testID="transaction-edit-category-button"
-          style={[styles.categorySelectBtn, { borderColor: colors.border }]}
-          onPress={() => setCategoryPickerOpen(true)}
-          disabled={saving}
-          accessibilityLabel={`Category: ${draftCategory}`}
-        >
-          <View style={styles.categorySelectValue}>
-            <DraftIcon size={14} color={catColor(draftCategory, CATS, topCategory, mode)} />
-            <Text style={[styles.categorySelectText, { color: colors.text, fontFamily: fontFamily.regular }]} numberOfLines={1}>
-              {draftCategory}
-            </Text>
-          </View>
-          <ChevronDown size={14} color={colors.textMuted} />
-        </Pressable>
-        <View style={styles.editActions}>
-          <IconButton
-            testID="transaction-edit-cancel-button"
-            onPress={() => setEditing(false)}
-            disabled={saving}
-            size={36}
-            accessibilityLabel="Discard changes"
-          >
-            <X size={17} color={colors.textMuted} />
-          </IconButton>
-          {/* Saving swaps the check for a spinner inside the same circle,
-              so the affirmative control never moves or disappears
-              mid-save -- the button the thumb is already on stays put. */}
-          <IconButton
-            testID="transaction-edit-save-button"
-            onPress={save}
-            disabled={saving}
-            size={36}
-            variant="accent"
-            accessibilityLabel={saving ? "Saving" : "Save changes"}
-          >
-            {saving ? <ActivityIndicator size="small" color={colors.bg} /> : <Check size={18} color={colors.bg} />}
-          </IconButton>
-        </View>
-        {error ? <Text style={[styles.errorText, { color: colors.danger, fontFamily: fontFamily.regular }]}>{error}</Text> : null}
-        <PickerModal
-          visible={categoryPickerOpen}
-          title="Category"
-          options={CATEGORIES.map((c) => ({ label: c, value: c }))}
-          onSelect={setDraftCategory}
-          onClose={() => setCategoryPickerOpen(false)}
-        />
-      </View>
-    );
-  }
 
   const color = catColor(row.Category, CATS, topCategory, mode);
   const Icon = iconForCategory(topCategory(row.Category));
@@ -141,27 +47,43 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
   // line up down the list however long the payee names are. The date gets
   // the second line to itself.
   return (
-    <Pressable
-      testID="transaction-row"
-      style={[styles.row, { borderBottomColor: colors.borderSubtle }]}
-      onPress={row.Id != null ? startEdit : undefined}
-      disabled={row.Id == null}
-    >
+    <View testID="transaction-row" style={[styles.row, { borderBottomColor: colors.borderSubtle }]}>
       <View style={styles.topRow}>
-        <Text style={[styles.payee, { color: colors.text, fontFamily: fontFamily.regular }]} numberOfLines={1}>
-          {row.Payee}
-        </Text>
+        {/* The payee is the tap target rather than a button beside it:
+            adding a control per queryable field would put two more glyphs
+            on the densest row in the app, and the name IS the thing being
+            asked about. No underline or accent colour -- the row has to
+            stay a list of transactions first. */}
+        <Pressable
+          testID="transaction-payee-button"
+          style={styles.payeeCol}
+          onPress={onDrilldown ? () => onDrilldown({ kind: "payee", value: row.Payee }) : undefined}
+          disabled={!onDrilldown}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={row.Payee}
+          accessibilityHint="Shows the last 12 months for this payee"
+        >
+          <Text style={[styles.payee, { color: colors.text, fontFamily: fontFamily.regular }]} numberOfLines={1}>
+            {row.Payee}
+          </Text>
+        </Pressable>
         {/* Icon-only: the name is redundant next to a color-coded glyph
             the user already learns from the chart axis, and dropping it
             is what let the row compress to two tight lines. The label is
             what a screen reader reads instead. */}
-        <View
+        <Pressable
           testID="transaction-category-badge"
+          accessibilityRole="button"
           accessibilityLabel={`Category: ${row.Category}`}
+          accessibilityHint="Shows the last 12 months for this category"
+          onPress={onDrilldown ? () => onDrilldown({ kind: "category", value: row.Category }) : undefined}
+          disabled={!onDrilldown}
+          hitSlop={8}
           style={styles.categoryCol}
         >
           <Icon size={15} color={color} />
-        </View>
+        </Pressable>
         <Text style={[styles.amount, { color: amountColor, fontFamily: fontFamily.mono }]}>{fmtMoney(row.Amount)}</Text>
       </View>
       {/* The date line, and -- for a charge the bank has authorized but
@@ -186,7 +108,7 @@ export default function TransactionRow({ row, CATS, onEdited }: { row: Transacti
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -196,49 +118,23 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  // Column flow (RN's default), not row: editInput/categorySelectBtn's
-  // own marginBottom already assumes a vertical stack, but this branch
-  // used to reuse the read-only row's flexDirection: "row" wrapper. With
-  // a long real payee string (a real Stage 2 run hit "Ach Electronic
-  // Creditgusto Pay 123456"), the unconstrained-width TextInput consumed
-  // nearly the whole row, pushing editActions (Cancel/Save) off-screen
-  // entirely -- confirmed via that run's failure video, which showed the
-  // payee input and category button on one line with no Save/Cancel
-  // anywhere below or beside them. Never caught by Stage 1's component
-  // tests, which use a short payee ("Chipotle") and don't measure real
-  // layout/visibility at all.
-  editingRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
   topRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   // 15/11, not the 13/10.5 the design pass moved them to. This is the
   // densest text in the app and the only screen most sessions ever see;
   // at 13 the payee and at 10.5 the date both read as fine print on a
   // real phone, whatever they looked like in a mockup. The flex layout
   // around them is unchanged -- only the sizes come back.
-  payee: { flex: 1, minWidth: 0, fontSize: 15 },
+  //
+  // The flex lives on the Pressable wrapping the payee, not on the Text
+  // inside it: an auto-width Pressable would only be tappable across the
+  // string's own width, and would stop shrinking a long payee to one
+  // line.
+  payeeCol: { flex: 1, minWidth: 0 },
+  payee: { fontSize: 15 },
   categoryCol: { flexBasis: 22, flexGrow: 0, flexShrink: 0, alignItems: "center", justifyContent: "center" },
   amount: { flexBasis: 112, flexGrow: 0, flexShrink: 0, textAlign: "right", fontSize: 15, fontWeight: "600" },
   dateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 },
   date: { fontSize: 11 },
   pendingBadge: { flexDirection: "row", alignItems: "center", gap: 3 },
   pendingText: { fontSize: 11 },
-  editInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginBottom: 8 },
-  categorySelectBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  categorySelectValue: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 },
-  categorySelectText: { fontSize: 13 },
-  editActions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 10 },
-  errorText: { fontSize: 12, marginTop: 6 },
 });

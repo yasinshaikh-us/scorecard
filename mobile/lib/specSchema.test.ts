@@ -54,6 +54,12 @@ describe("normalizeSpec", () => {
     });
   });
 
+  it("keeps a payeeExact, and trims it like every other substring field", () => {
+    expect(normalizeSpec({ payeeExact: "  Chipotle  " }).spec.payeeExact).toBe("Chipotle");
+    expect(normalizeSpec({ payeeExact: "y".repeat(500) }).spec.payeeExact).toHaveLength(100);
+    expect(normalizeSpec({ payeeExact: 7 }).spec.payeeExact).toBeNull();
+  });
+
   // The one that motivated all of this: a relative date string sorts
   // above every ISO date, so the filter drops every row and the card
   // reports "no matching transactions" as if that were the answer.
@@ -179,7 +185,7 @@ describe("normalizeSpec under garbage", () => {
 
   const FIELDS = [
     "chartType", "groupBy", "type", "metric", "seriesBy", "dateStart", "dateEnd",
-    "categories", "excludeCategories", "categoryContains", "payeeContains", "payeeAny",
+    "categories", "excludeCategories", "categoryContains", "payeeContains", "payeeExact", "payeeAny",
     "accountContains", "amountMin", "amountMax", "limit", "includeTransfers",
     "recurringOnly", "compareTo", "target", "forecast", "title", "isLedgerQuery",
     "__proto__", "constructor", "toString", "0", "", "a".repeat(200),

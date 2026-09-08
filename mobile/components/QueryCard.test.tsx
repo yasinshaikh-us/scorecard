@@ -26,9 +26,13 @@ jest.mock("./Chart", () => {
 });
 
 jest.mock("./TransactionRow", () => {
-  const { Text: RNText } = require("react-native");
-  return function MockTransactionRow({ row }: { row: Transaction }) {
-    return <RNText testID="tx-row">{row.Payee}</RNText>;
+  const { Text: RNText, Pressable: RNPressable } = require("react-native");
+  return function MockTransactionRow({ row, onDrilldown }: any) {
+    return (
+      <RNPressable testID="tx-row-drill" onPress={() => onDrilldown?.({ kind: "payee", value: row.Payee })}>
+        <RNText testID="tx-row">{row.Payee}</RNText>
+      </RNPressable>
+    );
   };
 });
 
@@ -284,5 +288,25 @@ describe("QueryCard", () => {
     // The stat line counts only what actually happened.
     expect(screen.getByTestId("query-stat-total")).toHaveTextContent("$600.00");
     expect(screen.getByTestId("query-stat-count")).toHaveTextContent("3");
+  });
+
+  // The rows in a card are the same TransactionRow the Home list uses, so
+  // a card is also where the next drilldown starts -- the Ask screen
+  // answers it by replacing this card.
+  it("hands a row's drilldown up to whoever owns the feed", async () => {
+    const onDrilldown = jest.fn();
+    const spec: QuerySpec = { chartType: "bar", groupBy: "category" };
+    await renderWithTheme(
+      <QueryCard
+        card={{ id: 1, question: "everything", spec }}
+        transactions={[tx({ Id: 1, Payee: "Safeway" })]}
+        CATS={CATS}
+        onRemove={jest.fn()}
+        onDrilldown={onDrilldown}
+      />
+    );
+
+    await fireEvent.press(screen.getByTestId("tx-row-drill"));
+    expect(onDrilldown).toHaveBeenCalledWith({ kind: "payee", value: "Safeway" });
   });
 });

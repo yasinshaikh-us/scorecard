@@ -21,6 +21,7 @@ import {
 } from "../lib/logic";
 import { useTheme } from "../lib/ThemeProvider";
 import { fontFamily } from "../lib/theme";
+import type { DrilldownTarget } from "../lib/drilldown";
 import type { Transaction } from "../lib/types";
 
 type Card = { id: number; question: string; pending?: boolean } & Partial<QueryResult>;
@@ -33,13 +34,15 @@ export default function QueryCard({
   transactions,
   CATS,
   onRemove,
-  onTransactionEdited,
+  onDrilldown,
 }: {
   card: Card;
   transactions: Transaction[];
   CATS: string[];
   onRemove: () => void;
-  onTransactionEdited?: () => void;
+  // Tapping a payee or category inside this card's own row list asks the
+  // next question, which the Ask screen answers by replacing this card.
+  onDrilldown?: (target: DrilldownTarget) => void;
 }) {
   const { colors } = useTheme();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -227,7 +230,7 @@ export default function QueryCard({
 
       <View>
         {visibleRows.map((d, i) => (
-          <TransactionRow key={d.Id ?? i} row={d} CATS={CATS} onEdited={onTransactionEdited} />
+          <TransactionRow key={d.Id ?? i} row={d} CATS={CATS} onDrilldown={onDrilldown} />
         ))}
         {sortedRows.length > visibleRows.length ? (
           <Text

@@ -49,6 +49,11 @@ export type QuerySpec = {
   excludeCategories?: string[] | null;
   categoryContains?: string | null;
   payeeContains?: string | null;
+  // One merchant and only that merchant, matched whole rather than as a
+  // substring. What a tap on a payee means (see lib/drilldown.ts): tapping
+  // "Uber" is a question about Uber, and payeeContains would answer it
+  // with Uber Eats folded in.
+  payeeExact?: string | null;
   // Several merchants at once: "Chipotle vs Sweetgreen" is one question,
   // and a single substring can't express it.
   payeeAny?: string[] | null;
@@ -111,6 +116,10 @@ export function filterTransactions(rows: Transaction[], spec: QuerySpec | null):
     if (spec.excludeCategories && spec.excludeCategories.includes(topCategory(d.Category))) return false;
     if (spec.categoryContains && !d.Category.toLowerCase().includes(spec.categoryContains.toLowerCase())) return false;
     if (spec.payeeContains && !d.Payee.toLowerCase().includes(spec.payeeContains.toLowerCase())) return false;
+    // Case-insensitive like every other payee comparison here: the same
+    // merchant can arrive from Plaid capitalised differently on different
+    // rows, and a tap on one of them means all of them.
+    if (spec.payeeExact && d.Payee.toLowerCase() !== spec.payeeExact.toLowerCase()) return false;
     if (spec.payeeAny && spec.payeeAny.length) {
       const payee = d.Payee.toLowerCase();
       if (!spec.payeeAny.some((p) => payee.includes(p.toLowerCase()))) return false;
