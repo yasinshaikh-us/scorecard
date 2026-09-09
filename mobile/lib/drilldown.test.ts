@@ -1,6 +1,6 @@
 import { describe, it, expect } from "@jest/globals";
 import { buildDrilldown } from "./drilldown";
-import { filterTransactions } from "./logic";
+import { buildChartData, fillDateBuckets, filterTransactions, resolveSpec } from "./logic";
 import type { Transaction } from "./types";
 
 function tx(overrides: Partial<Transaction> = {}): Transaction {
@@ -27,17 +27,20 @@ describe("buildDrilldown", () => {
       expect(spec.title).toBe("All activity at Chipotle");
       expect(spec.payeeExact).toBe("Chipotle");
       expect(spec.categories).toBeNull();
-      expect(spec.dateStart).toBe("2025-09-08");
+      // The first of the month eleven months back: that month through
+      // this one is twelve, where a day-anchored year would span
+      // thirteen partial ones.
+      expect(spec.dateStart).toBe("2025-10-01");
       expect(spec.dateEnd).toBeNull();
     });
 
-    // Both directions and a signed metric: a payee can pay you (an
-    // employer, a refund), and a chart summing magnitudes would draw that
-    // refund as more spending.
-    it("covers income as well as expenses", () => {
+    // Magnitudes, so both directions stack up the positive axis -- a
+    // signed metric put every expense-only payee under a half-empty
+    // chart with its month labels drawn over the bars.
+    it("covers income as well as expenses, both above the axis", () => {
       const { spec } = buildDrilldown({ kind: "payee", value: "Acme Payroll" }, TODAY);
       expect(spec.type).toBe("all");
-      expect(spec.metric).toBe("net");
+      expect(spec.metric).toBe("sum");
     });
 
     it("groups into monthly bars", () => {
@@ -65,9 +68,9 @@ describe("buildDrilldown", () => {
 
     it("uses the same window, metric and grouping as a payee drilldown", () => {
       const { spec } = buildDrilldown({ kind: "category", value: "Food" }, TODAY);
-      expect(spec.dateStart).toBe("2025-09-08");
+      expect(spec.dateStart).toBe("2025-10-01");
       expect(spec.type).toBe("all");
-      expect(spec.metric).toBe("net");
+      expect(spec.metric).toBe("sum");
       expect(spec.groupBy).toBe("month");
     });
   });
@@ -79,6 +82,54 @@ describe("buildDrilldown", () => {
   it("leaves the window open when the ledger has no dates yet", () => {
     const { spec } = buildDrilldown({ kind: "payee", value: "Chipotle" }, "");
     expect(spec.dateStart).toBeNull();
+  });
+
+  // The window a tap asked for, not the one the payee's billing happens
+  // to cover. A sporadic merchant drew six or seven bars and read as an
+  // answer about the last twelve months.
+  describe("the twelve months are always all there", () => {
+    const sparse = [
+      tx({ Id: 1, Date: "2026-09-02", Amount: -20 }),
+      tx({ Id: 2, Date: "2026-06-14", Amount: -30 }),
+      tx({ Id: 3, Date: "2025-11-30", Amount: -40 }),
+    ];
+
+    function drilldownChart(rows: Transaction[]) {
+      const { spec } = buildDrilldown({ kind: "payee", value: "Chipotle" }, TODAY);
+      const filtered = filterTransactions(rows, spec);
+      return fillDateBuckets(buildChartData(filtered, resolveSpec(filtered, spec)), spec, TODAY);
+    }
+
+    it("draws twelve consecutive monthly buckets from three transactions", () => {
+      const data = drilldownChart(sparse);
+      expect(data).toHaveLength(12);
+      expect(data[0].key).toBe("2025-10");
+      expect(data[11].key).toBe("2026-09");
+      expect(data.map((d) => d.key)).toEqual([...new Set(data.map((d) => d.key))]);
+    });
+
+    it("gives the empty months a zero bucket rather than no bucket", () => {
+      const byKey = Object.fromEntries(drilldownChart(sparse).map((d) => [d.key, d]));
+      expect(byKey["2025-12"]).toMatchObject({ total: 0, sum: 0, count: 0 });
+      expect(byKey["2026-06"]).toMatchObject({ total: 30, count: 1 });
+      expect(byKey["2025-11"]).toMatchObject({ total: 40, count: 1 });
+    });
+
+    // resolveSpec re-groups a single-bucket answer to expose its shape,
+    // which is the wrong instinct here: it would answer a twelve-month
+    // question with a handful of days.
+    it("keeps the monthly grouping when every row lands in one month", () => {
+      const oneMonth = [tx({ Id: 1, Date: "2026-09-02" }), tx({ Id: 2, Date: "2026-09-20" })];
+      const data = drilldownChart(oneMonth);
+      expect(data).toHaveLength(12);
+      expect(data[11].key).toBe("2026-09");
+    });
+
+    it("still draws the twelve months when the payee has nothing in any of them", () => {
+      const data = drilldownChart([tx({ Id: 1, Payee: "Somewhere Else", Date: "2026-09-02" })]);
+      expect(data).toHaveLength(12);
+      expect(data.every((d) => d.count === 0)).toBe(true);
+    });
   });
 
   describe("what the spec actually matches", () => {

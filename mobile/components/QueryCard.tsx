@@ -7,6 +7,7 @@ import {
   budgetProgress,
   buildChartData,
   buildSeriesData,
+  fillDateBuckets,
   forecastBuckets,
   projectRunRate,
   seriesKeyOf,
@@ -74,8 +75,11 @@ export default function QueryCard({
     () => transactions.reduce((latest, d) => (d.Date > latest ? d.Date : latest), ""),
     [transactions]
   );
+  // Filled before it is forecast: both add buckets the rows did not
+  // produce, and a projection belongs after the window it projects from,
+  // not interleaved with the empty months inside it.
   const chartData = useMemo(
-    () => forecastBuckets(buildChartData(baseFiltered, chartSpec), chartSpec, today),
+    () => forecastBuckets(fillDateBuckets(buildChartData(baseFiltered, chartSpec), chartSpec, today), chartSpec, today),
     [baseFiltered, chartSpec, today]
   );
   const seriesData = useMemo(() => buildSeriesData(baseFiltered, chartSpec), [baseFiltered, chartSpec]);

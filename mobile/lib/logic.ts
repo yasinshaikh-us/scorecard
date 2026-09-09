@@ -83,6 +83,17 @@ export type QuerySpec = {
   // filter (regularity is a property of a payee's whole history), so it
   // is applied by filterRecurring rather than by filterTransactions.
   recurringOnly?: boolean;
+  // The window and the grouping were chosen deliberately, not inferred
+  // from a question -- what a drilldown does (lib/drilldown.ts). Two
+  // consequences, both about showing the window the tap ASKED for rather
+  // than the one the matching rows happen to span: resolveSpec leaves
+  // the grouping alone instead of re-deriving it, and the chart carries
+  // a bucket for every period in the window, including the empty ones.
+  //
+  // Client-set only. It is deliberately not in normalizeSpec: the model
+  // is never told about it, and a spec that claimed it would switch off
+  // protections written for specs the model DID write.
+  fixedWindow?: boolean;
   // Re-runs the same filter over the equal-length window immediately
   // before this one, so the card can answer "more or less than last
   // time".
@@ -357,6 +368,10 @@ export function spanDays(rows: Transaction[]): number {
 // the stat line above the chart where a single number belongs.
 export function resolveSpec(filteredRows: Transaction[], spec: QuerySpec | null): QuerySpec | null {
   if (!spec || !spec.groupBy || spec.groupBy === "none" || spec.groupBy === "transaction") return spec;
+  // Nothing to re-derive: this spec's grouping is the answer, not a
+  // guess at one. Everything below re-groups a spec whose grouping came
+  // from a question, and a drilldown asked for twelve months of months.
+  if (spec.fixedWindow) return spec;
   // One transaction has no trend to expose -- the stat line above the
   // chart already says everything a re-grouping could.
   if (filteredRows.length < 2) return spec;
@@ -736,6 +751,48 @@ export function periodEnd(key: string, groupBy: string): string {
     return daysBefore(`${y}-${String((q - 1) * 3 + 1).padStart(2, "0")}-01`, 1);
   }
   return daysBefore(`${next}-01`, 1);
+}
+
+// The bucket key a date falls in. groupKeyOf reads nothing but `Date`
+// for a date-based grouping, so a bare date is all it needs.
+const dateBucketKey = (iso: string, groupBy: QuerySpec["groupBy"]) =>
+  groupKeyOf({ groupBy } as QuerySpec, { Date: iso } as Transaction);
+
+// Every period in a fixedWindow spec's window, empty ones included.
+//
+// buildChartData only ever creates a bucket for a period that HAS rows,
+// which is right for a question about the data and wrong for a question
+// about a window: tapping a payee that bills sporadically drew six or
+// seven bars and silently answered "the months it billed in" instead of
+// "the last twelve months". A month with no activity is a fact about the
+// payee, and an empty slot on the axis is how a chart says it.
+//
+// Bails rather than filling when the window would need more buckets than
+// the card can draw -- resolveSpec's own ceiling, and the guard against
+// a fixedWindow spec whose grouping is finer than its window is long.
+export function fillDateBuckets(data: ChartDatum[], spec: QuerySpec | null, today: string): ChartDatum[] {
+  if (!spec?.fixedWindow || !spec.dateStart || !isDateKey(spec.groupBy || "")) return data;
+  const end = spec.dateEnd || today;
+  if (!end || end < spec.dateStart) return data;
+
+  const endKey = dateBucketKey(end, spec.groupBy);
+  const keys: string[] = [];
+  for (let key = dateBucketKey(spec.dateStart, spec.groupBy); key <= endKey; key = nextPeriodKey(key, spec.groupBy!)) {
+    if (keys.length > MAX_DRAWABLE_BUCKETS) return data;
+    keys.push(key);
+  }
+
+  // A bucket outside the window should be impossible -- filterTransactions
+  // applied the same bounds before these were built -- so if one turns up,
+  // the window and the data disagree about something this function has no
+  // way to reconcile. Leave the chart exactly as it was found: dropping a
+  // bucket that holds real transactions is the one outcome worth ruling
+  // out rather than reasoning about.
+  const wanted = new Set(keys);
+  if (data.some((d) => !wanted.has(d.key))) return data;
+
+  const byKey = new Map(data.map((d) => [d.key, d]));
+  return keys.map((key) => byKey.get(key) ?? { key, total: 0, sum: 0, net: 0, count: 0 });
 }
 
 // How far ahead each granularity projects. A year of projected years is

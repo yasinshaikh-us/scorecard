@@ -16,12 +16,13 @@
 import { monthsBefore } from "./format";
 import { topCategory, type QuerySpec } from "./logic";
 
-// Twelve, and anchored the same way the model is told to anchor a
-// range-less question (see _shared/querySystemPrompt.ts: "Default the
-// window to the last 12 months ... dateStart exactly one year before
-// today, dateEnd null"). Tapping a payee and typing "how much at
-// <payee>" therefore cover the same window rather than two windows that
-// happen to look alike.
+// Twelve CALENDAR months, ending with the one the ledger is currently
+// in -- so the chart carries twelve monthly bars, not the thirteen
+// partial ones a day-anchored "one year ago today" spans. The model is
+// told to anchor a range-less question a year back to the day (see
+// _shared/querySystemPrompt.ts), which is right for a total and wrong
+// for an axis: it would leave the first and last bars covering part of
+// a month each and reading as a dip that isn't there.
 export const DRILLDOWN_MONTHS = 12;
 
 export type DrilldownTarget = { kind: "payee" | "category"; value: string };
@@ -45,10 +46,24 @@ export function buildDrilldown(target: DrilldownTarget, today: string): Drilldow
     // (an employer, a refunding retailer, a broker) and the question a
     // tap asks is "what moved", not "what did I spend".
     type: "all",
-    // Signed, so an expense month reads below the axis and an income
-    // month above it. A sum of magnitudes would draw a refund as more
-    // spending.
-    metric: "net",
+    // Magnitudes, not the signed net this first shipped with.
+    //
+    // "net" reads better in principle -- an expense month below the axis,
+    // an income month above it, a refund subtracting rather than adding.
+    // On a real device it does not: one payee's months almost always
+    // share a sign, and then the signed axis reserves the whole opposite
+    // half for data that does not exist AND the bars grow downward
+    // through the strip the month labels are drawn in. Stage 2 run 146's
+    // screenshots have twelve Chipotle bars hanging under a $0-to-$100
+    // void with "Dec", "Jun" and "Sep" unreadable on top of them; every
+    // assertion in that spec passed, because every element was present.
+    //
+    // "sum" also agrees with the stat line above the chart, which totals
+    // magnitudes whatever the metric -- under "net" the card's own
+    // headline figure and its bars were measuring two different things.
+    // Direction is not lost: it is on every row below, red for out and
+    // green for in.
+    metric: "sum",
     // Twelve monthly buckets is one screenful of bars and the smallest
     // grouping that still shows a year's shape. Bars rather than the
     // line a monthly grouping usually gets (chartTypeForGranularity):
@@ -56,11 +71,18 @@ export function buildDrilldown(target: DrilldownTarget, today: string): Drilldow
     // through those gaps implies a continuity the ledger doesn't have.
     groupBy: "month",
     chartType: "bar",
-    dateStart: today ? monthsBefore(today, DRILLDOWN_MONTHS) : null,
+    // The FIRST of the month, DRILLDOWN_MONTHS - 1 months back: that
+    // month plus every one after it up to today's is exactly twelve.
+    dateStart: today ? `${monthsBefore(today, DRILLDOWN_MONTHS - 1).slice(0, 7)}-01` : null,
     // Left open, like the model's own default -- the ledger ends at
     // `today` by definition, so a bound there only risks excluding a row
     // dated the same day.
     dateEnd: null,
+    // Show the window that was asked for, not the one the matching rows
+    // happen to span: twelve bars whatever the payee's billing looks
+    // like, and no re-grouping when they all land in one month. See
+    // QuerySpec.fixedWindow.
+    fixedWindow: true,
     payeeExact: isPayee ? value : null,
     categories: isPayee ? null : [value],
     title: isPayee ? `All activity at ${value}` : `All ${value} activity`,
