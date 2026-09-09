@@ -2,7 +2,7 @@
 // injected by detox/runners/jest/testEnvironment (see e2e/jest.config.js).
 //
 // Broader Stage 2 coverage beyond sign-in and Plaid Link: the rest of the
-// app's screens and buttons (Rules engine, transaction editing, account
+// app's screens and buttons (Rules engine, row drilldowns, account
 // management banners, tab navigation, Ask). Deliberately ONE spec file,
 // not several -- each `describe` block's own `device.launchApp` reinstalls
 // the app, and that reinstall (not the interactions themselves) is most of
@@ -39,6 +39,7 @@
 // throws; and rows are addressed by identity (`rule-*-${value}` testIDs,
 // see CategoryRulesPanel.tsx) rather than by position, so an unexpected
 // row can no longer misdirect a tap.
+const assert = require("node:assert");
 const { captureScreen } = require("./screenshot");
 const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
 const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require("./session");
@@ -46,6 +47,29 @@ const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require(
 // Namespaced per run, so a Stage 2 job running concurrently on another ref
 // cannot collide with these and afterEach can delete exactly what this run
 // created -- nothing more.
+// The payee/category a drilldown spec is about, read off the row it is
+// about to tap rather than assumed. TransactionRow gives both controls an
+// accessibilityLabel (that is the whole screen-reader surface of an
+// icon-only badge), which Detox surfaces as `label` on Android.
+//
+// assert.ok on the way through, so a label that stops being set fails
+// here saying so, instead of quietly asserting on the text "All activity
+// at undefined" and reporting a missing view.
+async function payeeOfTopRow() {
+  const { label } = await element(by.id("transaction-payee-button")).atIndex(0).getAttributes();
+  assert.ok(label, "transaction-payee-button has no accessibility label to read the payee from");
+  return label;
+}
+
+// "Category: Food:Restaurants" -> "Food": the badge names the row's full
+// category, and a drilldown widens it to the top level (see
+// lib/drilldown.ts), which is what the title says.
+async function categoryOfTopRow() {
+  const { label } = await element(by.id("transaction-category-badge")).atIndex(0).getAttributes();
+  assert.ok(label, "transaction-category-badge has no accessibility label to read the category from");
+  return label.replace(/^Category: /, "").split(":")[0];
+}
+
 const CATEGORY_RULE_VALUE = runScopedRuleValue("cat");
 const PAYEE_RULE_VALUE = runScopedRuleValue("payee");
 const RENAMED_PAYEE = "E2E Renamed Payee";
@@ -230,59 +254,81 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
-  it("Transaction row: edit and save a category change", async () => {
-    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
-    await element(by.id("transaction-row")).atIndex(0).tap();
+  // Tapping a payee or a category runs a fixed twelve-month query, built
+  // on the device with no call to the `query` Edge Function (see
+  // lib/drilldown.ts) -- so unlike every Ask spec below, these can assert
+  // the card's exact TITLE, not just that some card came back: no model
+  // chose it.
+  //
+  // The title names the payee/category that was tapped, and which row is
+  // top of the seeded ledger is not fixed, so each spec reads the row's
+  // own accessibility label first and builds the exact string it expects.
+  //
+  // NOT by.text(/a regex/), which is what the first version of these
+  // specs used. Detox accepts a RegExp on Android, but hands it to Java
+  // as a whole-string pattern, so a partial one like /^All activity at /
+  // selects nothing -- run 144 failed all three here with "Got: was
+  // null" on the line straight after the card itself was asserted
+  // visible. An exact string is matched the same way on both platforms.
+  it("Transaction row: tapping a payee asks for that payee's last 12 months", async () => {
+    await waitFor(element(by.id("transaction-payee-button")).atIndex(0)).toBeVisible().withTimeout(10000);
+    const payee = await payeeOfTopRow();
+    await element(by.id("transaction-payee-button")).atIndex(0).tap();
 
-    // tapReturnKey(), not straight into the next tap: transaction-edit-
-    // payee-input is autoFocus (see TransactionRow.tsx), so the software
-    // keyboard is already up the moment edit mode opens. A real run hit
-    // exactly the same class of issue this caused in the Rules engine
-    // test (see its own tapReturnKey() comment above) -- the very next
-    // tap can get eaten as a keyboard dismiss instead of reaching the
-    // button underneath, so the picker never opens.
-    await element(by.id("transaction-edit-payee-input")).tapReturnKey();
-    await element(by.id("transaction-edit-category-button")).tap();
-    // by.id, not by.text("Miscellaneous"): a real run showed that text
-    // matching 8 views at once -- every already-categorized transaction
-    // row's own category badge reads "Miscellaneous" too, not just the
-    // picker option -- see PickerModal.tsx's header comment.
-    await element(by.id("picker-option-Miscellaneous")).tap();
-    await element(by.id("transaction-edit-save-button")).tap();
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(10000);
+    await waitFor(element(by.text(`All activity at ${payee}`))).toBeVisible().withTimeout(10000);
+    await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(10000);
+    // The row that was tapped is inside its own result, so this can never
+    // be an empty card.
+    await expect(element(by.id("transaction-row")).atIndex(0)).toBeVisible();
+    await captureScreen("drilldown-payee");
 
-    // Waiting for the (post-save, non-editing) category badge to actually
-    // read "Miscellaneous" is a positive signal that both the save
-    // completed AND edit mode closed -- no need to separately wait for
-    // the edit UI to disappear.
-    await waitFor(element(by.id("transaction-category-badge")).atIndex(0))
-      .toHaveLabel("Category: Miscellaneous")
-      .withTimeout(10000);
-    await captureScreen("transaction-edited");
+    await element(by.id("query-card-close-button")).tap();
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
-  it("Transaction row: Cancel discards edits without saving", async () => {
-    await waitFor(element(by.id("transaction-row")).atIndex(0)).toBeVisible().withTimeout(10000);
-    await element(by.id("transaction-row")).atIndex(0).tap();
+  it("Transaction row: tapping a category asks for that category's last 12 months", async () => {
+    await waitFor(element(by.id("transaction-category-badge")).atIndex(0)).toBeVisible().withTimeout(10000);
+    const category = await categoryOfTopRow();
+    await element(by.id("transaction-category-badge")).atIndex(0).tap();
 
-    // setInputText replaces the field's whole contents, so the separate
-    // clearText() is no longer needed. It also keeps the dismiss-before-
-    // tap bracket this line has always needed: the same
-    // keyboard-eats-the-next-tap issue as every other input-then-button
-    // sequence here (a real run had Cancel's tap silently miss, leaving
-    // the editor open).
-    //
-    // Worth doing even though a scrambled value could not fail the
-    // assertion below (it checks the text is ABSENT, so a transposed
-    // string would pass vacuously) -- that is exactly what makes it worth
-    // fixing: the test would have kept reporting green while no longer
-    // testing what it claims to.
-    await setInputText("transaction-edit-payee-input", "Should Not Save");
-    await element(by.id("transaction-edit-cancel-button")).tap();
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(10000);
+    await waitFor(element(by.text(`All ${category} activity`))).toBeVisible().withTimeout(10000);
+    await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(10000);
+    await expect(element(by.id("transaction-row")).atIndex(0)).toBeVisible();
+    await captureScreen("drilldown-category");
 
-    // Back to display mode (the editor itself is gone) and the discarded
-    // draft text never made it into the saved row.
-    await expect(element(by.id("transaction-edit-payee-input"))).not.toExist();
-    await expect(element(by.text("Should Not Save"))).not.toExist();
+    await element(by.id("query-card-close-button")).tap();
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
+  });
+
+  // The rows inside a result card are the same component as Home's, so
+  // one answer leads into the next without going back to the list.
+  it("Ask: a row inside a result card drills into the next question", async () => {
+    await element(by.id("nav-ask-button")).tap();
+    // A typed question with a known answer, not a random suggestion chip:
+    // the card has to actually CONTAIN rows for one of them to be tapped,
+    // and which rows a suggestion produces is the model's call (the same
+    // trap the stat-block spec above avoids). The seeded ledger gives
+    // this merchant 52 charges, so the list cannot come back empty.
+    await setInputText("ask-input", "How much did I spend at Chipotle this year?");
+    await element(by.id("ask-button")).tap();
+    await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
+    await waitFor(element(by.id("transaction-payee-button")).atIndex(0)).toBeVisible().withTimeout(10000);
+
+    const payee = await payeeOfTopRow();
+    await element(by.id("transaction-payee-button")).atIndex(0).tap();
+
+    // The card is replaced in place, so the drilldown's own title is the
+    // only signal that the tap landed -- a title no model picked.
+    await waitFor(element(by.text(`All activity at ${payee}`))).toBeVisible().withTimeout(10000);
+    await captureScreen("drilldown-from-card");
+
+    await element(by.id("query-card-close-button")).tap();
+    await element(by.id("nav-home-button")).tap();
+    await expect(element(by.id("home-screen"))).toBeVisible();
   });
 
   it("Account management: add-bank and disconnect banners can be cancelled", async () => {

@@ -52,3 +52,19 @@ export function fmtGroupKey(k: string, groupBy: string) {
   if (groupBy === "month") return fmtMonth(k);
   return isDateKey(groupBy) ? fmtDate(k) : k;
 }
+
+// The same calendar day N months earlier, clamped into a shorter month
+// (31 March minus one month is 28/29 February, not 3 March). UTC-anchored
+// for the same reason daysBefore is: parsing an ISO day as local midnight
+// and converting back would shift the result a day either side of the
+// date line.
+export function monthsBefore(isoDate: string, months: number) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  // 0-based and allowed to go negative -- the floor/modulo pair below
+  // carries it back across a year boundary.
+  const target = m - 1 - months;
+  const year = y + Math.floor(target / 12);
+  const month = ((target % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(d, lastDay))).toISOString().slice(0, 10);
+}

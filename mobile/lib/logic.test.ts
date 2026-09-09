@@ -206,6 +206,15 @@ describe("filterTransactions", () => {
     expect(out.map((r) => r.Payee)).toEqual(["Chipotle"]);
   });
 
+  // What a payee tap needs (lib/drilldown.ts): the whole name, so
+  // "Uber" is not answered with Uber Eats folded in -- but still
+  // case-insensitive, because the same merchant arrives from Plaid
+  // capitalised inconsistently.
+  it("payeeExact matches the whole payee, case-insensitively", () => {
+    expect(filterTransactions(rows, { payeeExact: "chipotle" }).map((r) => r.Payee)).toEqual(["Chipotle"]);
+    expect(filterTransactions(rows, { payeeExact: "Chipo" })).toEqual([]);
+  });
+
   it("filters by dateStart/dateEnd inclusively", () => {
     const out = filterTransactions(rows, { dateStart: "2026-01-03", dateEnd: "2026-02-01" });
     expect(out.map((r) => r.Payee)).toEqual(["Amli Spring District", "Alimony", "Chipotle"]);

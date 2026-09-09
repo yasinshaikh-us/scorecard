@@ -15,10 +15,19 @@ jest.mock("../../lib/DataProvider", () => ({
   useData: () => mockUseData(),
 }));
 
+const mockReplace = jest.fn() as jest.Mock<any>;
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
+}));
+
 jest.mock("../../components/TransactionRow", () => {
-  const { Text: RNText } = require("react-native");
-  return function MockTransactionRow({ row }: { row: Transaction }) {
-    return <RNText testID="tx-row">{row.Payee}</RNText>;
+  const { Text: RNText, Pressable: RNPressable } = require("react-native");
+  return function MockTransactionRow({ row, onDrilldown }: any) {
+    return (
+      <RNPressable testID="tx-row-drill" onPress={() => onDrilldown?.({ kind: "category", value: row.Category })}>
+        <RNText testID="tx-row">{row.Payee}</RNText>
+      </RNPressable>
+    );
   };
 });
 
@@ -74,6 +83,7 @@ describe("Home", () => {
     mockSignOut.mockReset();
     mockUseAuth.mockReset();
     mockUseData.mockReset();
+    mockReplace.mockReset();
     mockUseAuth.mockReturnValue({ signOut: mockSignOut });
   });
 
@@ -156,5 +166,21 @@ describe("Home", () => {
 
     expect(refresh).toHaveBeenCalled();
     expect(screen.getByTestId("account-balances")).toHaveTextContent("balances:1");
+  });
+
+  // Home has no answer surface of its own, so a payee/category tap
+  // navigates to Ask with the target in the route params -- replace, like
+  // every other navigation in this app, so only one screen is ever
+  // mounted (see home.tsx for what a pushed Ask would cost).
+  it("a row drilldown hands the target over to the Ask screen", async () => {
+    ready({ transactions: [tx({ Category: "Groceries" })] });
+    await renderWithTheme(<Home />);
+
+    await fireEvent.press(screen.getByTestId("tx-row-drill"));
+
+    expect(mockReplace).toHaveBeenCalledWith({
+      pathname: "/ask",
+      params: { drillKind: "category", drillValue: "Groceries" },
+    });
   });
 });

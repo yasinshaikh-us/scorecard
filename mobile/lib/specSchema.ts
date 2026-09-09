@@ -124,6 +124,10 @@ export function normalizeSpec(raw: any): { spec: QuerySpec; issues: SpecIssue[] 
   spec.excludeCategories = stringList(input.excludeCategories);
   spec.categoryContains = cleanString(input.categoryContains, MAX_CONTAINS);
   spec.payeeContains = cleanString(input.payeeContains, MAX_CONTAINS);
+  // Produced by a payee tap rather than by the model (lib/drilldown.ts
+  // builds its spec directly), but normalized here too so a hand-written
+  // or replayed spec runs through exactly one gate.
+  spec.payeeExact = cleanString(input.payeeExact, MAX_CONTAINS);
   spec.payeeAny = stringList(input.payeeAny);
   spec.accountContains = cleanString(input.accountContains, MAX_CONTAINS);
   spec.title = cleanString(input.title, MAX_TITLE) || undefined;

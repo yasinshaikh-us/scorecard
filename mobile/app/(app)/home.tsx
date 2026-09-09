@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useData } from "../../lib/DataProvider";
 import { useTheme } from "../../lib/ThemeProvider";
 import { fontFamily } from "../../lib/theme";
@@ -9,6 +10,7 @@ import TransactionRow from "../../components/TransactionRow";
 import AccountBalances from "../../components/AccountBalances";
 import CategoryRulesPanel from "../../components/CategoryRulesPanel";
 import ScreenHeader from "../../components/ScreenHeader";
+import type { DrilldownTarget } from "../../lib/drilldown";
 
 const RECENT_DAYS = 7;
 
@@ -21,6 +23,7 @@ const RECENT_DAYS = 7;
 export default function Home() {
   const { transactions, dataStatus, CATS, refresh } = useData();
   const { colors } = useTheme();
+  const router = useRouter();
   // edges={["top"]} only insets the top, and the bottom tab bar that used
   // to occupy the space above the navigation bar is gone -- so without
   // this the last transaction row renders underneath the system
@@ -35,6 +38,24 @@ export default function Home() {
   // half the screen. Bumping this drives AccountBalances to re-poll
   // Plaid and re-read, alongside the ledger fetch.
   const [balanceSignal, setBalanceSignal] = useState(0);
+
+  // Tapping a payee or a category hands the target to the Ask screen,
+  // which owns the answer surface (see lib/drilldown.ts).
+  //
+  // replace, not push -- the same move ScreenHeader makes in both
+  // directions, so this app keeps exactly one screen mounted at a time.
+  // A pushed Ask would leave this whole list alive underneath it, which
+  // costs twice: repeat drilldowns stack entries that only the header's
+  // own replace ever collapses, and every testID on a row exists twice
+  // over while it does (Stage 2 addresses rows by `atIndex`, so the
+  // hidden copies are the ones it would find). Going back is a tap on
+  // the header's Home control, which is on screen the whole time.
+  const openDrilldown = useCallback(
+    (target: DrilldownTarget) => {
+      router.replace({ pathname: "/ask", params: { drillKind: target.kind, drillValue: target.value } });
+    },
+    [router]
+  );
 
   async function onRefresh() {
     setRefreshing(true);
@@ -77,7 +98,7 @@ export default function Home() {
             </Text>
           </>
         }
-        renderItem={({ item }) => <TransactionRow row={item} CATS={CATS} onEdited={refresh} />}
+        renderItem={({ item }) => <TransactionRow row={item} CATS={CATS} onDrilldown={openDrilldown} />}
         ListEmptyComponent={
           <Text style={[styles.empty, { color: colors.textFaint, fontFamily: fontFamily.regular }]}>
             {!ready ? "Loading…" : transactions.length === 0 ? "No transactions yet" : "Nothing in the last week"}
