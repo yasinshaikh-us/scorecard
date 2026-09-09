@@ -39,6 +39,7 @@
 // throws; and rows are addressed by identity (`rule-*-${value}` testIDs,
 // see CategoryRulesPanel.tsx) rather than by position, so an unexpected
 // row can no longer misdirect a tap.
+const assert = require("node:assert");
 const { captureScreen } = require("./screenshot");
 const { runScopedRuleValue, cleanupThisRunsRules } = require("./testAccount");
 const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require("./session");
@@ -46,6 +47,29 @@ const { launchAndSignIn, ensureOnHome, setInputText, scrollIntoView } = require(
 // Namespaced per run, so a Stage 2 job running concurrently on another ref
 // cannot collide with these and afterEach can delete exactly what this run
 // created -- nothing more.
+// The payee/category a drilldown spec is about, read off the row it is
+// about to tap rather than assumed. TransactionRow gives both controls an
+// accessibilityLabel (that is the whole screen-reader surface of an
+// icon-only badge), which Detox surfaces as `label` on Android.
+//
+// assert.ok on the way through, so a label that stops being set fails
+// here saying so, instead of quietly asserting on the text "All activity
+// at undefined" and reporting a missing view.
+async function payeeOfTopRow() {
+  const { label } = await element(by.id("transaction-payee-button")).atIndex(0).getAttributes();
+  assert.ok(label, "transaction-payee-button has no accessibility label to read the payee from");
+  return label;
+}
+
+// "Category: Food:Restaurants" -> "Food": the badge names the row's full
+// category, and a drilldown widens it to the top level (see
+// lib/drilldown.ts), which is what the title says.
+async function categoryOfTopRow() {
+  const { label } = await element(by.id("transaction-category-badge")).atIndex(0).getAttributes();
+  assert.ok(label, "transaction-category-badge has no accessibility label to read the category from");
+  return label.replace(/^Category: /, "").split(":")[0];
+}
+
 const CATEGORY_RULE_VALUE = runScopedRuleValue("cat");
 const PAYEE_RULE_VALUE = runScopedRuleValue("payee");
 const RENAMED_PAYEE = "E2E Renamed Payee";
@@ -232,25 +256,30 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
   // Tapping a payee or a category runs a fixed twelve-month query, built
   // on the device with no call to the `query` Edge Function (see
-  // lib/drilldown.ts) -- so unlike every Ask spec below, this one can
-  // assert the card's TITLE, not just that some card came back: no model
+  // lib/drilldown.ts) -- so unlike every Ask spec below, these can assert
+  // the card's exact TITLE, not just that some card came back: no model
   // chose it.
   //
-  // From Home the tap navigates to Ask, so each of these ends by coming
-  // back to the list it started on.
+  // The title names the payee/category that was tapped, and which row is
+  // top of the seeded ledger is not fixed, so each spec reads the row's
+  // own accessibility label first and builds the exact string it expects.
+  //
+  // NOT by.text(/a regex/), which is what the first version of these
+  // specs used. Detox accepts a RegExp on Android, but hands it to Java
+  // as a whole-string pattern, so a partial one like /^All activity at /
+  // selects nothing -- run 144 failed all three here with "Got: was
+  // null" on the line straight after the card itself was asserted
+  // visible. An exact string is matched the same way on both platforms.
   it("Transaction row: tapping a payee asks for that payee's last 12 months", async () => {
     await waitFor(element(by.id("transaction-payee-button")).atIndex(0)).toBeVisible().withTimeout(10000);
-    // The payee name of the row about to be tapped is not known to this
-    // spec (the seeded ledger's most recent row could be any merchant),
-    // so the assertions below are on the shape of the card, plus the one
-    // string that is fixed however the row reads.
+    const payee = await payeeOfTopRow();
     await element(by.id("transaction-payee-button")).atIndex(0).tap();
 
     await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(10000);
-    await expect(element(by.text(/^All activity at /))).toBeVisible();
+    await waitFor(element(by.text(`All activity at ${payee}`))).toBeVisible().withTimeout(10000);
     await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(10000);
-    // The row that was tapped is in its own result, so this can never be
-    // an empty card.
+    // The row that was tapped is inside its own result, so this can never
+    // be an empty card.
     await expect(element(by.id("transaction-row")).atIndex(0)).toBeVisible();
     await captureScreen("drilldown-payee");
 
@@ -261,10 +290,11 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
 
   it("Transaction row: tapping a category asks for that category's last 12 months", async () => {
     await waitFor(element(by.id("transaction-category-badge")).atIndex(0)).toBeVisible().withTimeout(10000);
+    const category = await categoryOfTopRow();
     await element(by.id("transaction-category-badge")).atIndex(0).tap();
 
     await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(10000);
-    await expect(element(by.text(/ activity$/))).toBeVisible();
+    await waitFor(element(by.text(`All ${category} activity`))).toBeVisible().withTimeout(10000);
     await waitFor(element(by.id("query-stats"))).toBeVisible().withTimeout(10000);
     await expect(element(by.id("transaction-row")).atIndex(0)).toBeVisible();
     await captureScreen("drilldown-category");
@@ -288,11 +318,12 @@ describe("App flows (Rules, transactions, accounts, navigation, Ask)", () => {
     await waitFor(element(by.id("query-card-close-button"))).toBeVisible().withTimeout(20000);
     await waitFor(element(by.id("transaction-payee-button")).atIndex(0)).toBeVisible().withTimeout(10000);
 
+    const payee = await payeeOfTopRow();
     await element(by.id("transaction-payee-button")).atIndex(0).tap();
 
-    // One card at a time, and it is the drilldown's -- a title no model
-    // picked.
-    await waitFor(element(by.text(/^All activity at /))).toBeVisible().withTimeout(10000);
+    // The card is replaced in place, so the drilldown's own title is the
+    // only signal that the tap landed -- a title no model picked.
+    await waitFor(element(by.text(`All activity at ${payee}`))).toBeVisible().withTimeout(10000);
     await captureScreen("drilldown-from-card");
 
     await element(by.id("query-card-close-button")).tap();

@@ -40,12 +40,19 @@ export default function Home() {
   const [balanceSignal, setBalanceSignal] = useState(0);
 
   // Tapping a payee or a category hands the target to the Ask screen,
-  // which owns the answer surface (see lib/drilldown.ts). push, not
-  // replace: a drilldown is a step INTO something, so the system back
-  // gesture belongs back here on the list the tap came from.
+  // which owns the answer surface (see lib/drilldown.ts).
+  //
+  // replace, not push -- the same move ScreenHeader makes in both
+  // directions, so this app keeps exactly one screen mounted at a time.
+  // A pushed Ask would leave this whole list alive underneath it, which
+  // costs twice: repeat drilldowns stack entries that only the header's
+  // own replace ever collapses, and every testID on a row exists twice
+  // over while it does (Stage 2 addresses rows by `atIndex`, so the
+  // hidden copies are the ones it would find). Going back is a tap on
+  // the header's Home control, which is on screen the whole time.
   const openDrilldown = useCallback(
     (target: DrilldownTarget) => {
-      router.push({ pathname: "/ask", params: { drillKind: target.kind, drillValue: target.value } });
+      router.replace({ pathname: "/ask", params: { drillKind: target.kind, drillValue: target.value } });
     },
     [router]
   );

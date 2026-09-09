@@ -15,9 +15,9 @@ jest.mock("../../lib/DataProvider", () => ({
   useData: () => mockUseData(),
 }));
 
-const mockPush = jest.fn() as jest.Mock<any>;
+const mockReplace = jest.fn() as jest.Mock<any>;
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
 }));
 
 jest.mock("../../components/TransactionRow", () => {
@@ -83,7 +83,7 @@ describe("Home", () => {
     mockSignOut.mockReset();
     mockUseAuth.mockReset();
     mockUseData.mockReset();
-    mockPush.mockReset();
+    mockReplace.mockReset();
     mockUseAuth.mockReturnValue({ signOut: mockSignOut });
   });
 
@@ -169,15 +169,16 @@ describe("Home", () => {
   });
 
   // Home has no answer surface of its own, so a payee/category tap
-  // navigates to Ask with the target in the route params -- push rather
-  // than replace, so the back gesture returns to the list it came from.
-  it("a row drilldown pushes the target over to the Ask screen", async () => {
+  // navigates to Ask with the target in the route params -- replace, like
+  // every other navigation in this app, so only one screen is ever
+  // mounted (see home.tsx for what a pushed Ask would cost).
+  it("a row drilldown hands the target over to the Ask screen", async () => {
     ready({ transactions: [tx({ Category: "Groceries" })] });
     await renderWithTheme(<Home />);
 
     await fireEvent.press(screen.getByTestId("tx-row-drill"));
 
-    expect(mockPush).toHaveBeenCalledWith({
+    expect(mockReplace).toHaveBeenCalledWith({
       pathname: "/ask",
       params: { drillKind: "category", drillValue: "Groceries" },
     });
