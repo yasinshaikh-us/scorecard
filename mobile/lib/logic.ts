@@ -10,6 +10,27 @@ import { normalizeSpec } from "./specSchema";
 
 export const topCategory = (cat: string) => (cat || "Uncategorized").split(":")[0];
 
+// The comparison key for payeeExact: letters and digits only, folded to
+// lower case.
+//
+// A bank does not spell a merchant the same way twice. This ledger has
+// "T-Mobile" on some rows and a punctuation variant on others, and an
+// exact string match splits that one merchant in two -- tapping either
+// answered a twelve-month question with seven months, because the other
+// six were filed under the other spelling. Same for Ezell's Famous
+// Chicken.
+//
+// Dropping the punctuation merges those without merging merchants that
+// are genuinely different: "Uber" and "Uber Eats" key to "uber" and
+// "ubereats", which is the distinction payeeExact exists to keep.
+export function payeeKey(payee: string) {
+  const key = (payee || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  // A payee written entirely in punctuation would key to "" and match
+  // every other such payee, so those fall back to comparing what is
+  // actually there.
+  return key || (payee || "").trim().toLowerCase();
+}
+
 // Filters out rows missing a required field and coerces types into a
 // clean {Id, Date, Payee, Category, Amount, Account, IsTransfer, Pending}
 // shape --
@@ -127,10 +148,10 @@ export function filterTransactions(rows: Transaction[], spec: QuerySpec | null):
     if (spec.excludeCategories && spec.excludeCategories.includes(topCategory(d.Category))) return false;
     if (spec.categoryContains && !d.Category.toLowerCase().includes(spec.categoryContains.toLowerCase())) return false;
     if (spec.payeeContains && !d.Payee.toLowerCase().includes(spec.payeeContains.toLowerCase())) return false;
-    // Case-insensitive like every other payee comparison here: the same
-    // merchant can arrive from Plaid capitalised differently on different
-    // rows, and a tap on one of them means all of them.
-    if (spec.payeeExact && d.Payee.toLowerCase() !== spec.payeeExact.toLowerCase()) return false;
+    // Compared on payeeKey, not the raw string: the same merchant reaches
+    // the ledger spelled several ways, and a tap on one of them means all
+    // of them. See payeeKey.
+    if (spec.payeeExact && payeeKey(d.Payee) !== payeeKey(spec.payeeExact)) return false;
     if (spec.payeeAny && spec.payeeAny.length) {
       const payee = d.Payee.toLowerCase();
       if (!spec.payeeAny.some((p) => payee.includes(p.toLowerCase()))) return false;
