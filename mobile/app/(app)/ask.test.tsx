@@ -217,8 +217,10 @@ describe("Ask", () => {
       expect(await screen.findByTestId("query-card-title")).toHaveTextContent("All activity at Chipotle");
       expect(screen.getByTestId("query-card-question")).toHaveTextContent("Chipotle — last 12 months");
       expect(screen.getByTestId("query-card-payee-exact")).toHaveTextContent("Chipotle");
-      // Anchored to the ledger's own last date, not the device clock.
-      expect(screen.getByTestId("query-card-date-start")).toHaveTextContent("2025-09-08");
+      // Anchored to the ledger's own last date, not the device clock, and
+      // aligned to the start of a month so the chart carries twelve whole
+      // bars rather than thirteen partial ones.
+      expect(screen.getByTestId("query-card-date-start")).toHaveTextContent("2025-10-01");
       expect(mockFetch).not.toHaveBeenCalled();
       expect(screen.queryByTestId("query-card-pending")).toBeNull();
     });
