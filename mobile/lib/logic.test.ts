@@ -215,6 +215,35 @@ describe("filterTransactions", () => {
     expect(filterTransactions(rows, { payeeExact: "Chipo" })).toEqual([]);
   });
 
+  // A bank spells one merchant several ways. Found in the real ledger:
+  // "T-Mobile" on some rows and a punctuation variant on others, which an
+  // exact string match split into two merchants -- so a twelve-month
+  // drilldown on either answered with seven months and hid the rest.
+  it("payeeExact matches across punctuation and spacing variants of one merchant", () => {
+    const variants = [
+      row("2026-01-01", "T-Mobile", "Utilities", -80),
+      row("2026-02-01", "T Mobile", "Utilities", -80),
+      row("2026-03-01", "TMOBILE", "Utilities", -80),
+      row("2026-01-05", "Ezell's Famous Chicken", "Dining", -18),
+      row("2026-02-05", "Ezells Famous Chicken", "Dining", -18),
+    ];
+    expect(filterTransactions(variants, { payeeExact: "T-Mobile" })).toHaveLength(3);
+    expect(filterTransactions(variants, { payeeExact: "Ezells Famous Chicken" })).toHaveLength(2);
+  });
+
+  // The distinction payeeExact exists for in the first place still holds:
+  // dropping punctuation must not merge two merchants that differ by a
+  // whole word.
+  it("payeeExact still keeps a merchant separate from a longer-named one", () => {
+    const uber = [
+      row("2026-01-01", "Uber", "Transport", -20),
+      row("2026-01-02", "Uber Eats", "Dining", -30),
+      row("2026-01-03", "UBER  EATS", "Dining", -30),
+    ];
+    expect(filterTransactions(uber, { payeeExact: "Uber" }).map((r) => r.Payee)).toEqual(["Uber"]);
+    expect(filterTransactions(uber, { payeeExact: "Uber Eats" })).toHaveLength(2);
+  });
+
   it("filters by dateStart/dateEnd inclusively", () => {
     const out = filterTransactions(rows, { dateStart: "2026-01-03", dateEnd: "2026-02-01" });
     expect(out.map((r) => r.Payee)).toEqual(["Amli Spring District", "Alimony", "Chipotle"]);
