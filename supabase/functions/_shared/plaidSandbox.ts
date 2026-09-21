@@ -9,7 +9,7 @@
 // connection structurally, not by a runtime check on a shared value that
 // could be misconfigured.
 
-import { Configuration, PlaidApi, PlaidEnvironments } from "npm:plaid@45";
+import { Configuration, PlaidApi, PlaidEnvironments } from "npm:plaid@47";
 
 export function plaidSandboxClient() {
   const clientId = Deno.env.get("PLAID_SANDBOX_CLIENT_ID");

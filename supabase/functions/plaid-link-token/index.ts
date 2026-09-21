@@ -3,7 +3,7 @@
 // launch the Link flow. PLAID_CLIENT_ID / PLAID_SECRET / PLAID_ENV are
 // set as Supabase Edge Function secrets (see ../_shared/plaid.ts).
 
-import { CountryCode, Products, DepositoryAccountSubtype } from "npm:plaid@45";
+import { CountryCode, Products, DepositoryAccountSubtype } from "npm:plaid@47";
 import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
 import { requireUser, HttpError } from "../_shared/requireUser.ts";
 import { plaidClient } from "../_shared/plaid.ts";

@@ -66,7 +66,7 @@
 // active item": even inside the dummy account, disconnecting something
 // this function did not create is more force than idempotency needs.
 
-import { CountryCode, Products } from "npm:plaid@45";
+import { CountryCode, Products } from "npm:plaid@47";
 import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
 import { requireUser, HttpError } from "../_shared/requireUser.ts";
 import { plaidSandboxClient } from "../_shared/plaidSandbox.ts";
