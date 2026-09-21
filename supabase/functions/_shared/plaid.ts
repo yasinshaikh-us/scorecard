@@ -3,7 +3,7 @@
 // Edge Functions -> Secrets, or `supabase secrets set`). They are
 // server-side only and never reach the app bundle — see .env.example.
 
-import { Configuration, PlaidApi, PlaidEnvironments } from "npm:plaid@45";
+import { Configuration, PlaidApi, PlaidEnvironments } from "npm:plaid@47";
 
 export function plaidClient() {
   const clientId = Deno.env.get("PLAID_CLIENT_ID");

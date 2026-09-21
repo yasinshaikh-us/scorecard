@@ -7,7 +7,7 @@
 // See ../_shared/plaidExchangeLogic.ts for the duplicate-account
 // detection this delegates to (and its tests).
 
-import { CountryCode } from "npm:plaid@45";
+import { CountryCode } from "npm:plaid@47";
 import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
 import { requireUser, HttpError } from "../_shared/requireUser.ts";
 import { plaidClient } from "../_shared/plaid.ts";
