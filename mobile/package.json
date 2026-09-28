@@ -43,7 +43,7 @@
     "oxlint": "^1.86.0",
     "react-test-renderer": "^19.2.8",
     "test-renderer": "^1.2.0",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "scripts": {
     "start": "expo start",
