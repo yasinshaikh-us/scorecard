@@ -31,5 +31,5 @@ jobs:
       EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aQX8dVkpoXE0-I9fighKew_sWNM00aJ
       TEST_LOGIN_SECRET: ${{ secrets.EXPO_PUBLIC_TEST_LOGIN_SECRET }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: node scripts/keep-supabase-active.mjs
