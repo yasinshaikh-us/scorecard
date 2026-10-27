@@ -174,6 +174,7 @@ describe("applyCategoryRules", () => {
       "Income", "Mortgage", "Investments", "Rent", "Alimony", "Taxes", "Miscellaneous",
       "Dining", "Shopping", "Utilities", "Groceries", "Transport", "Education", "Health",
       "Cash", "Travel", "Software", "Entertainment", "Fees",
+      "Insurance", "Home Services", "Personal Care",
     ];
     for (const category of allowed) {
       expect(applyCategoryRules("ACME INC", category, []).category).toBe(category);

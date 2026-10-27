@@ -18,12 +18,14 @@ import {
   AppWindow,
   Clapperboard,
   CircleDollarSign,
+  ShieldCheck,
+  Wrench,
+  Scissors,
   type LucideIcon,
 } from "lucide-react-native";
 
 // One icon per category in the
-// closed 19-category set (see lib/categories.ts and
-// supabase/migrations/20260803040000_closed_category_set.sql). Keys must
+// closed 22-category set (see lib/categories.ts). Keys must
 // match those category names exactly; anything unmapped falls back to
 // HelpCircle.
 export const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -46,6 +48,9 @@ export const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Software: AppWindow,
   Entertainment: Clapperboard,
   Fees: CircleDollarSign,
+  Insurance: ShieldCheck,
+  "Home Services": Wrench,
+  "Personal Care": Scissors,
 };
 
 export function iconForCategory(category: string): LucideIcon {

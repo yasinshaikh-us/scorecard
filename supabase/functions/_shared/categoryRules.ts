@@ -1,7 +1,7 @@
 // Mirrors the SQL logic in apply_category_rules() / clean_payee() (see
 // supabase/migrations/20260803010000_add_category_rules_engine.sql,
 // 20260803030000_scrub_payee_junk.sql, and
-// 20260803040000_closed_category_set.sql) -- same semantics, kept in sync
+// 20261027000000_add_insurance_home_services_personal_care_categories.sql) -- same semantics, kept in sync
 // deliberately rather than shared, since one runs in Postgres (bulk
 // retroactive re-apply) and this one runs per transaction during the live
 // sync. Case-insensitive "contains" match; rules apply in ascending
@@ -22,6 +22,7 @@ const ALLOWED_CATEGORIES = new Set([
   "Income", "Mortgage", "Investments", "Rent", "Alimony", "Taxes", "Miscellaneous",
   "Dining", "Shopping", "Utilities", "Groceries", "Transport", "Education", "Health",
   "Cash", "Travel", "Software", "Entertainment", "Fees",
+  "Insurance", "Home Services", "Personal Care",
 ]);
 
 const US_STATE_ABBREVIATIONS =
