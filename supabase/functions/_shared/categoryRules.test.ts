@@ -47,9 +47,10 @@ describe("cleanPayee", () => {
     expect(cleanPayee("SUPPORT LINE 800 555 1234")).toBe("SUPPORT LINE");
   });
 
-  it("strips long reference digit runs but leaves short numbers alone", () => {
-    expect(cleanPayee("STORE 1234567")).toBe("STORE");
-    expect(cleanPayee("STORE 123456")).toBe("STORE 123456");
+  it("strips long reference digit runs and trailing store numbers, but not a 1-2 digit tail", () => {
+    expect(cleanPayee("STORE 1234567 MAIN")).toBe("STORE MAIN");
+    expect(cleanPayee("STORE 123456")).toBe("STORE");
+    expect(cleanPayee("PUB 70")).toBe("PUB 70");
   });
 
   it("strips a trailing MM/DD or MM/DD/YYYY date", () => {
@@ -57,8 +58,64 @@ describe("cleanPayee", () => {
     expect(cleanPayee("ACME INC 07/14/2026")).toBe("ACME INC");
   });
 
-  it("strips a trailing US state abbreviation", () => {
-    expect(cleanPayee("BLUE BOTTLE SEATTLE WA")).toBe("BLUE BOTTLE SEATTLE");
+  it("strips a trailing city and state", () => {
+    expect(cleanPayee("BLUE BOTTLE SEATTLE WA")).toBe("BLUE BOTTLE");
+    expect(cleanPayee("DESI FOOD PLAZA BELLEVUE WA 03/15")).toBe("DESI FOOD PLAZA");
+  });
+
+  it("strips a two-word city", () => {
+    expect(cleanPayee("PENDLETON NORTH BEND NORTH BEND WA 05/04")).toBe("PENDLETON");
+    expect(cleanPayee("BRICK HOUSE BAR & PORT ORCHARD WA 07/03")).toBe("BRICK HOUSE BAR");
+  });
+
+  it("strips the city again when the name already ended in it", () => {
+    expect(cleanPayee("HMART - BELLEVUE BELLEVUE WA 03/01")).toBe("HMART");
+    expect(cleanPayee("LULULEMON BELLEVUE BELLEVUE WA 12/21")).toBe("LULULEMON");
+  });
+
+  it("drops a connector left dangling by the city removal, and only then", () => {
+    expect(cleanPayee("TOTAL WINE AND BELLEVUE WA 01/06")).toBe("TOTAL WINE");
+    expect(cleanPayee("KANISHKA CUISINE OF REDMOND WA 05/29")).toBe("KANISHKA CUISINE");
+    expect(cleanPayee("THE UNIVERSITY OF")).toBe("THE UNIVERSITY OF");
+  });
+
+  it("treats a phone number, URL or masked number in the city slot as the city", () => {
+    expect(cleanPayee("AMAZON KIDS+*168944D1 888-802-3080 WA 03/31")).toBe("AMAZON KIDS+");
+    expect(cleanPayee("SUPERHUMAN HTTPSSUPERHUM CA 04/22")).toBe("SUPERHUMAN");
+    expect(cleanPayee("WYZANT XXX-XXX-6365 CA 08/06")).toBe("WYZANT");
+  });
+
+  it("keeps a business word that only looks like it is in the city slot", () => {
+    expect(cleanPayee("SEA AIRPORT PARKING WA 07/14")).toBe("SEA AIRPORT PARKING");
+    expect(cleanPayee("PREMIER PERIODONTICS, PLLC WA 11/13")).toBe("PREMIER PERIODONTICS, PLLC");
+  });
+
+  it("strips trailing store numbers and ZIP codes", () => {
+    expect(cleanPayee("WINGSTOP 645 BELLEVUE WA 02/22")).toBe("WINGSTOP");
+    expect(cleanPayee("BEST BUY #497 BELLEVUE WA 509001 05/04")).toBe("BEST BUY");
+    expect(cleanPayee("ACME STORE SEATTLE WA 98101")).toBe("ACME STORE");
+  });
+
+  it("strips leftover masked numbers and phone fragments", () => {
+    expect(cleanPayee("CHAMEI MATCHA XXX-XXXX9024 WA 03/19")).toBe("CHAMEI MATCHA");
+    expect(cleanPayee("SQSP* INVXXXXX0207 HTTPSSQUARESP NY 01/15")).toBe("SQSP");
+    expect(cleanPayee("DEPOSIT ID NUMBER X5399")).toBe("DEPOSIT ID NUMBER");
+    expect(cleanPayee("VIRGINIA MASON MEDICAL 206-2236601 WA 04/05")).toBe("VIRGINIA MASON MEDICAL");
+  });
+
+  it("strips ACH ids that carry a letter prefix", () => {
+    expect(cleanPayee("ACME INC PAYROLL PPD ID: P123456789")).toBe("ACME INC PAYROLL");
+  });
+
+  it("strips a date written with spaces around the slash", () => {
+    expect(cleanPayee("TOTAL WINE AND BELLEVUE WA 12 / 28")).toBe("TOTAL WINE");
+  });
+
+  it("keeps the merchant name after a card-processor prefix", () => {
+    expect(cleanPayee("SQ *COFFEE BAR")).toBe("COFFEE BAR");
+    expect(cleanPayee("SQ *BLUEBOTTLE")).toBe("BLUEBOTTLE");
+    expect(cleanPayee("TST* THAAL BELLEVUE WA 10/19")).toBe("THAAL");
+    expect(cleanPayee("TST*FARZI CAFE BELLEVUE BELLEVUE WA 09/14")).toBe("FARZI CAFE");
   });
 
   it("collapses whitespace left behind by the other rules", () => {
@@ -79,23 +136,31 @@ describe("cleanPayee", () => {
   });
 
   describe("known quirks (pinned, not endorsed)", () => {
-    // `\*[a-zA-Z0-9]+` removes the asterisk AND the token after it. Square
-    // descriptors are literally "SQ *MERCHANTNAME", so for the single most
-    // common form of this descriptor the rule deletes the merchant name and
-    // keeps the processor prefix -- the opposite of what the comment above
-    // it ("transaction reference codes after '*'") describes wanting.
-    it("deletes the token following '*', which eats Square merchant names", () => {
-      expect(cleanPayee("SQ *COFFEE BAR")).toBe("SQ BAR");
-      expect(cleanPayee("SQ *BLUEBOTTLE")).toBe("SQ");
+    // `\*[a-zA-Z0-9]+` removes the asterisk AND the token after it. Known
+    // processor prefixes (SQ *, TST*, ...) are stripped before it runs, but
+    // any other "<NAME>*<NAME>" descriptor still loses the part after '*'.
+    it("deletes the token following '*' outside the known processor prefixes", () => {
+      expect(cleanPayee("GOOGLE *PEACOCK")).toBe("GOOGLE");
     });
 
     // The trailing-state rule treats any 2-letter tail as a state. "CO" is
     // Colorado, so every "<NAME> CO" company descriptor loses its suffix.
     // Same hazard for other real words in the list: IN, OR, ME, OK, HI, DE,
-    // PA, LA, MA, MS, MT, NE, NV, OH, SC, VA, WA, ID.
+    // PA, LA, MA, MS, MT, NE, NV, OH, SC, VA, WA, ID. For the most word-like
+    // of these (IN, OR, CO, ...) the word before is at least not also taken
+    // as a city.
     it("strips a trailing 'CO' from company names, reading it as Colorado", () => {
       expect(cleanPayee("ACME CO")).toBe("ACME");
       expect(cleanPayee("TRADING CO")).toBe("TRADING");
+      expect(cleanPayee("BURGERS DRIVE IN")).toBe("BURGERS DRIVE");
+    });
+
+    // A descriptor with no city field ("<NAME> <ST>") loses the name's last
+    // word, which sits where the city usually is -- unless that word is in
+    // the business-word list.
+    it("takes the last word of a city-less descriptor as the city", () => {
+      expect(cleanPayee("UPS DINING & CONF SVCS WA 01/05")).toBe("UPS DINING & CONF SVCS");
+      expect(cleanPayee("ACME WIDGETS WA 01/05")).toBe("ACME");
     });
   });
 });
@@ -183,6 +248,6 @@ describe("applyCategoryRules", () => {
 
   it("cleans and title-cases the payee before any rule overwrites it", () => {
     const result = applyCategoryRules("BLUE BOTTLE SEATTLE WA", "Dining", []);
-    expect(result.payee).toBe("Blue Bottle Seattle");
+    expect(result.payee).toBe("Blue Bottle");
   });
 });
