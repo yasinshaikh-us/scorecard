@@ -121,7 +121,7 @@ export async function syncItemTransactions(
 
   const { data: rules, error: rulesError } = await db
     .from("category_rules")
-    .select("match_field, match_value, set_category, set_payee")
+    .select("match_field, match_value, set_category, set_payee, min_amount, max_amount")
     .eq("user_id", item.user_id)
     .eq("enabled", true)
     .order("priority", { ascending: true })
@@ -232,7 +232,7 @@ export async function syncItemTransactions(
     .map((tx) => {
       const rawPayee = payeeFor(tx);
       const rawCategory = categoryFor(tx);
-      const { category, payee } = applyCategoryRules(rawPayee, rawCategory, (rules || []) as CategoryRule[]);
+      const { category, payee } = applyCategoryRules(rawPayee, rawCategory, (rules || []) as CategoryRule[], -tx.amount);
 
       return {
         plaid_transaction_id: tx.transaction_id,

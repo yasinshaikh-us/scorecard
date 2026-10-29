@@ -1,7 +1,7 @@
 import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import { act, fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
-import CategoryRulesPanel from "./CategoryRulesPanel";
+import CategoryRulesPanel, { describeRuleCondition } from "./CategoryRulesPanel";
 
 type Rule = {
   id: string;
@@ -275,5 +275,30 @@ describe("CategoryRulesPanel", () => {
     await fireEvent.press(await screen.findByTestId("picker-option-Dining"));
 
     expect(screen.getByTestId("rule-category-select-button")).toHaveTextContent("Dining");
+  });
+});
+
+describe("describeRuleCondition", () => {
+  const base = { match_field: "payee" as const, match_value: "acme", min_amount: null, max_amount: null };
+
+  it("describes a plain contains rule as before", () => {
+    expect(describeRuleCondition(base)).toBe('if payee contains "acme"');
+  });
+
+  it("adds an amount range, accepting numeric strings from PostgREST", () => {
+    expect(describeRuleCondition({ ...base, min_amount: "0.01", max_amount: "999.99" })).toBe(
+      'if payee contains "acme" and amount 0.01 to 999.99'
+    );
+    expect(describeRuleCondition({ ...base, min_amount: 0.01 })).toBe('if payee contains "acme" and amount ≥ 0.01');
+    expect(describeRuleCondition({ ...base, max_amount: 20 })).toBe('if payee contains "acme" and amount ≤ 20');
+  });
+
+  it("describes a fallback rule, with and without a payee filter", () => {
+    expect(describeRuleCondition({ ...base, match_field: "uncategorized", match_value: "", min_amount: 0.01, max_amount: 999.99 })).toBe(
+      "if still uncategorized and amount 0.01 to 999.99"
+    );
+    expect(describeRuleCondition({ ...base, match_field: "uncategorized" })).toBe(
+      'if still uncategorized and payee contains "acme"'
+    );
   });
 });

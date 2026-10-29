@@ -31,6 +31,7 @@ interface ParityCase {
   name: string;
   rawPayee: string;
   rawCategory: string;
+  amount?: number;
   rules?: CategoryRule[];
 }
 
@@ -101,6 +102,62 @@ const CASES: ParityCase[] = [
   { name: "toast prefix glued to name", rawPayee: "TST*FARZI CAFE BELLEVUE BELLEVUE WA 09/14", rawCategory: "Dining" },
   { name: "toast prefix with space", rawPayee: "TST* THAAL BELLEVUE WA 10/19", rawCategory: "Dining" },
   { name: "non-processor star token", rawPayee: "GOOGLE *PEACOCK 855-836-3987 CA 02/06", rawCategory: "Entertainment" },
+
+  // Amount ranges and fallback ("uncategorized") rules.
+  {
+    name: "amount range, inside",
+    rawPayee: "ACME INC", rawCategory: "Dining", amount: 999.99,
+    rules: [rule({ match_value: "acme", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 })],
+  },
+  {
+    name: "amount range, above",
+    rawPayee: "ACME INC", rawCategory: "Dining", amount: 1000,
+    rules: [rule({ match_value: "acme", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 })],
+  },
+  {
+    name: "amount range, negative excluded",
+    rawPayee: "ACME INC", rawCategory: "Dining", amount: -20,
+    rules: [rule({ match_value: "acme", set_category: "Transfer", min_amount: 0.01 })],
+  },
+  {
+    name: "amount range on a category rule",
+    rawPayee: "ACME INC", rawCategory: "Food and Drink", amount: 15,
+    rules: [rule({ match_field: "category", match_value: "food", set_category: "Dining", max_amount: 20 })],
+  },
+  {
+    name: "fallback catches the uncategorized",
+    rawPayee: "REMOTE ONLINE DEPOSIT # 1", rawCategory: "TRANSFER_IN", amount: 368.26,
+    rules: [rule({ match_field: "uncategorized", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 })],
+  },
+  {
+    name: "fallback skips what a raw category explains",
+    rawPayee: "ACME REFUND", rawCategory: "Shopping", amount: 50,
+    rules: [rule({ match_field: "uncategorized", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 })],
+  },
+  {
+    name: "fallback skips what a later-listed rule explains",
+    rawPayee: "ACME REFUND", rawCategory: "GENERAL_MERCHANDISE", amount: 50,
+    rules: [
+      rule({ match_field: "uncategorized", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 }),
+      rule({ match_field: "category", match_value: "GENERAL_MERCHANDISE", set_category: "Shopping" }),
+    ],
+  },
+  {
+    name: "fallback outside its amount range",
+    rawPayee: "REMOTE ONLINE DEPOSIT # 1", rawCategory: "TRANSFER_IN", amount: 1500,
+    rules: [rule({ match_field: "uncategorized", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 })],
+  },
+  {
+    name: "fallback with a payee filter and rename",
+    rawPayee: "REMOTE ONLINE DEPOSIT # 1", rawCategory: "TRANSFER_IN", amount: 50,
+    rules: [rule({ match_field: "uncategorized", match_value: "deposit", set_category: "Transfer", set_payee: "Deposit" })],
+  },
+  {
+    name: "fallback to an out-of-set category clamps",
+    rawPayee: "ACME INC", rawCategory: "Uncategorized", amount: 50,
+    rules: [rule({ match_field: "uncategorized", set_category: "Crypto" })],
+  },
+  { name: "Transfer is in the closed set", rawPayee: "ACME INC", rawCategory: "Transfer" },
 
   // Out-of-set categories must clamp to Miscellaneous on both sides.
   { name: "out-of-set category clamps", rawPayee: "ACME INC", rawCategory: "Food and Drink" },
@@ -178,8 +235,8 @@ maybeDescribe("categoryRules TypeScript <-> SQL parity", () => {
 
       await client.query(
         `insert into public.transactions (date, payee, category, amount, user_id, raw_payee, raw_category, source, manually_edited)
-         values ('2026-01-01', 'placeholder', 'placeholder', -1.00, $1, $2, $3, 'manual', false)`,
-        [USER_ID, testCase.rawPayee, testCase.rawCategory]
+         values ('2026-01-01', 'placeholder', 'placeholder', $4, $1, $2, $3, 'manual', false)`,
+        [USER_ID, testCase.rawPayee, testCase.rawCategory, testCase.amount ?? -1]
       );
 
       // priority ascending preserves the array order the TS side applies,
@@ -187,9 +244,9 @@ maybeDescribe("categoryRules TypeScript <-> SQL parity", () => {
       let priority = 1;
       for (const r of testCase.rules ?? []) {
         await client.query(
-          `insert into public.category_rules (user_id, priority, match_field, match_value, set_category, set_payee, enabled)
-           values ($1, $2, $3, $4, $5, $6, true)`,
-          [USER_ID, priority++, r.match_field, r.match_value, r.set_category, r.set_payee]
+          `insert into public.category_rules (user_id, priority, match_field, match_value, set_category, set_payee, min_amount, max_amount, enabled)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
+          [USER_ID, priority++, r.match_field, r.match_value, r.set_category, r.set_payee, r.min_amount ?? null, r.max_amount ?? null]
         );
       }
 
@@ -203,7 +260,7 @@ maybeDescribe("categoryRules TypeScript <-> SQL parity", () => {
 
   it.each(CASES)("$name", async (testCase) => {
     const sql = await runSql(testCase);
-    const ts = applyCategoryRules(testCase.rawPayee, testCase.rawCategory, testCase.rules ?? []);
+    const ts = applyCategoryRules(testCase.rawPayee, testCase.rawCategory, testCase.rules ?? [], testCase.amount ?? -1);
 
     expect({ payee: ts.payee, category: ts.category }).toEqual({ payee: sql.payee, category: sql.category });
   });

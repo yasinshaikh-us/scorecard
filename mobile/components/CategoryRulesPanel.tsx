@@ -11,12 +11,32 @@ import PickerModal from "./PickerModal";
 type Rule = {
   id: string;
   priority: number;
-  match_field: "payee" | "category";
+  match_field: "payee" | "category" | "uncategorized";
   match_value: string;
   set_category: string | null;
   set_payee: string | null;
+  min_amount: number | string | null;
+  max_amount: number | string | null;
   enabled: boolean;
 };
+
+// Rules with an amount range or the "uncategorized" fallback type are
+// created outside this panel, but they still have to read correctly in it.
+export function describeRuleCondition(r: Pick<Rule, "match_field" | "match_value" | "min_amount" | "max_amount">) {
+  const parts: string[] = [];
+  if (r.match_field === "uncategorized") {
+    parts.push("if still uncategorized");
+    if (r.match_value) parts.push(`and payee contains "${r.match_value}"`);
+  } else {
+    parts.push(`if ${r.match_field} contains "${r.match_value}"`);
+  }
+  const min = r.min_amount == null ? null : Number(r.min_amount);
+  const max = r.max_amount == null ? null : Number(r.max_amount);
+  if (min != null && max != null) parts.push(`and amount ${min} to ${max}`);
+  else if (min != null) parts.push(`and amount ≥ ${min}`);
+  else if (max != null) parts.push(`and amount ≤ ${max}`);
+  return parts.join(" ");
+}
 const EMPTY_FORM = { matchField: "payee" as "payee" | "category", matchValue: "", setCategory: "", setPayee: "" };
 
 // The rules engine UI: "if payee/category contains X, set
@@ -41,7 +61,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
   function loadRules() {
     return supabase
       .from("category_rules")
-      .select("id, priority, match_field, match_value, set_category, set_payee, enabled")
+      .select("id, priority, match_field, match_value, set_category, set_payee, min_amount, max_amount, enabled")
       .order("priority", { ascending: true })
       .then(({ data, error }) => {
         if (error) {
@@ -192,7 +212,7 @@ export default function CategoryRulesPanel({ visible, onClose, onApplied }: { vi
                     trackColor={{ true: colors.accent, false: colors.border }}
                   />
                   <Text style={[styles.ruleText, { color: colors.text, fontFamily: fontFamily.regular }]}>
-                    if {r.match_field} contains "{r.match_value}"
+                    {describeRuleCondition(r)}
                     {r.set_category ? ` → category ${r.set_category}` : ""}
                     {r.set_payee ? ` → payee ${r.set_payee}` : ""}
                   </Text>

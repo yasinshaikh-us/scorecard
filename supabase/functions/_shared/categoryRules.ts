@@ -1,18 +1,23 @@
 // Mirrors the SQL logic in apply_category_rules() / clean_payee() (see
 // supabase/migrations/20260803010000_add_category_rules_engine.sql,
 // 20260803030000_scrub_payee_junk.sql, and
-// 20261027000000_add_insurance_home_services_personal_care_categories.sql) -- same semantics, kept in sync
+// 20261029000000_transfer_category_and_amount_rules.sql) -- same semantics, kept in sync
 // deliberately rather than shared, since one runs in Postgres (bulk
 // retroactive re-apply) and this one runs per transaction during the live
 // sync. Case-insensitive "contains" match; rules apply in ascending
 // priority order, later matches overwrite earlier ones for whichever
-// field they set.
+// field they set. A rule with min_amount / max_amount (inclusive, signed:
+// negative = money out) only matches amounts in that range; an
+// "uncategorized" rule runs after the rest and the clamp, and only on a
+// transaction still in "Miscellaneous".
 
 export interface CategoryRule {
-  match_field: "payee" | "category";
+  match_field: "payee" | "category" | "uncategorized";
   match_value: string;
   set_category: string | null;
   set_payee: string | null;
+  min_amount?: number | null;
+  max_amount?: number | null;
 }
 
 // Fixed, closed category set -- anything that isn't one of these after all
@@ -23,6 +28,7 @@ const ALLOWED_CATEGORIES = new Set([
   "Dining", "Shopping", "Utilities", "Groceries", "Transport", "Education", "Health",
   "Cash", "Travel", "Software", "Entertainment", "Fees",
   "Insurance", "Home Services", "Personal Care",
+  "Transfer",
 ]);
 
 const US_STATE_ABBREVIATIONS =
@@ -157,13 +163,34 @@ function titleCase(str: string): string {
   return str.toLowerCase().replace(/(^|[^a-z0-9])([a-z0-9])/g, (_, separator, char) => separator + char.toUpperCase());
 }
 
-export function applyCategoryRules(rawPayee: string, rawCategory: string, rules: CategoryRule[]) {
+// Postgres numeric arrives from PostgREST as a string; Number() takes both.
+function inAmountRange(rule: CategoryRule, amount: number) {
+  if (rule.min_amount != null && amount < Number(rule.min_amount)) return false;
+  if (rule.max_amount != null && amount > Number(rule.max_amount)) return false;
+  return true;
+}
+
+export function applyCategoryRules(rawPayee: string, rawCategory: string, rules: CategoryRule[], amount: number) {
   let category = rawCategory;
   let payee = titleCase(cleanPayee(rawPayee));
 
   for (const rule of rules) {
+    if (rule.match_field === "uncategorized") continue;
     const haystack = rule.match_field === "payee" ? rawPayee : rawCategory;
     if (!haystack.toLowerCase().includes(rule.match_value.toLowerCase())) continue;
+    if (!inAmountRange(rule, amount)) continue;
+    if (rule.set_category != null) category = rule.set_category;
+    if (rule.set_payee != null) payee = rule.set_payee;
+  }
+
+  if (!ALLOWED_CATEGORIES.has(category)) {
+    category = "Miscellaneous";
+  }
+
+  for (const rule of rules) {
+    if (rule.match_field !== "uncategorized" || category !== "Miscellaneous") continue;
+    if (!rawPayee.toLowerCase().includes(rule.match_value.toLowerCase())) continue;
+    if (!inAmountRange(rule, amount)) continue;
     if (rule.set_category != null) category = rule.set_category;
     if (rule.set_payee != null) payee = rule.set_payee;
   }
