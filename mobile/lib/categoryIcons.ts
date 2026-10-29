@@ -21,11 +21,12 @@ import {
   ShieldCheck,
   Wrench,
   Scissors,
+  ArrowLeftRight,
   type LucideIcon,
 } from "lucide-react-native";
 
 // One icon per category in the
-// closed 22-category set (see lib/categories.ts). Keys must
+// closed 23-category set (see lib/categories.ts). Keys must
 // match those category names exactly; anything unmapped falls back to
 // HelpCircle.
 export const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -51,6 +52,7 @@ export const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Insurance: ShieldCheck,
   "Home Services": Wrench,
   "Personal Care": Scissors,
+  Transfer: ArrowLeftRight,
 };
 
 export function iconForCategory(category: string): LucideIcon {

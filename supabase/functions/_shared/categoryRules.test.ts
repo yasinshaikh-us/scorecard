@@ -167,26 +167,26 @@ describe("cleanPayee", () => {
 
 describe("applyCategoryRules", () => {
   it("title-cases the cleaned payee when no rule matches", () => {
-    const result = applyCategoryRules("BLUE BOTTLE COFFEE", "Dining", []);
+    const result = applyCategoryRules("BLUE BOTTLE COFFEE", "Dining", [], -1);
     expect(result.payee).toBe("Blue Bottle Coffee");
     expect(result.category).toBe("Dining");
   });
 
   it("matches case-insensitively on a substring, not the whole value", () => {
     const rules = [rule({ match_value: "bottle", set_category: "Groceries" })];
-    expect(applyCategoryRules("BLUE BOTTLE COFFEE", "Dining", rules).category).toBe("Groceries");
+    expect(applyCategoryRules("BLUE BOTTLE COFFEE", "Dining", rules, -1).category).toBe("Groceries");
   });
 
   it("matches against the RAW payee, not the cleaned/title-cased one", () => {
     // "XX1234" is scrubbed out of the payee, but a rule matching it must
     // still fire -- the haystack is the raw descriptor.
     const rules = [rule({ match_value: "XX1234", set_category: "Utilities" })];
-    expect(applyCategoryRules("AMEX EPAYMENT XX1234", "Fees", rules).category).toBe("Utilities");
+    expect(applyCategoryRules("AMEX EPAYMENT XX1234", "Fees", rules, -1).category).toBe("Utilities");
   });
 
   it("matches on the category field when match_field is category", () => {
     const rules = [rule({ match_field: "category", match_value: "food", set_category: "Groceries" })];
-    expect(applyCategoryRules("ANY PAYEE", "Food and Drink", rules).category).toBe("Groceries");
+    expect(applyCategoryRules("ANY PAYEE", "Food and Drink", rules, -1).category).toBe("Groceries");
   });
 
   it("applies rules in array order, later matches overwriting earlier ones", () => {
@@ -194,7 +194,7 @@ describe("applyCategoryRules", () => {
       rule({ match_value: "acme", set_category: "Shopping" }),
       rule({ match_value: "acme", set_category: "Groceries" }),
     ];
-    expect(applyCategoryRules("ACME INC", "Fees", rules).category).toBe("Groceries");
+    expect(applyCategoryRules("ACME INC", "Fees", rules, -1).category).toBe("Groceries");
   });
 
   it("lets a rule set payee and category independently", () => {
@@ -202,36 +202,36 @@ describe("applyCategoryRules", () => {
       rule({ match_value: "acme", set_category: "Groceries", set_payee: null }),
       rule({ match_value: "acme", set_category: null, set_payee: "Acme Groceries" }),
     ];
-    const result = applyCategoryRules("ACME INC", "Fees", rules);
+    const result = applyCategoryRules("ACME INC", "Fees", rules, -1);
     expect(result).toEqual({ category: "Groceries", payee: "Acme Groceries" });
   });
 
   it("leaves a field untouched when the matching rule sets it to null", () => {
     const rules = [rule({ match_value: "acme", set_category: null, set_payee: null })];
-    const result = applyCategoryRules("ACME INC", "Dining", rules);
+    const result = applyCategoryRules("ACME INC", "Dining", rules, -1);
     expect(result).toEqual({ category: "Dining", payee: "Acme Inc" });
   });
 
   it("ignores rules that do not match", () => {
     const rules = [rule({ match_value: "nomatch", set_category: "Travel" })];
-    expect(applyCategoryRules("ACME INC", "Dining", rules).category).toBe("Dining");
+    expect(applyCategoryRules("ACME INC", "Dining", rules, -1).category).toBe("Dining");
   });
 
   it("falls back to Miscellaneous for a category outside the closed set", () => {
-    expect(applyCategoryRules("ACME INC", "Food and Drink", []).category).toBe("Miscellaneous");
+    expect(applyCategoryRules("ACME INC", "Food and Drink", [], -1).category).toBe("Miscellaneous");
   });
 
   it("falls back to Miscellaneous even when a RULE set the out-of-set value", () => {
     // The closed-set clamp runs after every rule, so a user-authored rule
     // can't introduce a category the app doesn't know how to render.
     const rules = [rule({ match_value: "acme", set_category: "Crypto" })];
-    expect(applyCategoryRules("ACME INC", "Dining", rules).category).toBe("Miscellaneous");
+    expect(applyCategoryRules("ACME INC", "Dining", rules, -1).category).toBe("Miscellaneous");
   });
 
   it("is case-sensitive about the closed set itself", () => {
     // "dining" is not "Dining" -- the clamp is an exact set membership
     // check, so a lowercase variant is not silently accepted.
-    expect(applyCategoryRules("ACME INC", "dining", []).category).toBe("Miscellaneous");
+    expect(applyCategoryRules("ACME INC", "dining", [], -1).category).toBe("Miscellaneous");
   });
 
   it("accepts every category in the closed set unchanged", () => {
@@ -240,14 +240,59 @@ describe("applyCategoryRules", () => {
       "Dining", "Shopping", "Utilities", "Groceries", "Transport", "Education", "Health",
       "Cash", "Travel", "Software", "Entertainment", "Fees",
       "Insurance", "Home Services", "Personal Care",
+      "Transfer",
     ];
     for (const category of allowed) {
-      expect(applyCategoryRules("ACME INC", category, []).category).toBe(category);
+      expect(applyCategoryRules("ACME INC", category, [], -1).category).toBe(category);
     }
   });
 
   it("cleans and title-cases the payee before any rule overwrites it", () => {
-    const result = applyCategoryRules("BLUE BOTTLE SEATTLE WA", "Dining", []);
+    const result = applyCategoryRules("BLUE BOTTLE SEATTLE WA", "Dining", [], -1);
     expect(result.payee).toBe("Blue Bottle");
+  });
+
+  it("only applies a rule to amounts inside its inclusive range", () => {
+    const rules = [rule({ match_value: "acme", set_category: "Transfer", min_amount: 0.01, max_amount: 999.99 })];
+    expect(applyCategoryRules("ACME INC", "Dining", rules, 999.99).category).toBe("Transfer");
+    expect(applyCategoryRules("ACME INC", "Dining", rules, 0.01).category).toBe("Transfer");
+    expect(applyCategoryRules("ACME INC", "Dining", rules, 1000).category).toBe("Dining");
+    expect(applyCategoryRules("ACME INC", "Dining", rules, -5).category).toBe("Dining");
+  });
+
+  it("accepts amount bounds as numeric strings, the way PostgREST returns them", () => {
+    const rules = [rule({ match_value: "acme", set_category: "Transfer", max_amount: "999.99" as unknown as number })];
+    expect(applyCategoryRules("ACME INC", "Dining", rules, 1000).category).toBe("Dining");
+    expect(applyCategoryRules("ACME INC", "Dining", rules, 50).category).toBe("Transfer");
+  });
+
+  describe("uncategorized (fallback) rules", () => {
+    const smallInflows = rule({
+      match_field: "uncategorized",
+      match_value: "",
+      set_category: "Transfer",
+      min_amount: 0.01,
+      max_amount: 999.99,
+    });
+
+    it("catch a transaction nothing else categorized", () => {
+      expect(applyCategoryRules("REMOTE ONLINE DEPOSIT", "TRANSFER_IN", [smallInflows], 368.26).category).toBe("Transfer");
+    });
+
+    it("leave a transaction alone once another rule or its raw category explains it", () => {
+      const shoppingRule = rule({ match_field: "category", match_value: "GENERAL_MERCHANDISE", set_category: "Shopping" });
+      expect(applyCategoryRules("ACME REFUND", "GENERAL_MERCHANDISE", [smallInflows, shoppingRule], 50).category).toBe("Shopping");
+      expect(applyCategoryRules("ACME REFUND", "Shopping", [smallInflows], 50).category).toBe("Shopping");
+    });
+
+    it("run after the other rules regardless of order", () => {
+      const payeeRule = rule({ match_value: "acme", set_category: "Income" });
+      expect(applyCategoryRules("ACME PAYROLL", "Uncategorized", [payeeRule, smallInflows], 900).category).toBe("Income");
+    });
+
+    it("respect their amount range", () => {
+      expect(applyCategoryRules("REMOTE ONLINE DEPOSIT", "TRANSFER_IN", [smallInflows], 1500).category).toBe("Miscellaneous");
+      expect(applyCategoryRules("REMOTE ONLINE DEPOSIT", "TRANSFER_IN", [smallInflows], -50).category).toBe("Miscellaneous");
+    });
   });
 });
