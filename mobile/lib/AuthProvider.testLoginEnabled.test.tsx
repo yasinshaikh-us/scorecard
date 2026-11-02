@@ -17,10 +17,10 @@ import { renderHook, waitFor, act } from "@testing-library/react-native";
 process.env.EXPO_PUBLIC_ENABLE_TEST_LOGIN = "true";
 process.env.EXPO_PUBLIC_TEST_LOGIN_SECRET = "shh";
 
-const mockGetSession = jest.fn() as jest.Mock<any>;
-const mockOnAuthStateChange = jest.fn() as jest.Mock<any>;
-const mockSetSession = jest.fn() as jest.Mock<any>;
-const mockFetch = jest.fn() as jest.Mock<any>;
+const mockGetSession = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockOnAuthStateChange = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSetSession = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockFetch = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 jest.mock("./supabase", () => ({
   supabase: {

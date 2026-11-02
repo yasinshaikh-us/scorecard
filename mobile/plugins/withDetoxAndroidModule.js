@@ -52,6 +52,16 @@ module.exports = function withDetoxAndroidModule(config) {
         `dependencies {\n    androidTestImplementation project(':detox')`
       );
     }
+    // androidx.test's AndroidJUnitRunner.onCreate calls androidx.tracing.Trace.
+    // After the SDK 58 upgrade nothing on the androidTest classpath pulls it in
+    // any more, so instrumentation crashed at startup with NoClassDefFoundError
+    // (run 41485885402) -- declare it explicitly.
+    if (!config.modResults.contents.includes("androidx.tracing:tracing")) {
+      config.modResults.contents = config.modResults.contents.replace(
+        /dependencies\s*\{/,
+        `dependencies {\n    androidTestImplementation 'androidx.tracing:tracing:1.2.0'`
+      );
+    }
     return config;
   });
 };

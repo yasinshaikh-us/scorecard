@@ -8,7 +8,7 @@ import { lightColors, darkColors } from "./theme";
 // which re-triggers RN's native-module-registering lazy getters at mock-
 // factory time and breaks the whole test environment) so the rest of
 // react-native's real exports stay untouched.
-const mockUseColorScheme = jest.fn() as jest.Mock<any>;
+const mockUseColorScheme = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("react-native/Libraries/Utilities/useColorScheme", () => ({
   __esModule: true,
   default: () => mockUseColorScheme(),
@@ -23,8 +23,8 @@ describe("ThemeProvider", () => {
   beforeEach(() => {
     mockUseColorScheme.mockReset();
     const AsyncStorage = require("@react-native-async-storage/async-storage");
-    (AsyncStorage.getItem as jest.Mock<any>).mockReset().mockResolvedValue(null);
-    (AsyncStorage.setItem as jest.Mock<any>).mockReset().mockResolvedValue(undefined);
+    (AsyncStorage.getItem as jest.Mock<(...args: any[]) => any>).mockReset().mockResolvedValue(null);
+    (AsyncStorage.setItem as jest.Mock<(...args: any[]) => any>).mockReset().mockResolvedValue(undefined);
   });
 
   it("useTheme() throws when used outside a ThemeProvider", async () => {
@@ -57,7 +57,7 @@ describe("ThemeProvider", () => {
   it("a stored override wins over the system scheme", async () => {
     mockUseColorScheme.mockReturnValue("dark");
     const AsyncStorage = require("@react-native-async-storage/async-storage");
-    (AsyncStorage.getItem as jest.Mock<any>).mockResolvedValue("light");
+    (AsyncStorage.getItem as jest.Mock<(...args: any[]) => any>).mockResolvedValue("light");
 
     const { result } = await renderHook(() => useTheme(), { wrapper: ThemeProvider });
 
