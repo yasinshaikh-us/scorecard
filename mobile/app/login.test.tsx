@@ -4,9 +4,9 @@ import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { renderWithTheme, TEST_METRICS } from "../lib/testUtils";
 import Login from "./login";
 
-const mockSignInWithGoogle = jest.fn() as jest.Mock<any>;
-const mockSignInWithTestAccount = jest.fn() as jest.Mock<any>;
-const mockUseAuth = jest.fn() as jest.Mock<any>;
+const mockSignInWithGoogle = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSignInWithTestAccount = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUseAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
 const authState = { TEST_LOGIN_ENABLED: false };
 jest.mock("../lib/AuthProvider", () => ({
   useAuth: () => mockUseAuth(),

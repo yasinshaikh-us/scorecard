@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../lib/testUtils";
 import AppLayout from "./_layout";
 
-const mockUseAuth = jest.fn() as jest.Mock<any>;
+const mockUseAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("../../lib/AuthProvider", () => ({
   useAuth: () => mockUseAuth(),
 }));

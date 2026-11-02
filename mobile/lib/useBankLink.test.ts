@@ -2,17 +2,17 @@ import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import { renderHook, waitFor, act } from "@testing-library/react-native";
 import { useBankLink } from "./useBankLink";
 
-const mockUseAuth = jest.fn() as jest.Mock<any>;
+const mockUseAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("./AuthProvider", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-const mockCreatePlaidLinkSession = jest.fn() as jest.Mock<any>;
+const mockCreatePlaidLinkSession = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("react-native-plaid-link-sdk", () => ({
   createPlaidLinkSession: (config: unknown) => mockCreatePlaidLinkSession(config),
 }));
 
-const mockFetch = jest.fn() as jest.Mock<any>;
+const mockFetch = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 describe("useBankLink", () => {
   beforeEach(() => {
