@@ -39,7 +39,7 @@ module.exports = {
     "^@react-native-async-storage/async-storage$":
       "@react-native-async-storage/async-storage/jest/async-storage-mock",
   },
-  // Shipped by react-native-worklets for exactly this: Reanimated 4's
+  // Shipped by react-native-reanimated (wrapping the worklets one) for exactly this: Reanimated 4's
   // entrypoint pulls in worklets' `.native.ts` implementation, which
   // calls into a JSI module that doesn't exist in a Jest process
   // ("Cannot read properties of undefined (reading 'loadUnpackers')").
@@ -48,7 +48,7 @@ module.exports = {
   // instead. Preferred over blanket-mocking react-native-reanimated,
   // which would replace Animated.View and leave RisingSuggestions'
   // real rendering untested.
-  resolver: "react-native-worklets/jest/resolver",
+  resolver: "react-native-reanimated/jest/resolver",
   transformIgnorePatterns: [
     "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-gifted-charts|gifted-charts-core|lucide-react-native|react-native-reanimated|react-native-worklets|standard-navigation))",
   ],

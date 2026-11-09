@@ -3,13 +3,13 @@ import { fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../../lib/testUtils";
 import Ask from "./ask";
 
-const mockSignOut = jest.fn() as jest.Mock<any>;
-const mockUseAuth = jest.fn() as jest.Mock<any>;
+const mockSignOut = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUseAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("../../lib/AuthProvider", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-const mockUseData = jest.fn() as jest.Mock<any>;
+const mockUseData = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("../../lib/DataProvider", () => ({
   useData: () => mockUseData(),
 }));
@@ -19,7 +19,7 @@ jest.mock("../../lib/DataProvider", () => ({
 // that path and have to be controllable here. useRouter is mocked
 // alongside them only because ScreenHeader (rendered unmocked below)
 // navigates with it.
-const mockParams = jest.fn() as jest.Mock<any>;
+const mockParams = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockParams(),
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
@@ -58,7 +58,7 @@ jest.mock("../../components/QueryCard", () => {
   };
 });
 
-const mockFetch = jest.fn() as jest.Mock<any>;
+const mockFetch = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 const LEDGER = [
   { Id: 1, Date: "2026-09-08", Payee: "Chipotle", Category: "Food:Restaurants", Amount: -12.5, Account: "Checking", IsTransfer: false, Pending: false },

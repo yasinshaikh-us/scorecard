@@ -3,12 +3,12 @@ import { render, screen } from "@testing-library/react-native";
 import { Text } from "react-native";
 import { DataProvider, useData } from "./DataProvider";
 
-const mockUseAuth = jest.fn() as jest.Mock<any>;
+const mockUseAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("./AuthProvider", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-const mockFetch = jest.fn() as jest.Mock<any>;
+const mockFetch = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 function Consumer() {
   const { transactions, dataStatus, CATS } = useData();
