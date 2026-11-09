@@ -32,8 +32,7 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 26,
-            "extraProguardRules": "-keep class androidx.tracing.** { *; }"
+            "minSdkVersion": 26
           }
         }
       ],
