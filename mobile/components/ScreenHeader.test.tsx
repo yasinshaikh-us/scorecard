@@ -3,12 +3,12 @@ import { fireEvent, screen } from "@testing-library/react-native";
 import { renderWithTheme } from "../lib/testUtils";
 import ScreenHeader from "./ScreenHeader";
 
-const mockSignOut = jest.fn() as jest.Mock<any>;
+const mockSignOut = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("../lib/AuthProvider", () => ({
   useAuth: () => ({ signOut: mockSignOut }),
 }));
 
-const mockReplace = jest.fn() as jest.Mock<any>;
+const mockReplace = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: mockReplace }),
 }));

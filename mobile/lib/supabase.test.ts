@@ -55,12 +55,12 @@ describe("LargeSecureStore (lib/supabase.ts's session storage adapter)", () => {
 
     let persistedEncryptionKey: string | null = null;
     let persistedBlob: string | null = null;
-    (SecureStore.getItemAsync as jest.Mock<any>).mockImplementation(async () => persistedEncryptionKey);
-    (SecureStore.setItemAsync as jest.Mock<any>).mockImplementation(async (_key: string, value: string) => {
+    (SecureStore.getItemAsync as jest.Mock<(...args: any[]) => any>).mockImplementation(async () => persistedEncryptionKey);
+    (SecureStore.setItemAsync as jest.Mock<(...args: any[]) => any>).mockImplementation(async (_key: string, value: string) => {
       persistedEncryptionKey = value;
     });
-    (AsyncStorage.getItem as jest.Mock<any>).mockImplementation(async () => persistedBlob);
-    (AsyncStorage.setItem as jest.Mock<any>).mockImplementation(async (_key: string, value: string) => {
+    (AsyncStorage.getItem as jest.Mock<(...args: any[]) => any>).mockImplementation(async () => persistedBlob);
+    (AsyncStorage.setItem as jest.Mock<(...args: any[]) => any>).mockImplementation(async (_key: string, value: string) => {
       persistedBlob = value;
     });
 

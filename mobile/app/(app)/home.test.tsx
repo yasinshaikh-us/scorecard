@@ -4,18 +4,18 @@ import { renderWithTheme } from "../../lib/testUtils";
 import Home from "./home";
 import type { Transaction } from "../../lib/types";
 
-const mockSignOut = jest.fn() as jest.Mock<any>;
-const mockUseAuth = jest.fn() as jest.Mock<any>;
+const mockSignOut = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockUseAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("../../lib/AuthProvider", () => ({
   useAuth: () => mockUseAuth(),
 }));
 
-const mockUseData = jest.fn() as jest.Mock<any>;
+const mockUseData = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("../../lib/DataProvider", () => ({
   useData: () => mockUseData(),
 }));
 
-const mockReplace = jest.fn() as jest.Mock<any>;
+const mockReplace = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
 }));

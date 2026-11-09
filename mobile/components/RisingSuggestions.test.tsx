@@ -8,7 +8,7 @@ import RisingSuggestions from "./RisingSuggestions";
 // than a stub of it. `default` has to be re-attached by hand: spreading
 // the ESM namespace object alone drops it, and it is what Animated.View
 // comes from.
-const mockUseReducedMotion = jest.fn(() => false) as jest.Mock<any>;
+const mockUseReducedMotion = jest.fn(() => false) as jest.Mock<(...args: any[]) => any>;
 jest.mock("react-native-reanimated", () => {
   const actual: any = jest.requireActual("react-native-reanimated");
   return {

@@ -2,12 +2,12 @@ import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import { renderHook, waitFor, act } from "@testing-library/react-native";
 import { AuthProvider, useAuth } from "./AuthProvider";
 
-const mockGetSession = jest.fn() as jest.Mock<any>;
-const mockOnAuthStateChange = jest.fn() as jest.Mock<any>;
-const mockSignInWithOAuth = jest.fn() as jest.Mock<any>;
-const mockExchangeCodeForSession = jest.fn() as jest.Mock<any>;
-const mockSetSession = jest.fn() as jest.Mock<any>;
-const mockSignOut = jest.fn() as jest.Mock<any>;
+const mockGetSession = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockOnAuthStateChange = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSignInWithOAuth = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockExchangeCodeForSession = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSetSession = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockSignOut = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 jest.mock("./supabase", () => ({
   supabase: {
@@ -22,25 +22,25 @@ jest.mock("./supabase", () => ({
   },
 }));
 
-const mockMakeRedirectUri = jest.fn(() => "fathom://redirect") as jest.Mock<any>;
+const mockMakeRedirectUri = jest.fn(() => "fathom://redirect") as jest.Mock<(...args: any[]) => any>;
 jest.mock("expo-auth-session", () => ({
   makeRedirectUri: (...args: any[]) => mockMakeRedirectUri(...args),
 }));
 
-const mockOpenAuthSessionAsync = jest.fn() as jest.Mock<any>;
+const mockOpenAuthSessionAsync = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("expo-web-browser", () => ({
   maybeCompleteAuthSession: jest.fn(),
   openAuthSessionAsync: (...args: any[]) => mockOpenAuthSessionAsync(...args),
 }));
 
-const mockGetInitialURL = jest.fn() as jest.Mock<any>;
-const mockAddEventListener = jest.fn() as jest.Mock<any>;
+const mockGetInitialURL = jest.fn() as jest.Mock<(...args: any[]) => any>;
+const mockAddEventListener = jest.fn() as jest.Mock<(...args: any[]) => any>;
 jest.mock("expo-linking", () => ({
   getInitialURL: (...args: any[]) => mockGetInitialURL(...args),
   addEventListener: (...args: any[]) => mockAddEventListener(...args),
 }));
 
-const mockFetch = jest.fn() as jest.Mock<any>;
+const mockFetch = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 function makeSession(overrides: Record<string, unknown> = {}) {
   return { access_token: "at-1", refresh_token: "rt-1", user: { id: "user-1" }, ...overrides };

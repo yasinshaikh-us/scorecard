@@ -1,4 +1,4 @@
-const { withDangerousMod } = require("@expo/config-plugins");
+const { withDangerousMod, withGradleProperties } = require("@expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
@@ -38,7 +38,29 @@ const path = require("path");
 // never sets it) completely unaffected -- the override only ever applies
 // to the disposable, CI-only build. Verified on the first real Stage 3
 // APK: `usesCleartextTraffic` is absent from its AndroidManifest.
+// Expo SDK 58 / RN 0.88 minifies (R8) the release build. Detox's androidTest
+// APK is deduplicated against the app's dependency graph, so classes R8
+// stripped from the app (androidx.tracing.Trace, kotlin.LazyKt, ...) are
+// missing at runtime and the instrumentation crashes on launch ("PID still
+// not available"). Disable minification for the disposable Detox build only
+// (same env gate as below); Stage 3's shippable build is unaffected.
+function withDetoxNoMinify(config) {
+  return withGradleProperties(config, (config) => {
+    if (process.env.DETOX_ANDROID_RELEASE_CLEARTEXT !== "1") return config;
+    const props = config.modResults.filter(
+      (p) => !(p.type === "property" && /^android\.enable(Minify|ShrinkResources)InReleaseBuilds$/.test(p.key))
+    );
+    props.push(
+      { type: "property", key: "android.enableMinifyInReleaseBuilds", value: "false" },
+      { type: "property", key: "android.enableShrinkResourcesInReleaseBuilds", value: "false" }
+    );
+    config.modResults = props;
+    return config;
+  });
+}
+
 module.exports = function withDetoxReleaseCleartext(config) {
+  config = withDetoxNoMinify(config);
   return withDangerousMod(config, [
     "android",
     (config) => {

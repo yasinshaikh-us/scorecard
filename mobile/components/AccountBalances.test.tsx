@@ -43,7 +43,7 @@ jest.mock("../lib/useBankLink", () => ({
   useBankLink: (onLinked?: () => void) => mockUseBankLink(onLinked),
 }));
 
-const mockFetch = jest.fn() as jest.Mock<any>;
+const mockFetch = jest.fn() as jest.Mock<(...args: any[]) => any>;
 
 function account(overrides: Record<string, unknown> = {}) {
   return { account_id: "acc-1", item_id: "item-1", name: "Checking", mask: "1234", ...overrides };
