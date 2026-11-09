@@ -52,16 +52,6 @@ module.exports = function withDetoxAndroidModule(config) {
         `dependencies {\n    androidTestImplementation project(':detox')`
       );
     }
-    // Expo SDK 58 / RN 0.88 no longer pulls androidx.tracing into the app's
-    // graph, so the test APK's AndroidJUnitRunner crashed on launch with
-    // NoClassDefFoundError: androidx.tracing.Trace ("PID still not
-    // available"). Declare it explicitly for the androidTest classpath.
-    if (!config.modResults.contents.includes("androidx.tracing:tracing")) {
-      config.modResults.contents = config.modResults.contents.replace(
-        /dependencies\s*\{/,
-        `dependencies {\n    androidTestImplementation "androidx.tracing:tracing:1.3.0"`
-      );
-    }
     return config;
   });
 };
