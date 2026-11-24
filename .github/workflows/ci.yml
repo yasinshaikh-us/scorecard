@@ -139,8 +139,18 @@ jobs:
       # plaid-webhook would 401 every real Plaid webhook (no transactions
       # would ever sync again, with nothing surfacing it), and verify_jwt
       # OFF for any of the others would expose an authenticated endpoint.
+      # --yes: a newer supabase CLI (setup-cli@v3 pins `version: latest`)
+      # started prompting "Confirmation required: Deploy N Functions" before
+      # deploying, which a non-interactive CI runner (stdout isn't a
+      # terminal) can never answer -- the command then exits 1 having
+      # deployed nothing. That silently broke this job from run #204
+      # (2026-11-09) onward: every merge to main since then built and tested
+      # green but never actually reached the live project, which is exactly
+      # the invisible-drift failure mode this job's own top comment
+      # describes. --yes skips the prompt so a real deploy (or a real
+      # failure) is what CI reports again.
       - name: Deploy the unauthenticated-by-design functions
-        run: supabase functions deploy $NO_JWT_FUNCTIONS --no-verify-jwt --project-ref "$PROJECT_REF"
+        run: supabase functions deploy $NO_JWT_FUNCTIONS --no-verify-jwt --project-ref "$PROJECT_REF" --yes
 
       - name: Deploy the JWT-protected functions
-        run: supabase functions deploy $JWT_FUNCTIONS --project-ref "$PROJECT_REF"
+        run: supabase functions deploy $JWT_FUNCTIONS --project-ref "$PROJECT_REF" --yes
